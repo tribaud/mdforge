@@ -234,14 +234,70 @@ body.vscode-dark {
   background: var(--gh-bg);
 }
 
-/* Mermaid / diagram blocks */
-.milkdown .ProseMirror .mermaid,
-.milkdown .ProseMirror [data-type="diagram"] {
+/* Mermaid diagrams */
+.milkdown .ProseMirror .mdforge-mermaid {
+  margin: 0 0 16px;
+}
+.milkdown .ProseMirror .mdforge-mermaid-preview {
   display: flex;
   justify-content: center;
-  margin: 0 0 16px;
   padding: 12px;
   border: 1px solid var(--gh-border);
   border-radius: 6px;
   background: var(--gh-canvas-subtle);
+  cursor: pointer;
+}
+.milkdown .ProseMirror .mdforge-mermaid-preview svg {
+  max-width: 100%;
+  height: auto;
+}
+.milkdown .ProseMirror .mdforge-mermaid-empty {
+  color: var(--gh-muted);
+  font-style: italic;
+}
+.milkdown .ProseMirror .mdforge-mermaid-error {
+  margin: 0;
+  color: var(--gh-danger);
+  white-space: pre-wrap;
+  font-family: var(--mdforge-mono);
+  font-size: 85%;
+}
+.milkdown .ProseMirror .mdforge-mermaid-source {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 8em;
+  padding: 12px;
+  border: 1px solid var(--gh-accent);
+  border-radius: 6px;
+  background: var(--gh-canvas-subtle);
+  color: var(--gh-fg);
+  font-family: var(--mdforge-mono);
+  font-size: 85%;
+  resize: vertical;
+}
+
+/* Code blocks with an editable language field */
+.milkdown .ProseMirror .mdforge-codeblock {
+  margin: 0 0 16px;
+}
+.milkdown .ProseMirror .mdforge-codeblock-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -1px;
+}
+.milkdown .ProseMirror .mdforge-codeblock-lang {
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border: 1px solid var(--gh-border);
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  border-bottom: none;
+  background: var(--gh-canvas-subtle);
+  color: var(--gh-muted);
+  font-family: var(--mdforge-mono);
+  font-size: 12px;
+  outline: none;
+}
+.milkdown .ProseMirror .mdforge-codeblock pre {
+  margin: 0;
 }

@@ -7,6 +7,7 @@ import { clipboard } from '@milkdown/plugin-clipboard'
 import { math } from '@milkdown/plugin-math'
 import { diagram } from '@milkdown/plugin-diagram'
 import { inProgressTask } from './inprogress-task'
+import { nodeViews } from './views'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
 
@@ -66,6 +67,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(clipboard)
     .use(math)
     .use(diagram)
+    .use(nodeViews)
     .create()
 }
 
