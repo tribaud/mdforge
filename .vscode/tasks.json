@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "npm",
+      "script": "build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "silent", "clear": true },
+      "detail": "Compile the extension (tsc) and bundle the webview (esbuild)."
+    },
+    {
+      "label": "watch:ext",
+      "type": "npm",
+      "script": "watch:ext",
+      "isBackground": true,
+      "problemMatcher": ["$tsc-watch"],
+      "presentation": { "group": "watch" }
+    },
+    {
+      "label": "watch:webview",
+      "type": "npm",
+      "script": "watch:webview",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "watch" }
+    }
+  ]
+}
