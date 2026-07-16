@@ -17,6 +17,23 @@ and a [link](https://github.com/tribaud/mdforge).
 - [x] Done
 - [ ] Click a checkbox to cycle: empty -> in progress -> done
 
+## GitHub alerts
+
+> [!NOTE]
+> Useful information that users should know, even when skimming.
+
+> [!TIP]
+> Helpful advice for doing things better.
+
+> [!IMPORTANT]
+> Key information users need to know to achieve their goal.
+
+> [!WARNING]
+> Urgent info that needs immediate attention.
+
+> [!CAUTION]
+> Advises about risks or negative outcomes of certain actions.
+
 ## Table
 
 | Feature | Status |

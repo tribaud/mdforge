@@ -137,6 +137,29 @@ body.mdforge-width-full .milkdown .ProseMirror {
   border-left: 0.25em solid var(--gh-border);
 }
 
+/* GitHub-style alerts */
+.milkdown .ProseMirror blockquote.mdforge-alert {
+  padding: 8px 1em;
+  border-radius: 6px;
+  color: var(--gh-fg);
+  border-left: 0.25em solid var(--alert-color);
+  background: color-mix(in srgb, var(--alert-color) 8%, transparent);
+}
+.milkdown .ProseMirror blockquote.mdforge-alert > p:first-child {
+  color: var(--alert-color);
+  font-weight: 600;
+}
+.milkdown .ProseMirror blockquote.mdforge-alert-note { --alert-color: #0969da; }
+.milkdown .ProseMirror blockquote.mdforge-alert-tip { --alert-color: #1a7f37; }
+.milkdown .ProseMirror blockquote.mdforge-alert-important { --alert-color: #8250df; }
+.milkdown .ProseMirror blockquote.mdforge-alert-warning { --alert-color: #9a6700; }
+.milkdown .ProseMirror blockquote.mdforge-alert-caution { --alert-color: #cf222e; }
+body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-note { --alert-color: #4493f8; }
+body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-tip { --alert-color: #3fb950; }
+body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-important { --alert-color: #ab7df8; }
+body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-warning { --alert-color: #d29922; }
+body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-caution { --alert-color: #f85149; }
+
 /* Lists */
 .milkdown .ProseMirror ul,
 .milkdown .ProseMirror ol {
