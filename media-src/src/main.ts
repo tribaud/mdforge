@@ -9,6 +9,7 @@ import { diagram } from '@milkdown/plugin-diagram'
 import { prism } from '@milkdown/plugin-prism'
 import { inProgressTask } from './inprogress-task'
 import { nodeViews } from './views'
+import { slash, slashPluginView } from './slash'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
 
@@ -59,6 +60,7 @@ async function createEditor(initial: string): Promise<void> {
         currentText = markdown
         vscode.postMessage({ type: 'edit', text: markdown })
       })
+      ctx.set(slash.key, { view: slashPluginView })
     })
     .use(commonmark)
     .use(gfm)
@@ -70,6 +72,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(diagram)
     .use(prism)
     .use(nodeViews)
+    .use(slash)
     .create()
 }
 
