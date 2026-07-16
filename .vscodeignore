@@ -1,0 +1,11 @@
+.vscode/**
+.github/**
+node_modules/**
+media-src/**
+src/**
+out/**/*.map
+**/*.ts
+tsconfig.json
+esbuild.mjs
+.gitignore
+SPEC.md
