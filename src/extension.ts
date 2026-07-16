@@ -91,6 +91,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             await this.writeDocument(document, message.text)
           }
           break
+        case 'error':
+          console.error('[MDForge webview]', message.text)
+          break
       }
     })
 
@@ -121,10 +124,12 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     )
     const csp = [
       `default-src 'none'`,
-      `img-src ${webview.cspSource} https: data:`,
-      `font-src ${webview.cspSource}`,
+      `img-src ${webview.cspSource} https: data: blob:`,
+      `font-src ${webview.cspSource} data:`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}' ${webview.cspSource}`
+      `script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'`,
+      `worker-src ${webview.cspSource} blob:`,
+      `connect-src ${webview.cspSource} https: data: blob:`
     ].join('; ')
 
     return `<!DOCTYPE html>

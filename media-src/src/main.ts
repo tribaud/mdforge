@@ -25,6 +25,20 @@ interface MdForgeConfig {
 const vscode = acquireVsCodeApi()
 const root = document.getElementById('app') as HTMLElement
 
+/** Turn a blank page into a visible error so failures are diagnosable. */
+function showError(error: unknown): void {
+  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
+  const pre = document.createElement('pre')
+  pre.style.cssText =
+    'white-space:pre-wrap;word-break:break-word;color:#f85149;padding:16px;font:12px/1.5 monospace'
+  pre.textContent = `MDForge failed to initialize:\n\n${detail}`
+  root.replaceChildren(pre)
+  vscode.postMessage({ type: 'error', text: detail })
+}
+
+window.addEventListener('error', (event) => showError(event.error ?? event.message))
+window.addEventListener('unhandledrejection', (event) => showError(event.reason))
+
 let editor: Editor | null = null
 /** Last markdown we are in sync with (from either side). Guards echo loops. */
 let currentText = ''
@@ -70,6 +84,8 @@ async function setContent(text: string): Promise<void> {
       editor = null
     }
     await createEditor(text)
+  } catch (error) {
+    showError(error)
   } finally {
     applyingRemote = false
   }
