@@ -4,3 +4,6 @@ media/dist/
 *.vsix
 .DS_Store
 *.log
+
+# Nix / direnv
+.direnv/
