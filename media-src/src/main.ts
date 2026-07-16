@@ -6,6 +6,7 @@ import { history } from '@milkdown/plugin-history'
 import { clipboard } from '@milkdown/plugin-clipboard'
 import { math } from '@milkdown/plugin-math'
 import { diagram } from '@milkdown/plugin-diagram'
+import { inProgressTask } from './inprogress-task'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
 
@@ -45,6 +46,7 @@ async function createEditor(initial: string): Promise<void> {
     })
     .use(commonmark)
     .use(gfm)
+    .use(inProgressTask)
     .use(listener)
     .use(history)
     .use(clipboard)

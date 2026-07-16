@@ -146,15 +146,55 @@ body.mdforge-width-full .milkdown .ProseMirror {
 .milkdown .ProseMirror li { margin: 0.25em 0; }
 .milkdown .ProseMirror li > p { margin-bottom: 0; }
 
-/* Task lists */
-.milkdown .ProseMirror li.task-list-item,
-.milkdown .ProseMirror li[data-item-type="task"] {
-  list-style: none;
+/* Task lists (three states: unchecked / in progress / checked) */
+:root {
+  --mdforge-inprogress-color: #bf8700;
 }
-.milkdown .ProseMirror .task-list-item-checkbox,
-.milkdown .ProseMirror input[type="checkbox"] {
-  margin: 0 0.5em 0 -1.4em;
-  vertical-align: middle;
+body.vscode-dark {
+  --mdforge-inprogress-color: #d29922;
+}
+
+.milkdown .ProseMirror li.mdforge-task {
+  list-style: none;
+  position: relative;
+  padding-left: 1.7em;
+}
+.milkdown .ProseMirror li.mdforge-task > .mdforge-checkbox {
+  position: absolute;
+  left: 0;
+  top: 0.28em;
+  box-sizing: border-box;
+  width: 1.05em;
+  height: 1.05em;
+  border: 1px solid var(--gh-border);
+  border-radius: 4px;
+  background: var(--gh-bg);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9em;
+  line-height: 1;
+  font-weight: 700;
+  user-select: none;
+}
+.milkdown .ProseMirror li.mdforge-task-checked > .mdforge-checkbox {
+  background: var(--gh-accent);
+  border-color: var(--gh-accent);
+}
+.milkdown .ProseMirror li.mdforge-task-checked > .mdforge-checkbox::after {
+  content: "\2713"; /* ✓ */
+  color: #fff;
+  font-size: 0.8em;
+}
+.milkdown .ProseMirror li.mdforge-task-inprogress > .mdforge-checkbox {
+  background: var(--mdforge-inprogress-color);
+  border-color: var(--mdforge-inprogress-color);
+}
+.milkdown .ProseMirror li.mdforge-task-inprogress > .mdforge-checkbox::after {
+  content: "\2013"; /* – */
+  color: #fff;
+  font-size: 0.9em;
 }
 
 /* Horizontal rule */
