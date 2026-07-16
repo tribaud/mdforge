@@ -393,3 +393,23 @@ body.vscode-dark {
   font-size: 90%;
   resize: vertical;
 }
+
+/* Inline math (KaTeX) */
+.milkdown .ProseMirror .mdforge-math-inline {
+  cursor: pointer;
+  padding: 0 1px;
+  border-radius: 3px;
+}
+.milkdown .ProseMirror .mdforge-math-inline:hover {
+  background: var(--gh-canvas-subtle);
+}
+.milkdown .ProseMirror .mdforge-math-inline-input {
+  font-family: var(--mdforge-mono);
+  font-size: 90%;
+  padding: 0 4px;
+  border: 1px solid var(--gh-accent);
+  border-radius: 4px;
+  background: var(--gh-bg);
+  color: var(--gh-fg);
+  outline: none;
+}

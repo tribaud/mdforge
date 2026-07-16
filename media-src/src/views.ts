@@ -8,7 +8,7 @@
  */
 import { codeBlockSchema } from '@milkdown/preset-commonmark'
 import { diagramSchema } from '@milkdown/plugin-diagram'
-import { mathBlockSchema } from '@milkdown/plugin-math'
+import { mathBlockSchema, mathInlineSchema } from '@milkdown/plugin-math'
 import { $view } from '@milkdown/utils'
 import mermaid from 'mermaid'
 import katex from 'katex'
@@ -242,4 +242,99 @@ export const mathBlockNodeView = $view(mathBlockSchema.node, () => {
   }
 })
 
-export const nodeViews = [diagramNodeView, codeBlockNodeView, mathBlockNodeView]
+/**
+ * Renders inline math with KaTeX; click to edit. Unlike the block variant,
+ * inline math stores its LaTeX as the node's text content, so committing
+ * replaces the whole node.
+ */
+export const mathInlineNodeView = $view(mathInlineSchema.node, () => {
+  return (initialNode, view, getPos) => {
+    const dom = document.createElement('span')
+    dom.className = 'mdforge-math-inline'
+    let current: string = initialNode.textContent ?? ''
+    let editing = false
+
+    const renderMath = (): void => {
+      editing = false
+      try {
+        katex.render(current || '\\,', dom, { throwOnError: false })
+      } catch {
+        dom.textContent = current
+      }
+    }
+
+    const startEdit = (): void => {
+      editing = true
+      const input = document.createElement('input')
+      input.className = 'mdforge-math-inline-input'
+      input.value = current
+      input.size = Math.max(current.length, 2)
+      dom.replaceChildren(input)
+      input.focus()
+      input.select()
+
+      const finish = (commit: boolean): void => {
+        const next = input.value
+        if (!commit || next === current) {
+          renderMath()
+          return
+        }
+        const pos = getPos()
+        if (pos == null) {
+          renderMath()
+          return
+        }
+        const node = view.state.doc.nodeAt(pos)
+        if (!node) {
+          renderMath()
+          return
+        }
+        const type = view.state.schema.nodes.math_inline
+        const content = next ? view.state.schema.text(next) : undefined
+        view.dispatch(view.state.tr.replaceWith(pos, pos + node.nodeSize, type.create(node.attrs, content)))
+      }
+
+      input.addEventListener('blur', () => finish(true))
+      input.addEventListener('input', () => {
+        input.size = Math.max(input.value.length, 2)
+      })
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          finish(true)
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          finish(false)
+        }
+      })
+    }
+
+    dom.addEventListener('mousedown', (event) => {
+      if (editing) return
+      event.preventDefault()
+      startEdit()
+    })
+
+    renderMath()
+
+    return {
+      dom,
+      update: (updatedNode: any) => {
+        if (updatedNode.type.name !== 'math_inline') return false
+        current = updatedNode.textContent ?? ''
+        if (!editing) renderMath()
+        return true
+      },
+      stopEvent: () => editing,
+      ignoreMutation: () => true,
+      destroy: () => {}
+    }
+  }
+})
+
+export const nodeViews = [
+  diagramNodeView,
+  codeBlockNodeView,
+  mathBlockNodeView,
+  mathInlineNodeView
+]
