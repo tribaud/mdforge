@@ -8,8 +8,10 @@
  */
 import { codeBlockSchema } from '@milkdown/preset-commonmark'
 import { diagramSchema } from '@milkdown/plugin-diagram'
+import { mathBlockSchema } from '@milkdown/plugin-math'
 import { $view } from '@milkdown/utils'
 import mermaid from 'mermaid'
+import katex from 'katex'
 
 let mermaidCounter = 0
 let mermaidReady = false
@@ -158,4 +160,86 @@ export const codeBlockNodeView = $view(codeBlockSchema.node, () => {
   }
 })
 
-export const nodeViews = [diagramNodeView, codeBlockNodeView]
+/** Renders block math with KaTeX; click to edit the LaTeX source. */
+export const mathBlockNodeView = $view(mathBlockSchema.node, () => {
+  return (initialNode, view, getPos) => {
+    const dom = document.createElement('div')
+    dom.className = 'mdforge-math'
+    const preview = document.createElement('div')
+    preview.className = 'mdforge-math-preview'
+    const source = document.createElement('textarea')
+    source.className = 'mdforge-math-source'
+    source.spellcheck = false
+    source.style.display = 'none'
+    dom.append(preview, source)
+
+    let currentValue: string = initialNode.attrs.value ?? ''
+    let editing = false
+
+    const renderMath = (code: string): void => {
+      const trimmed = (code ?? '').trim()
+      if (!trimmed) {
+        preview.innerHTML = '<span class="mdforge-math-empty">Empty equation — click to edit</span>'
+        return
+      }
+      try {
+        katex.render(trimmed, preview, { displayMode: true, throwOnError: false })
+      } catch (error) {
+        preview.textContent = error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    const setEditing = (on: boolean): void => {
+      editing = on
+      source.style.display = on ? 'block' : 'none'
+      preview.style.display = on ? 'none' : 'block'
+      if (on) {
+        source.value = currentValue
+        source.focus()
+      }
+    }
+
+    const commit = (): void => {
+      const next = source.value
+      setEditing(false)
+      if (next === currentValue) {
+        renderMath(currentValue)
+        return
+      }
+      const pos = getPos()
+      if (pos == null) return
+      const attrs = view.state.doc.nodeAt(pos)?.attrs ?? {}
+      view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...attrs, value: next }))
+    }
+
+    preview.addEventListener('click', () => setEditing(true))
+    source.addEventListener('blur', commit)
+    source.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setEditing(false)
+        renderMath(currentValue)
+      } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault()
+        commit()
+      }
+    })
+
+    renderMath(currentValue)
+
+    return {
+      dom,
+      update: (updatedNode: any) => {
+        if (updatedNode.type.name !== 'math_block') return false
+        currentValue = updatedNode.attrs.value ?? ''
+        if (!editing) renderMath(currentValue)
+        return true
+      },
+      stopEvent: () => editing,
+      ignoreMutation: () => true,
+      destroy: () => {}
+    }
+  }
+})
+
+export const nodeViews = [diagramNodeView, codeBlockNodeView, mathBlockNodeView]
