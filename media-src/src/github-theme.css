@@ -159,6 +159,9 @@ body.vscode-dark {
   position: relative;
   padding-left: 1.7em;
 }
+.milkdown .ProseMirror li.mdforge-task > .mdforge-task-content > p {
+  margin: 0;
+}
 .milkdown .ProseMirror li.mdforge-task > .mdforge-checkbox {
   position: absolute;
   left: 0;

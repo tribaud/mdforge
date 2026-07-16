@@ -55,6 +55,10 @@ export const inProgressListItemSchema = extendListItemSchemaForTask.extendSchema
       parseDOM: [
         {
           tag: 'li[data-item-type="task"]',
+          // Content lives in the inner wrapper we render below; fall back to the
+          // <li> itself when parsing task lists authored elsewhere.
+          contentElement: (dom: HTMLElement) =>
+            dom.querySelector('.mdforge-task-content') ?? dom,
           getAttrs: (dom: HTMLElement | string) => {
             if (typeof dom === 'string') return {}
             const inProgress = dom.dataset.inprogress === 'true'
@@ -72,6 +76,8 @@ export const inProgressListItemSchema = extendListItemSchemaForTask.extendSchema
       toDOM: (node: any) => {
         const state = stateOf(node.attrs)
         if (state == null) return base.toDOM ? base.toDOM(node) : ['li', 0]
+        // The content hole (0) must be the ONLY child of its parent, so the
+        // checkbox is a sibling of the content wrapper, not of the hole.
         return [
           'li',
           {
@@ -84,7 +90,7 @@ export const inProgressListItemSchema = extendListItemSchemaForTask.extendSchema
             class: `mdforge-task mdforge-task-${state}`
           },
           ['span', { class: 'mdforge-checkbox', contenteditable: 'false' }],
-          0
+          ['div', { class: 'mdforge-task-content' }, 0]
         ]
       },
       parseMarkdown: {
