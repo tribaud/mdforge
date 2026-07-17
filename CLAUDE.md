@@ -29,11 +29,12 @@ Run any `npm install` after pulling a change that touches `package.json`.
 
 Before merging any feature branch into `main`:
 
-1. **Rebase onto the latest `main`** so history stays linear
+1. **Rebase onto the latest `main`** so branches don't cross
    (`git fetch origin && git rebase origin/main`).
 2. **Run a code review of the branch diff** (the `code-review` skill /
    `/code-review`) and address the findings.
-3. Merge fast-forward (no merge commit) once the review is clean and the
-   feature has been verified in the Extension Development Host (F5).
+3. **Merge with `--no-ff`** (a real merge commit) once the review is clean and
+   the feature has been verified in the Extension Development Host (F5). Never
+   fast-forward: the merge commit groups the feature's commits together.
 
 Feature work happens on branches; `main` stays releasable.

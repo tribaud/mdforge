@@ -160,6 +160,46 @@ body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-important { --a
 body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-warning { --alert-color: #d29922; }
 body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-caution { --alert-color: #f85149; }
 
+/* Frontmatter (discreet, click to edit) */
+.milkdown .ProseMirror .mdforge-frontmatter {
+  margin: 0 0 16px;
+}
+.milkdown .ProseMirror .mdforge-frontmatter-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px dashed var(--gh-border);
+  border-radius: 6px;
+  color: var(--gh-muted);
+  font-size: 12px;
+  font-family: var(--mdforge-mono);
+  cursor: pointer;
+  user-select: none;
+}
+.milkdown .ProseMirror .mdforge-frontmatter-bar::before {
+  content: '\2699'; /* gear */
+}
+.milkdown .ProseMirror .mdforge-frontmatter-bar.open {
+  color: var(--gh-accent);
+  border-style: solid;
+  border-color: var(--gh-accent);
+}
+.milkdown .ProseMirror .mdforge-frontmatter-source {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  min-height: 5em;
+  padding: 12px;
+  border: 1px solid var(--gh-accent);
+  border-radius: 6px;
+  background: var(--gh-canvas-subtle);
+  color: var(--gh-fg);
+  font-family: var(--mdforge-mono);
+  font-size: 90%;
+  resize: vertical;
+}
+
 /* Footnotes */
 .milkdown .ProseMirror sup[data-type='footnote_reference'] {
   color: var(--gh-accent);

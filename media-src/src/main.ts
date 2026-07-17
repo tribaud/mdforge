@@ -11,6 +11,7 @@ import { nodeViews } from './views'
 import { slash, slashPluginView } from './slash'
 import { githubAlert } from './github-alerts'
 import { footnoteJump } from './footnotes'
+import { frontmatter } from './frontmatter'
 import { getHighlighter, createShikiPlugin } from './shiki-highlight'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
@@ -66,6 +67,7 @@ async function createEditor(initial: string): Promise<void> {
     })
     .use(commonmark)
     .use(gfm)
+    .use(frontmatter)
     .use(inProgressTask)
     .use(listener)
     .use(history)
