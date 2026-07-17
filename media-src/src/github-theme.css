@@ -391,19 +391,59 @@ body.vscode-dark {
   font-family: var(--mdforge-mono);
   font-size: 85%;
 }
-.milkdown .ProseMirror .mdforge-mermaid-source {
+/* Syntax-highlighted code editor overlay (Mermaid source) */
+.milkdown .ProseMirror .mdforge-code-editor {
+  position: relative;
+}
+.milkdown .ProseMirror .mdforge-code-highlight,
+.milkdown .ProseMirror .mdforge-code-input {
   box-sizing: border-box;
   width: 100%;
   min-height: 8em;
+  margin: 0;
   padding: 12px;
   border: 1px solid var(--gh-accent);
   border-radius: 6px;
-  background: var(--gh-canvas-subtle);
-  color: var(--gh-fg);
   font-family: var(--mdforge-mono);
   font-size: 85%;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.milkdown .ProseMirror .mdforge-code-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  pointer-events: none;
+  background: var(--gh-canvas-subtle);
+  color: var(--gh-fg);
+}
+.milkdown .ProseMirror .mdforge-code-highlight code {
+  font: inherit;
+  background: none;
+  padding: 0;
+}
+.milkdown .ProseMirror .mdforge-code-input {
+  position: relative;
+  display: block;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--gh-fg);
   resize: vertical;
 }
+/* Mermaid token colors */
+.milkdown .ProseMirror .mm-comment { color: #6e7781; font-style: italic; }
+.milkdown .ProseMirror .mm-keyword { color: #cf222e; }
+.milkdown .ProseMirror .mm-string { color: #0a3069; }
+.milkdown .ProseMirror .mm-arrow { color: #8250df; }
+.milkdown .ProseMirror .mm-label { color: #0550ae; }
+body.vscode-dark .milkdown .ProseMirror .mm-comment { color: #8b949e; }
+body.vscode-dark .milkdown .ProseMirror .mm-keyword { color: #ff7b72; }
+body.vscode-dark .milkdown .ProseMirror .mm-string { color: #a5d6ff; }
+body.vscode-dark .milkdown .ProseMirror .mm-arrow { color: #d2a8ff; }
+body.vscode-dark .milkdown .ProseMirror .mm-label { color: #79c0ff; }
 
 /* Code blocks with an editable language field */
 .milkdown .ProseMirror .mdforge-codeblock {
