@@ -1,3 +1,9 @@
+---
+title: MDForge demo
+author: tribaud
+tags: [markdown, wysiwyg]
+---
+
 # MDForge demo
 
 A quick document to exercise MDForge features. Open it with **MDForge**
