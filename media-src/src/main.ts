@@ -9,6 +9,7 @@ import { diagram } from '@milkdown/plugin-diagram'
 import { inProgressTask } from './inprogress-task'
 import { nodeViews } from './views'
 import { slash, slashPluginView } from './slash'
+import { toolbar, toolbarPluginView } from './toolbar'
 import { githubAlert } from './github-alerts'
 import { footnoteJump } from './footnotes'
 import { frontmatter } from './frontmatter'
@@ -64,6 +65,7 @@ async function createEditor(initial: string): Promise<void> {
         vscode.postMessage({ type: 'edit', text: markdown })
       })
       ctx.set(slash.key, { view: slashPluginView })
+      ctx.set(toolbar.key, { view: toolbarPluginView })
     })
     .use(commonmark)
     .use(gfm)
@@ -76,6 +78,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(diagram)
     .use(nodeViews)
     .use(slash)
+    .use(toolbar)
     .use(githubAlert)
     .use(footnoteJump)
 
