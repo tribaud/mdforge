@@ -490,6 +490,52 @@ body.vscode-dark {
   background: var(--gh-border);
 }
 
+/* Wikilinks */
+.milkdown .ProseMirror .mdforge-wikilink {
+  color: var(--gh-accent);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.milkdown .ProseMirror .mdforge-wikilink:hover {
+  text-decoration: underline;
+  background: color-mix(in srgb, var(--gh-accent) 12%, transparent);
+}
+
+/* Draggable block handle */
+.mdforge-block-handle {
+  position: absolute;
+  width: 18px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gh-muted);
+  cursor: grab;
+  border-radius: 4px;
+  opacity: 0.6;
+  user-select: none;
+}
+.mdforge-block-handle:hover {
+  opacity: 1;
+  background: var(--gh-canvas-subtle);
+}
+.mdforge-block-handle:active {
+  cursor: grabbing;
+}
+
+/* Presentation (read-only) mode: hide editing chrome */
+body.mdforge-presentation .mdforge-toolbar,
+body.mdforge-presentation .mdforge-slash,
+body.mdforge-presentation .mdforge-block-handle,
+body.mdforge-presentation .mdforge-frontmatter-bar,
+body.mdforge-presentation .mdforge-alert-select,
+body.mdforge-presentation .mdforge-codeblock-toolbar {
+  display: none !important;
+}
+body.mdforge-presentation .milkdown .ProseMirror {
+  caret-color: transparent;
+}
+
 /* Slash command menu */
 .mdforge-slash {
   position: absolute;

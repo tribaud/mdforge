@@ -30,6 +30,11 @@ Here is a statement that needs a source.[^1] And another one.[^note]
 [^1]: The first footnote definition.
 [^note]: Footnotes can use named labels too.
 
+## Wikilinks
+
+Link to another note with [[demo]] or with an alias [[demo|this document]].
+Click a wikilink to open its target.
+
 ## GitHub alerts
 
 > [!NOTE]

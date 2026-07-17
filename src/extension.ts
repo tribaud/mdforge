@@ -7,7 +7,17 @@ export function activate(context: vscode.ExtensionContext): void {
   const outline = new OutlineProvider()
   const provider = new MdForgeEditorProvider(context, outline)
 
+  const presentationStatus = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  )
+  presentationStatus.text = '$(book) Presentation'
+  presentationStatus.tooltip = 'MDForge: toggle presentation (read-only) mode'
+  presentationStatus.command = 'mdforge.togglePresentation'
+  outline.presentationStatus = presentationStatus
+
   context.subscriptions.push(
+    presentationStatus,
     vscode.window.registerCustomEditorProvider(VIEW_TYPE, provider, {
       webviewOptions: { retainContextWhenHidden: true },
       supportsMultipleEditorsPerDocument: false
@@ -15,6 +25,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerTreeDataProvider('mdforge.outline', outline),
     vscode.commands.registerCommand('mdforge.outline.reveal', (index: number) => {
       outline.active?.webview.postMessage({ type: 'revealHeading', index })
+    }),
+    vscode.commands.registerCommand('mdforge.togglePresentation', () => {
+      if (!outline.active) {
+        void vscode.window.showInformationMessage('Open a document with MDForge first.')
+        return
+      }
+      void outline.active.webview.postMessage({ type: 'togglePresentation' })
     }),
     vscode.commands.registerCommand('mdforge.openEditor', async (uri?: vscode.Uri) => {
       const target = uri ?? vscode.window.activeTextEditor?.document.uri
@@ -90,10 +107,12 @@ class OutlineProvider implements vscode.TreeDataProvider<HeadingNode> {
   private readonly emitter = new vscode.EventEmitter<void>()
   public readonly onDidChangeTreeData = this.emitter.event
   public active: { document: vscode.TextDocument; webview: vscode.Webview } | undefined
+  public presentationStatus: vscode.StatusBarItem | undefined
 
   public setActive(document: vscode.TextDocument, webview: vscode.Webview): void {
     this.active = { document, webview }
     void vscode.commands.executeCommand('setContext', 'mdforge.active', true)
+    this.presentationStatus?.show()
     this.emitter.fire()
   }
 
@@ -101,6 +120,7 @@ class OutlineProvider implements vscode.TreeDataProvider<HeadingNode> {
     if (this.active?.document.uri.toString() !== document.uri.toString()) return
     this.active = undefined
     void vscode.commands.executeCommand('setContext', 'mdforge.active', false)
+    this.presentationStatus?.hide()
     this.emitter.fire()
   }
 
@@ -194,23 +214,28 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       if (event.affectsConfiguration('mdforge', document.uri)) postConfig()
     })
 
-    webview.onDidReceiveMessage(async (message: { type: string; text?: string }) => {
-      switch (message.type) {
-        case 'ready':
-          postConfig()
-          postDocument()
-          break
-        case 'edit':
-          if (typeof message.text === 'string' && message.text !== document.getText()) {
-            syncedText = message.text
-            await this.writeDocument(document, message.text)
-          }
-          break
-        case 'error':
-          console.error('[MDForge webview]', message.text)
-          break
+    webview.onDidReceiveMessage(
+      async (message: { type: string; text?: string; target?: string }) => {
+        switch (message.type) {
+          case 'ready':
+            postConfig()
+            postDocument()
+            break
+          case 'edit':
+            if (typeof message.text === 'string' && message.text !== document.getText()) {
+              syncedText = message.text
+              await this.writeDocument(document, message.text)
+            }
+            break
+          case 'openWikilink':
+            if (message.target) await this.openWikilink(document, message.target)
+            break
+          case 'error':
+            console.error('[MDForge webview]', message.text)
+            break
+        }
       }
-    })
+    )
 
     webviewPanel.onDidDispose(() => {
       changeSubscription.dispose()
@@ -229,6 +254,24 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     )
     edit.replace(document.uri, fullRange, text)
     await vscode.workspace.applyEdit(edit)
+  }
+
+  /** Resolve a `[[wikilink]]` target relative to the document and open it. */
+  private async openWikilink(document: vscode.TextDocument, target: string): Promise<void> {
+    const dir = path.dirname(document.uri.fsPath)
+    const candidates = [target]
+    if (!/\.[a-z0-9]+$/i.test(target)) candidates.push(`${target}.md`, `${target}.markdown`)
+    for (const relative of candidates) {
+      const uri = vscode.Uri.file(path.resolve(dir, relative))
+      try {
+        await vscode.workspace.fs.stat(uri)
+        await vscode.commands.executeCommand('vscode.open', uri)
+        return
+      } catch {
+        // try the next candidate
+      }
+    }
+    void vscode.window.showWarningMessage(`MDForge: wikilink target not found: ${target}`)
   }
 
   private getHtml(webview: vscode.Webview): string {
