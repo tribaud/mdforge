@@ -120,14 +120,30 @@ function applyConfig(config: MdForgeConfig): void {
   document.body.classList.toggle('mdforge-inprogress', config.enableInProgress)
 }
 
+function revealHeading(index: number): void {
+  const headings = document.querySelectorAll(
+    '.milkdown .ProseMirror h1, .milkdown .ProseMirror h2, .milkdown .ProseMirror h3, .milkdown .ProseMirror h4, .milkdown .ProseMirror h5, .milkdown .ProseMirror h6'
+  )
+  const target = headings[index] as HTMLElement | undefined
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 window.addEventListener('message', (event) => {
-  const msg = event.data as { type: string; text?: string; config?: MdForgeConfig }
+  const msg = event.data as {
+    type: string
+    text?: string
+    config?: MdForgeConfig
+    index?: number
+  }
   switch (msg.type) {
     case 'setContent':
       if (typeof msg.text === 'string') void setContent(msg.text)
       break
     case 'config':
       if (msg.config) applyConfig(msg.config)
+      break
+    case 'revealHeading':
+      if (typeof msg.index === 'number') revealHeading(msg.index)
       break
   }
 })

@@ -4,12 +4,17 @@ import * as vscode from 'vscode'
 const VIEW_TYPE = 'mdforge.editor'
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new MdForgeEditorProvider(context)
+  const outline = new OutlineProvider()
+  const provider = new MdForgeEditorProvider(context, outline)
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(VIEW_TYPE, provider, {
       webviewOptions: { retainContextWhenHidden: true },
       supportsMultipleEditorsPerDocument: false
+    }),
+    vscode.window.registerTreeDataProvider('mdforge.outline', outline),
+    vscode.commands.registerCommand('mdforge.outline.reveal', (index: number) => {
+      outline.active?.webview.postMessage({ type: 'revealHeading', index })
     }),
     vscode.commands.registerCommand('mdforge.openEditor', async (uri?: vscode.Uri) => {
       const target = uri ?? vscode.window.activeTextEditor?.document.uri
@@ -29,10 +34,88 @@ export function activate(context: vscode.ExtensionContext): void {
   )
 }
 
+interface Heading {
+  level: number
+  text: string
+  index: number
+}
+
+/** Extract ATX headings from Markdown, ignoring fenced code blocks. */
+function parseHeadings(markdown: string): Heading[] {
+  const headings: Heading[] = []
+  let inFence = false
+  let fence = ''
+  let index = 0
+  for (const line of markdown.split('\n')) {
+    const fenceMatch = /^(\s*)(`{3,}|~{3,})/.exec(line)
+    if (fenceMatch) {
+      const marker = fenceMatch[2][0]
+      if (!inFence) {
+        inFence = true
+        fence = marker
+      } else if (marker === fence) {
+        inFence = false
+      }
+      continue
+    }
+    if (inFence) continue
+    const match = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line)
+    if (match) {
+      headings.push({ level: match[1].length, text: match[2].trim(), index: index++ })
+    }
+  }
+  return headings
+}
+
+/** Tree view listing the active MDForge document's headings. */
+class OutlineProvider implements vscode.TreeDataProvider<Heading> {
+  private readonly emitter = new vscode.EventEmitter<void>()
+  public readonly onDidChangeTreeData = this.emitter.event
+  public active: { document: vscode.TextDocument; webview: vscode.Webview } | undefined
+
+  public setActive(document: vscode.TextDocument, webview: vscode.Webview): void {
+    this.active = { document, webview }
+    void vscode.commands.executeCommand('setContext', 'mdforge.active', true)
+    this.emitter.fire()
+  }
+
+  public clear(document: vscode.TextDocument): void {
+    if (this.active?.document.uri.toString() !== document.uri.toString()) return
+    this.active = undefined
+    void vscode.commands.executeCommand('setContext', 'mdforge.active', false)
+    this.emitter.fire()
+  }
+
+  public refresh(): void {
+    this.emitter.fire()
+  }
+
+  public getTreeItem(heading: Heading): vscode.TreeItem {
+    const item = new vscode.TreeItem(
+      `${' '.repeat(heading.level - 1)}${heading.text || 'Untitled'}`
+    )
+    item.tooltip = heading.text
+    item.command = {
+      command: 'mdforge.outline.reveal',
+      title: 'Reveal heading',
+      arguments: [heading.index]
+    }
+    return item
+  }
+
+  public getChildren(): Heading[] {
+    if (!this.active) return []
+    return parseHeadings(this.active.document.getText())
+  }
+}
+
 export function deactivate(): void {}
 
 class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
-  public constructor(private readonly context: vscode.ExtensionContext) {}
+  public constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly outline: OutlineProvider
+  ) {}
 
   public async resolveCustomTextEditor(
     document: vscode.TextDocument,
@@ -69,10 +152,20 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
 
     const changeSubscription = vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.uri.toString() !== document.uri.toString()) return
+      // Keep the outline in sync with heading edits (even our own round-trips).
+      if (this.outline.active?.document.uri.toString() === document.uri.toString()) {
+        this.outline.refresh()
+      }
       // Ignore the change we caused ourselves when writing the webview's edit back.
       if (event.document.getText() === syncedText) return
       syncedText = event.document.getText()
       postDocument()
+    })
+
+    // Track which MDForge editor is active so the outline follows it.
+    if (webviewPanel.active) this.outline.setActive(document, webview)
+    const viewStateSubscription = webviewPanel.onDidChangeViewState(() => {
+      if (webviewPanel.active) this.outline.setActive(document, webview)
     })
 
     const configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -100,6 +193,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel.onDidDispose(() => {
       changeSubscription.dispose()
       configSubscription.dispose()
+      viewStateSubscription.dispose()
+      this.outline.clear(document)
     })
   }
 
