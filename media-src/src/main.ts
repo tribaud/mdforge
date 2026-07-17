@@ -6,11 +6,11 @@ import { history } from '@milkdown/plugin-history'
 import { clipboard } from '@milkdown/plugin-clipboard'
 import { math } from '@milkdown/plugin-math'
 import { diagram } from '@milkdown/plugin-diagram'
-import { prism } from '@milkdown/plugin-prism'
 import { inProgressTask } from './inprogress-task'
 import { nodeViews } from './views'
 import { slash, slashPluginView } from './slash'
 import { githubAlert } from './github-alerts'
+import { getHighlighter, createShikiPlugin } from './shiki-highlight'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
 
@@ -51,7 +51,7 @@ let applyingRemote = false
 
 async function createEditor(initial: string): Promise<void> {
   currentText = initial
-  editor = await Editor.make()
+  let builder = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, root)
       ctx.set(defaultValueCtx, initial)
@@ -71,11 +71,18 @@ async function createEditor(initial: string): Promise<void> {
     .use(clipboard)
     .use(math)
     .use(diagram)
-    .use(prism)
     .use(nodeViews)
     .use(slash)
     .use(githubAlert)
-    .create()
+
+  // Syntax highlighting (Shiki). Non-fatal if it fails to initialize.
+  try {
+    builder = builder.use(createShikiPlugin(await getHighlighter()))
+  } catch (error) {
+    console.error('[MDForge] Shiki highlighter failed to initialize', error)
+  }
+
+  editor = await builder.create()
 }
 
 /**
