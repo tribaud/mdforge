@@ -17,6 +17,13 @@ and a [link](https://github.com/tribaud/mdforge).
 - [x] Done
 - [ ] Click a checkbox to cycle: empty -> in progress -> done
 
+## Footnotes
+
+Here is a statement that needs a source.[^1] And another one.[^note]
+
+[^1]: The first footnote definition.
+[^note]: Footnotes can use named labels too.
+
 ## GitHub alerts
 
 > [!NOTE]
