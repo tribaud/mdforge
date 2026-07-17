@@ -139,11 +139,26 @@ body.mdforge-width-full .milkdown .ProseMirror {
 
 /* GitHub-style alerts */
 .milkdown .ProseMirror blockquote.mdforge-alert {
+  position: relative;
   padding: 8px 1em;
   border-radius: 6px;
   color: var(--gh-fg);
   border-left: 0.25em solid var(--alert-color);
   background: color-mix(in srgb, var(--alert-color) 8%, transparent);
+}
+.milkdown .ProseMirror blockquote.mdforge-alert .mdforge-alert-select {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 1px 4px;
+  border: 1px solid var(--alert-color);
+  border-radius: 5px;
+  background: var(--gh-bg);
+  color: var(--alert-color);
+  font-family: var(--mdforge-font);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
 }
 .milkdown .ProseMirror blockquote.mdforge-alert > p:first-child {
   color: var(--alert-color);
@@ -163,6 +178,14 @@ body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-caution { --ale
 /* Frontmatter (discreet, click to edit) */
 .milkdown .ProseMirror .mdforge-frontmatter {
   margin: 0 0 16px;
+}
+.milkdown .ProseMirror .mdforge-frontmatter-title {
+  margin: 0 0 8px;
+  padding-bottom: 0.3em;
+  font-size: 2em;
+  font-weight: 600;
+  line-height: 1.25;
+  border-bottom: 1px solid var(--gh-border);
 }
 .milkdown .ProseMirror .mdforge-frontmatter-bar {
   display: inline-flex;

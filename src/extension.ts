@@ -67,8 +67,26 @@ function parseHeadings(markdown: string): Heading[] {
   return headings
 }
 
-/** Tree view listing the active MDForge document's headings. */
-class OutlineProvider implements vscode.TreeDataProvider<Heading> {
+interface HeadingNode extends Heading {
+  children: HeadingNode[]
+}
+
+/** Nest a flat heading list into a tree by heading level. */
+function buildHeadingTree(headings: Heading[]): HeadingNode[] {
+  const roots: HeadingNode[] = []
+  const stack: HeadingNode[] = []
+  for (const heading of headings) {
+    const node: HeadingNode = { ...heading, children: [] }
+    while (stack.length && stack[stack.length - 1].level >= node.level) stack.pop()
+    if (stack.length) stack[stack.length - 1].children.push(node)
+    else roots.push(node)
+    stack.push(node)
+  }
+  return roots
+}
+
+/** Collapsible tree view listing the active MDForge document's headings. */
+class OutlineProvider implements vscode.TreeDataProvider<HeadingNode> {
   private readonly emitter = new vscode.EventEmitter<void>()
   public readonly onDidChangeTreeData = this.emitter.event
   public active: { document: vscode.TextDocument; webview: vscode.Webview } | undefined
@@ -90,22 +108,26 @@ class OutlineProvider implements vscode.TreeDataProvider<Heading> {
     this.emitter.fire()
   }
 
-  public getTreeItem(heading: Heading): vscode.TreeItem {
+  public getTreeItem(node: HeadingNode): vscode.TreeItem {
     const item = new vscode.TreeItem(
-      `${' '.repeat(heading.level - 1)}${heading.text || 'Untitled'}`
+      node.text || "Untitled",
+      node.children.length > 0
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.None
     )
-    item.tooltip = heading.text
+    item.tooltip = `H${node.level}: ${node.text}`
     item.command = {
-      command: 'mdforge.outline.reveal',
-      title: 'Reveal heading',
-      arguments: [heading.index]
+      command: "mdforge.outline.reveal",
+      title: "Reveal heading",
+      arguments: [node.index]
     }
     return item
   }
 
-  public getChildren(): Heading[] {
+  public getChildren(element?: HeadingNode): HeadingNode[] {
+    if (element) return element.children
     if (!this.active) return []
-    return parseHeadings(this.active.document.getText())
+    return buildHeadingTree(parseHeadings(this.active.document.getText()))
   }
 }
 
