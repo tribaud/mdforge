@@ -97,7 +97,17 @@ const ENTRIES: Entry[] = [
     },
     active: (s) => ancestorActive(s, 'blockquote')
   },
-  { label: '•', title: 'Bullet list', shortcut: 'Mod-Alt-8', run: () => run(wrapInBulletListCommand), active: (s) => ancestorActive(s, 'bullet_list') }
+  {
+    label: '•',
+    title: 'Bullet list',
+    shortcut: 'Mod-Alt-8',
+    // Toggle: lift out of the list when already in one.
+    run: (view) => {
+      if (ancestorActive(view.state, 'bullet_list')) lift(view.state, view.dispatch)
+      else run(wrapInBulletListCommand)
+    },
+    active: (s) => ancestorActive(s, 'bullet_list')
+  }
 ]
 
 class ToolbarView {
