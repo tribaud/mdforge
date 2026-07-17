@@ -10,6 +10,7 @@ import { prism } from '@milkdown/plugin-prism'
 import { inProgressTask } from './inprogress-task'
 import { nodeViews } from './views'
 import { slash, slashPluginView } from './slash'
+import { githubAlert } from './github-alerts'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
 
@@ -73,6 +74,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(prism)
     .use(nodeViews)
     .use(slash)
+    .use(githubAlert)
     .create()
 }
 
