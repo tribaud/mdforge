@@ -27,7 +27,12 @@ Run any `npm install` after pulling a change that touches `package.json`.
 
 ## Merge workflow (required)
 
-Before merging any feature branch into `main`:
+Each feature is a **short-lived branch created from the current `main` tip**
+that contains **only that feature's commits**. This keeps every merge a small,
+self-contained bubble. Do NOT merge points along one long shared linear
+branch — that produces a tangled, crossing graph.
+
+Before merging a feature branch into `main`:
 
 1. **Rebase onto the latest `main`** so branches don't cross
    (`git fetch origin && git rebase origin/main`).
@@ -36,5 +41,8 @@ Before merging any feature branch into `main`:
 3. **Merge with `--no-ff`** (a real merge commit) once the review is clean and
    the feature has been verified in the Extension Development Host (F5). Never
    fast-forward: the merge commit groups the feature's commits together.
+
+The result should be a linear `main` spine where each feature hangs off as one
+clean merge bubble.
 
 Feature work happens on branches; `main` stays releasable.
