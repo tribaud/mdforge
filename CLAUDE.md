@@ -27,22 +27,24 @@ Run any `npm install` after pulling a change that touches `package.json`.
 
 ## Merge workflow (required)
 
-Each feature is a **short-lived branch created from the current `main` tip**
-that contains **only that feature's commits**. This keeps every merge a small,
-self-contained bubble. Do NOT merge points along one long shared linear
-branch — that produces a tangled, crossing graph.
+Branch granularity is flexible: one feature per branch, several features in one
+branch, or several branches in parallel — all fine. The one rule that keeps the
+history clean is to **rebase the branch's commits onto the latest `main` right
+before merging**.
 
-Before merging a feature branch into `main`:
+Before merging a branch into `main`:
 
-1. **Rebase onto the latest `main`** so branches don't cross
-   (`git fetch origin && git rebase origin/main`).
+1. **Rebase onto the latest `main`** (`git fetch origin && git rebase
+   origin/main`) so the branch's commits sit directly on top of `main` and no
+   lines cross.
 2. **Run a code review of the branch diff** (the `code-review` skill /
    `/code-review`) and address the findings.
 3. **Merge with `--no-ff`** (a real merge commit) once the review is clean and
-   the feature has been verified in the Extension Development Host (F5). Never
-   fast-forward: the merge commit groups the feature's commits together.
+   the work has been verified in the Extension Development Host (F5). Never
+   fast-forward: the merge commit groups the branch's commits together.
 
-The result should be a linear `main` spine where each feature hangs off as one
-clean merge bubble.
+The result is a linear `main` spine where each branch hangs off as one clean
+merge bubble. (Do NOT create merge commits by merging successive points of a
+single shared linear chain — that is what tangles the graph.)
 
 Feature work happens on branches; `main` stays releasable.
