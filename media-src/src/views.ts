@@ -12,6 +12,7 @@ import { mathBlockSchema, mathInlineSchema } from '@milkdown/plugin-math'
 import { $view } from '@milkdown/utils'
 import mermaid from 'mermaid'
 import katex from 'katex'
+import { highlightMermaidInto } from './mermaid-highlight'
 
 let mermaidCounter = 0
 let mermaidReady = false
@@ -36,14 +37,31 @@ export const diagramNodeView = $view(diagramSchema.node, () => {
     dom.className = 'mdforge-mermaid'
     const preview = document.createElement('div')
     preview.className = 'mdforge-mermaid-preview'
+
+    // Syntax-highlighted source editor: a transparent textarea over a
+    // highlighted <pre> layer (kept in sync).
+    const editorWrap = document.createElement('div')
+    editorWrap.className = 'mdforge-code-editor'
+    editorWrap.style.display = 'none'
+    const highlight = document.createElement('pre')
+    highlight.className = 'mdforge-code-highlight'
+    highlight.setAttribute('aria-hidden', 'true')
+    const highlightCode = document.createElement('code')
+    highlight.appendChild(highlightCode)
     const source = document.createElement('textarea')
-    source.className = 'mdforge-mermaid-source'
+    source.className = 'mdforge-code-input'
     source.spellcheck = false
-    source.style.display = 'none'
-    dom.append(preview, source)
+    editorWrap.append(highlight, source)
+    dom.append(preview, editorWrap)
 
     let currentValue: string = initialNode.attrs.value ?? ''
     let editing = false
+
+    const syncHighlight = (): void => {
+      highlightMermaidInto(highlightCode, source.value)
+      highlight.scrollTop = source.scrollTop
+      highlight.scrollLeft = source.scrollLeft
+    }
 
     const renderMermaid = async (code: string): Promise<void> => {
       ensureMermaid()
@@ -66,10 +84,11 @@ export const diagramNodeView = $view(diagramSchema.node, () => {
 
     const setEditing = (on: boolean): void => {
       editing = on
-      source.style.display = on ? 'block' : 'none'
+      editorWrap.style.display = on ? 'block' : 'none'
       preview.style.display = on ? 'none' : 'block'
       if (on) {
         source.value = currentValue
+        syncHighlight()
         source.focus()
       }
     }
@@ -88,6 +107,11 @@ export const diagramNodeView = $view(diagramSchema.node, () => {
     }
 
     preview.addEventListener('click', () => setEditing(true))
+    source.addEventListener('input', syncHighlight)
+    source.addEventListener('scroll', () => {
+      highlight.scrollTop = source.scrollTop
+      highlight.scrollLeft = source.scrollLeft
+    })
     source.addEventListener('blur', commit)
     source.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
