@@ -19,8 +19,22 @@ import {
 import { toggleStrikethroughCommand } from '@milkdown/preset-gfm'
 import { tooltipFactory, TooltipProvider } from '@milkdown/plugin-tooltip'
 import { TextSelection } from '@milkdown/prose/state'
+import { lift } from '@milkdown/prose/commands'
 
 export const toolbar = tooltipFactory('mdforge-toolbar')
+
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+
+/** Render a Milkdown "Mod-Alt-x" shortcut for the current platform. */
+function formatShortcut(shortcut: string): string {
+  const parts = shortcut.split('-').map((part) => {
+    if (part === 'Mod') return isMac ? '⌘' : 'Ctrl'
+    if (part === 'Alt') return isMac ? '⌥' : 'Alt'
+    if (part === 'Shift') return isMac ? '⇧' : 'Shift'
+    return part.toUpperCase()
+  })
+  return parts.join(isMac ? '' : '+')
+}
 
 function run(command: any, payload?: unknown): void {
   command?.run?.(payload)
@@ -54,25 +68,36 @@ function ancestorActive(state: any, name: string): boolean {
 interface Btn {
   label: string
   title: string
-  run: () => void
+  shortcut?: string
+  run: (view: any) => void
   active?: (state: any) => boolean
 }
 
 type Entry = Btn | 'separator'
 
 const ENTRIES: Entry[] = [
-  { label: 'B', title: 'Bold', run: () => run(toggleStrongCommand), active: (s) => markActive(s, 'strong') },
-  { label: 'I', title: 'Italic', run: () => run(toggleEmphasisCommand), active: (s) => markActive(s, 'emphasis') },
-  { label: 'S', title: 'Strikethrough', run: () => run(toggleStrikethroughCommand), active: (s) => markActive(s, 'strike_through') },
-  { label: '</>', title: 'Inline code', run: () => run(toggleInlineCodeCommand), active: (s) => markActive(s, 'inlineCode') },
+  { label: 'B', title: 'Bold', shortcut: 'Mod-b', run: () => run(toggleStrongCommand), active: (s) => markActive(s, 'strong') },
+  { label: 'I', title: 'Italic', shortcut: 'Mod-i', run: () => run(toggleEmphasisCommand), active: (s) => markActive(s, 'emphasis') },
+  { label: 'S', title: 'Strikethrough', shortcut: 'Mod-Alt-x', run: () => run(toggleStrikethroughCommand), active: (s) => markActive(s, 'strike_through') },
+  { label: '</>', title: 'Inline code', shortcut: 'Mod-e', run: () => run(toggleInlineCodeCommand), active: (s) => markActive(s, 'inlineCode') },
   'separator',
-  { label: 'P', title: 'Paragraph', run: () => run(turnIntoTextCommand), active: (s) => blockActive(s, 'paragraph') },
-  { label: 'H1', title: 'Heading 1', run: () => run(wrapInHeadingCommand, 1), active: (s) => headingActive(s, 1) },
-  { label: 'H2', title: 'Heading 2', run: () => run(wrapInHeadingCommand, 2), active: (s) => headingActive(s, 2) },
-  { label: 'H3', title: 'Heading 3', run: () => run(wrapInHeadingCommand, 3), active: (s) => headingActive(s, 3) },
+  { label: 'P', title: 'Paragraph', shortcut: 'Mod-Alt-0', run: () => run(turnIntoTextCommand), active: (s) => blockActive(s, 'paragraph') },
+  { label: 'H1', title: 'Heading 1', shortcut: 'Mod-Alt-1', run: () => run(wrapInHeadingCommand, 1), active: (s) => headingActive(s, 1) },
+  { label: 'H2', title: 'Heading 2', shortcut: 'Mod-Alt-2', run: () => run(wrapInHeadingCommand, 2), active: (s) => headingActive(s, 2) },
+  { label: 'H3', title: 'Heading 3', shortcut: 'Mod-Alt-3', run: () => run(wrapInHeadingCommand, 3), active: (s) => headingActive(s, 3) },
   'separator',
-  { label: '❝', title: 'Quote', run: () => run(wrapInBlockquoteCommand), active: (s) => ancestorActive(s, 'blockquote') },
-  { label: '•', title: 'Bullet list', run: () => run(wrapInBulletListCommand), active: (s) => ancestorActive(s, 'bullet_list') }
+  {
+    label: '❝',
+    title: 'Quote',
+    shortcut: 'Mod-Shift-b',
+    // Toggle: lift out of the blockquote when already inside one.
+    run: (view) => {
+      if (ancestorActive(view.state, 'blockquote')) lift(view.state, view.dispatch)
+      else run(wrapInBlockquoteCommand)
+    },
+    active: (s) => ancestorActive(s, 'blockquote')
+  },
+  { label: '•', title: 'Bullet list', shortcut: 'Mod-Alt-8', run: () => run(wrapInBulletListCommand), active: (s) => ancestorActive(s, 'bullet_list') }
 ]
 
 class ToolbarView {
@@ -97,10 +122,10 @@ class ToolbarView {
       el.className = 'mdforge-toolbar-btn'
       el.type = 'button'
       el.textContent = entry.label
-      el.title = entry.title
+      el.title = entry.shortcut ? `${entry.title} (${formatShortcut(entry.shortcut)})` : entry.title
       el.addEventListener('mousedown', (event) => {
         event.preventDefault()
-        entry.run()
+        entry.run(this.view)
         this.refresh(this.view.state)
       })
       this.content.appendChild(el)
