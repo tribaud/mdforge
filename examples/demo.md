@@ -9,6 +9,24 @@ tags: [markdown, wysiwyg]
 A quick document to exercise MDForge features. Open it with **MDForge**
 (right-click → *Open with MDForge*).
 
+## Nested sections (outline demo)
+
+Use the **MDForge Outline** panel to see this collapse into a tree.
+
+### Getting started
+
+#### Requirements
+
+Some text under a level-4 heading.
+
+#### Installation
+
+More text.
+
+### Configuration
+
+Text under another level-3 heading.
+
 ## Text
 
 Normal paragraph with **bold**, *italic*, ~~strikethrough~~, `inline code`,
