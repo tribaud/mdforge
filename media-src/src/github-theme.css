@@ -160,6 +160,35 @@ body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-important { --a
 body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-warning { --alert-color: #d29922; }
 body.vscode-dark .milkdown .ProseMirror blockquote.mdforge-alert-caution { --alert-color: #f85149; }
 
+/* Footnotes */
+.milkdown .ProseMirror sup[data-type='footnote_reference'] {
+  color: var(--gh-accent);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0 1px;
+}
+.milkdown .ProseMirror sup[data-type='footnote_reference']::before { content: '['; }
+.milkdown .ProseMirror sup[data-type='footnote_reference']::after { content: ']'; }
+.milkdown .ProseMirror dl[data-type='footnote_definition'] {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0;
+  padding-top: 8px;
+  font-size: 90%;
+  color: var(--gh-muted);
+}
+.milkdown .ProseMirror dl[data-type='footnote_definition'] > dt {
+  font-weight: 600;
+  color: var(--gh-accent);
+  min-width: 1.5em;
+}
+.milkdown .ProseMirror dl[data-type='footnote_definition'] > dd {
+  margin: 0;
+}
+.milkdown .ProseMirror dl[data-type='footnote_definition'] > dd > p {
+  margin: 0 0 4px;
+}
+
 /* Lists */
 .milkdown .ProseMirror ul,
 .milkdown .ProseMirror ol {
