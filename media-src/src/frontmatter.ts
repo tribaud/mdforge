@@ -52,6 +52,11 @@ export const frontmatterView = $view(frontmatterSchema.node, () => {
     const dom = document.createElement('div')
     dom.className = 'mdforge-frontmatter'
 
+    // Show the YAML `title:` as an H1, like mark-sharp.
+    const titleEl = document.createElement('h1')
+    titleEl.className = 'mdforge-frontmatter-title'
+    titleEl.contentEditable = 'false'
+
     const bar = document.createElement('div')
     bar.className = 'mdforge-frontmatter-bar'
     bar.textContent = 'Frontmatter'
@@ -62,10 +67,17 @@ export const frontmatterView = $view(frontmatterSchema.node, () => {
     source.spellcheck = false
     source.style.display = 'none'
 
-    dom.append(bar, source)
+    dom.append(titleEl, bar, source)
 
     let current: string = initialNode.attrs.value ?? ''
     let editing = false
+
+    const renderTitle = (): void => {
+      const match = /^title:[ \t]*(.+?)[ \t]*$/m.exec(current)
+      const title = match ? match[1].replace(/^["']|["']$/g, '').trim() : ''
+      titleEl.textContent = title
+      titleEl.style.display = title ? '' : 'none'
+    }
 
     const setEditing = (on: boolean): void => {
       editing = on
@@ -102,11 +114,14 @@ export const frontmatterView = $view(frontmatterSchema.node, () => {
       }
     })
 
+    renderTitle()
+
     return {
       dom,
       update: (updatedNode: any) => {
         if (updatedNode.type.name !== 'frontmatter') return false
         current = updatedNode.attrs.value ?? ''
+        renderTitle()
         return true
       },
       stopEvent: () => editing,
