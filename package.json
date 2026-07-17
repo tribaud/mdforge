@@ -64,6 +64,11 @@
         "command": "mdforge.openWithTextEditor",
         "title": "MDForge: Reopen with Text Editor",
         "category": "MDForge"
+      },
+      {
+        "command": "mdforge.togglePresentation",
+        "title": "MDForge: Toggle Presentation Mode",
+        "category": "MDForge"
       }
     ],
     "views": {
@@ -97,6 +102,12 @@
         "mac": "cmd+shift+alt+m",
         "command": "mdforge.openEditor",
         "when": "editorTextFocus && editorLangId == markdown"
+      },
+      {
+        "key": "ctrl+shift+alt+p",
+        "mac": "cmd+shift+alt+p",
+        "command": "mdforge.togglePresentation",
+        "when": "mdforge.active"
       }
     ],
     "configuration": {
@@ -138,6 +149,7 @@
   "devDependencies": {
     "@milkdown/core": "^7.5.0",
     "@milkdown/ctx": "^7.5.0",
+    "@milkdown/plugin-block": "^7.21.3",
     "@milkdown/plugin-clipboard": "^7.5.0",
     "@milkdown/plugin-diagram": "^7.5.0",
     "@milkdown/plugin-history": "^7.5.0",

@@ -1,4 +1,4 @@
-import { Editor, rootCtx, defaultValueCtx } from '@milkdown/core'
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx } from '@milkdown/core'
 import { commonmark } from '@milkdown/preset-commonmark'
 import { gfm } from '@milkdown/preset-gfm'
 import { listener, listenerCtx } from '@milkdown/plugin-listener'
@@ -13,6 +13,8 @@ import { toolbar, toolbarPluginView } from './toolbar'
 import { githubAlert } from './github-alerts'
 import { footnoteJump } from './footnotes'
 import { frontmatter } from './frontmatter'
+import { block, blockView } from './block'
+import { wikilinks } from './wikilinks'
 import { shikiHighlight } from './shiki-highlight'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
@@ -51,6 +53,9 @@ let editor: Editor | null = null
 let currentText = ''
 /** True while we are applying a change coming from the extension host. */
 let applyingRemote = false
+/** Read-only presentation mode. */
+let presentation = false
+let currentView: any = null
 
 async function createEditor(initial: string): Promise<void> {
   currentText = initial
@@ -66,6 +71,8 @@ async function createEditor(initial: string): Promise<void> {
       })
       ctx.set(slash.key, { view: slashPluginView })
       ctx.set(toolbar.key, { view: toolbarPluginView })
+      ctx.set(block.key, { view: blockView(ctx) })
+      ctx.update(editorViewOptionsCtx, (prev) => ({ ...prev, editable: () => !presentation }))
     })
     .use(commonmark)
     .use(gfm)
@@ -81,8 +88,12 @@ async function createEditor(initial: string): Promise<void> {
     .use(toolbar)
     .use(githubAlert)
     .use(footnoteJump)
+    .use(block)
+    .use(wikilinks((target) => vscode.postMessage({ type: 'openWikilink', target })))
     .use(shikiHighlight)
     .create()
+
+  currentView = editor.ctx.get(editorViewCtx)
 }
 
 /**
@@ -121,6 +132,14 @@ function revealHeading(index: number): void {
   if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+function togglePresentation(): void {
+  presentation = !presentation
+  document.body.classList.toggle('mdforge-presentation', presentation)
+  // Re-evaluate the editable prop (read from editorViewOptionsCtx).
+  if (currentView) currentView.dispatch(currentView.state.tr)
+  vscode.postMessage({ type: 'presentationState', enabled: presentation })
+}
+
 window.addEventListener('message', (event) => {
   const msg = event.data as {
     type: string
@@ -137,6 +156,9 @@ window.addEventListener('message', (event) => {
       break
     case 'revealHeading':
       if (typeof msg.index === 'number') revealHeading(msg.index)
+      break
+    case 'togglePresentation':
+      togglePresentation()
       break
   }
 })
