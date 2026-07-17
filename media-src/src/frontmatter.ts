@@ -9,7 +9,10 @@
 import remarkFrontmatter from 'remark-frontmatter'
 import { $nodeSchema, $remark, $view } from '@milkdown/utils'
 
-export const frontmatterRemark = $remark('mdforgeFrontmatter', () => remarkFrontmatter)
+// Pass the 'yaml' preset explicitly: Milkdown defaults a remark plugin's
+// options to `{}`, which remark-frontmatter rejects with
+// "Missing `type` in matter `{}`".
+export const frontmatterRemark = $remark('mdforgeFrontmatter', () => remarkFrontmatter, ['yaml'])
 
 export const frontmatterSchema = $nodeSchema('frontmatter', () => ({
   content: '',
