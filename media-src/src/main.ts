@@ -13,7 +13,7 @@ import { toolbar, toolbarPluginView } from './toolbar'
 import { githubAlert } from './github-alerts'
 import { footnoteJump } from './footnotes'
 import { frontmatter } from './frontmatter'
-import { getHighlighter, createShikiPlugin } from './shiki-highlight'
+import { shikiHighlight } from './shiki-highlight'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
 
@@ -54,7 +54,7 @@ let applyingRemote = false
 
 async function createEditor(initial: string): Promise<void> {
   currentText = initial
-  let builder = Editor.make()
+  editor = await Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, root)
       ctx.set(defaultValueCtx, initial)
@@ -81,15 +81,8 @@ async function createEditor(initial: string): Promise<void> {
     .use(toolbar)
     .use(githubAlert)
     .use(footnoteJump)
-
-  // Syntax highlighting (Shiki). Non-fatal if it fails to initialize.
-  try {
-    builder = builder.use(createShikiPlugin(await getHighlighter()))
-  } catch (error) {
-    console.error('[MDForge] Shiki highlighter failed to initialize', error)
-  }
-
-  editor = await builder.create()
+    .use(shikiHighlight)
+    .create()
 }
 
 /**

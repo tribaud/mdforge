@@ -394,67 +394,6 @@ body.vscode-dark {
   margin: 0;
 }
 
-/* Syntax highlighting (Prism tokens) — GitHub palette */
-:root {
-  --gh-tok-comment: #6e7781;
-  --gh-tok-keyword: #cf222e;
-  --gh-tok-string: #0a3069;
-  --gh-tok-function: #8250df;
-  --gh-tok-constant: #0550ae;
-  --gh-tok-variable: #953800;
-  --gh-tok-entity: #116329;
-}
-body.vscode-dark {
-  --gh-tok-comment: #8b949e;
-  --gh-tok-keyword: #ff7b72;
-  --gh-tok-string: #a5d6ff;
-  --gh-tok-function: #d2a8ff;
-  --gh-tok-constant: #79c0ff;
-  --gh-tok-variable: #ffa657;
-  --gh-tok-entity: #7ee787;
-}
-.milkdown .ProseMirror .token.comment,
-.milkdown .ProseMirror .token.prolog,
-.milkdown .ProseMirror .token.doctype,
-.milkdown .ProseMirror .token.cdata {
-  color: var(--gh-tok-comment);
-  font-style: italic;
-}
-.milkdown .ProseMirror .token.keyword,
-.milkdown .ProseMirror .token.rule,
-.milkdown .ProseMirror .token.important,
-.milkdown .ProseMirror .token.atrule {
-  color: var(--gh-tok-keyword);
-}
-.milkdown .ProseMirror .token.string,
-.milkdown .ProseMirror .token.char,
-.milkdown .ProseMirror .token.attr-value,
-.milkdown .ProseMirror .token.regex {
-  color: var(--gh-tok-string);
-}
-.milkdown .ProseMirror .token.function,
-.milkdown .ProseMirror .token.class-name,
-.milkdown .ProseMirror .token.title {
-  color: var(--gh-tok-function);
-}
-.milkdown .ProseMirror .token.number,
-.milkdown .ProseMirror .token.boolean,
-.milkdown .ProseMirror .token.constant,
-.milkdown .ProseMirror .token.symbol {
-  color: var(--gh-tok-constant);
-}
-.milkdown .ProseMirror .token.tag,
-.milkdown .ProseMirror .token.selector,
-.milkdown .ProseMirror .token.property,
-.milkdown .ProseMirror .token.attr-name {
-  color: var(--gh-tok-entity);
-}
-.milkdown .ProseMirror .token.variable,
-.milkdown .ProseMirror .token.builtin,
-.milkdown .ProseMirror .token.operator {
-  color: var(--gh-tok-variable);
-}
-
 /* Block math (KaTeX) */
 .milkdown .ProseMirror .mdforge-math {
   margin: 0 0 16px;
