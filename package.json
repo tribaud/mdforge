@@ -66,6 +66,15 @@
         "category": "MDForge"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "mdforge.outline",
+          "name": "MDForge Outline",
+          "when": "mdforge.active"
+        }
+      ]
+    },
     "menus": {
       "explorer/context": [
         {
