@@ -136,6 +136,7 @@
     "@milkdown/plugin-math": "^7.5.0",
     "@milkdown/plugin-prism": "^7.21.3",
     "@milkdown/plugin-slash": "^7.21.3",
+    "@milkdown/plugin-tooltip": "^7.21.3",
     "@milkdown/preset-commonmark": "^7.5.0",
     "@milkdown/preset-gfm": "^7.5.0",
     "@milkdown/prose": "^7.5.0",
