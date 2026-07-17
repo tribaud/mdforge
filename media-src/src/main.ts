@@ -10,6 +10,7 @@ import { inProgressTask } from './inprogress-task'
 import { nodeViews } from './views'
 import { slash, slashPluginView } from './slash'
 import { githubAlert } from './github-alerts'
+import { footnoteJump } from './footnotes'
 import { getHighlighter, createShikiPlugin } from './shiki-highlight'
 import 'katex/dist/katex.min.css'
 import './github-theme.css'
@@ -74,6 +75,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(nodeViews)
     .use(slash)
     .use(githubAlert)
+    .use(footnoteJump)
 
   // Syntax highlighting (Shiki). Non-fatal if it fails to initialize.
   try {
