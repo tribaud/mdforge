@@ -68,6 +68,62 @@ body.mdforge-width-full .milkdown .ProseMirror {
   max-width: none;
 }
 
+/* Top toolbar (document-level actions) */
+.mdforge-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--gh-bg);
+  border-bottom: 1px solid var(--gh-border);
+}
+.mdforge-topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 6px 48px;
+  box-sizing: border-box;
+}
+body.mdforge-width-full .mdforge-topbar-inner {
+  max-width: none;
+}
+.mdforge-topbar-spacer {
+  flex: 1 1 auto;
+}
+.mdforge-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gh-muted);
+  cursor: pointer;
+}
+.mdforge-topbar-btn:hover {
+  background: var(--gh-canvas-subtle);
+  color: var(--gh-fg);
+}
+.mdforge-topbar-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+/* Presentation mode hides the editing buttons but keeps the presentation
+   toggle reachable (highlighted, so it clearly acts as "exit presentation"). */
+body.mdforge-presentation .mdforge-topbar-btn {
+  display: none;
+}
+body.mdforge-presentation .mdforge-topbar-btn-present {
+  display: inline-flex;
+  background: var(--gh-accent);
+  color: #ffffff;
+}
+
 /* Headings */
 .milkdown .ProseMirror h1,
 .milkdown .ProseMirror h2,
@@ -75,9 +131,40 @@ body.mdforge-width-full .milkdown .ProseMirror {
 .milkdown .ProseMirror h4,
 .milkdown .ProseMirror h5,
 .milkdown .ProseMirror h6 {
+  position: relative;
   margin: 24px 0 16px;
   font-weight: 600;
   line-height: 1.25;
+}
+
+/* Heading folding: hover chevron + hidden folded blocks */
+.milkdown .ProseMirror .mdforge-fold-toggle {
+  position: absolute;
+  left: -1.1em;
+  top: 0.15em;
+  width: 1em;
+  height: 1em;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--gh-muted);
+  font-size: 0.7em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.milkdown .ProseMirror h1:hover .mdforge-fold-toggle,
+.milkdown .ProseMirror h2:hover .mdforge-fold-toggle,
+.milkdown .ProseMirror h3:hover .mdforge-fold-toggle,
+.milkdown .ProseMirror h4:hover .mdforge-fold-toggle,
+.milkdown .ProseMirror h5:hover .mdforge-fold-toggle,
+.milkdown .ProseMirror h6:hover .mdforge-fold-toggle,
+.milkdown .ProseMirror .mdforge-fold-toggle.folded {
+  opacity: 1;
+}
+.milkdown .ProseMirror .mdforge-fold-hidden {
+  display: none;
 }
 .milkdown .ProseMirror h1 {
   font-size: 2em;
@@ -371,6 +458,111 @@ body.vscode-dark {
   max-width: 100%;
   box-sizing: border-box;
   background: var(--gh-bg);
+}
+
+/* Image wrapper with a hover "edit" affordance */
+.milkdown .ProseMirror .mdforge-image-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.milkdown .ProseMirror .mdforge-image-edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  background: var(--gh-bg);
+  color: var(--gh-fg);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.milkdown .ProseMirror .mdforge-image-wrap:hover .mdforge-image-edit {
+  opacity: 0.9;
+}
+
+/* Modal dialog (image insert / edit) */
+.mdforge-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+.mdforge-modal {
+  width: min(460px, 90vw);
+  padding: 16px;
+  border: 1px solid var(--gh-border);
+  border-radius: 8px;
+  background: var(--gh-bg);
+  color: var(--gh-fg);
+  font-family: var(--mdforge-font);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.mdforge-modal-title {
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mdforge-modal-field {
+  display: block;
+  margin-bottom: 10px;
+}
+.mdforge-modal-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--gh-muted);
+}
+.mdforge-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  background: var(--gh-canvas-subtle);
+  color: var(--gh-fg);
+  font: inherit;
+  font-size: 13px;
+}
+.mdforge-modal-input:focus {
+  outline: none;
+  border-color: var(--gh-accent);
+}
+.mdforge-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.mdforge-modal-spacer {
+  flex: 1 1 auto;
+}
+.mdforge-modal-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  background: var(--gh-bg);
+  color: var(--gh-fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mdforge-modal-btn:hover {
+  background: var(--gh-canvas-subtle);
+}
+.mdforge-modal-btn-primary {
+  border-color: var(--gh-accent);
+  background: var(--gh-accent);
+  color: #ffffff;
 }
 
 /* Mermaid diagrams */
