@@ -25,7 +25,7 @@
 - [x] Ouvrir `.md` / `.markdown` dans l'éditeur WYSIWYG (custom editor + commande + menu contextuel + raccourci)
 - [x] Synchro bidirectionnelle avec le fichier et l'éditeur texte VS Code
 - [x] Titres H1–H6, gras, italique, barré, citations
-- [~] Listes ordonnées / non ordonnées, liens, images, règles horizontales *(rendu OK ; UI d'insertion d'images pas encore)*
+- [x] Listes ordonnées / non ordonnées, liens, images, règles horizontales *(insertion d'images : coller / glisser / parcourir + popup d'édition chemin & alt)*
 - [x] Blocs de code avec coloration selon le langage *(Shiki, thèmes GitHub)*
 - [x] Tables GFM (rendu + édition)
 - [x] **Task lists cliquables** `[ ]` / `[x]`
@@ -39,15 +39,17 @@
 - [x] GitHub Alerts `[!NOTE]`/`[!TIP]`/`[!IMPORTANT]`/`[!WARNING]`/`[!CAUTION]` + **menu de type** sur tout blockquote
 - [x] **Barre d'outils de sélection** (gras/italique/barré/code + P/H1-H3/quote/liste, toggles, raccourcis en tooltip)
 - [x] Panneau Outline (arborescence **repliable**)
-- [~] En-têtes repliables *(l'outline est repliable ; le pliage in-document ne l'est pas)*
+- [x] En-têtes repliables *(outline repliable + pliage in-document via chevron)*
 - [x] Notes de bas de page (footnotes) *(clic référence → définition)*
 - [x] Frontmatter (barre discrète + édition YAML, `title` → H1)
-- [~] Réglages : police, taille, largeur de page *(faits)* ; thème Mermaid *(auto selon VS Code, pas de réglage dédié)*
+- [x] Réglages : police, taille, largeur de page ; **thème Mermaid dédié** (auto / default / dark / neutral / forest) ; images (dossier, nommage, hash, style de lien)
 
 ### P2 — Confort / avancé
 - [x] Wikilinks `[[...]]` *(cliquables ; brackets encore visibles en édition)*
 - [x] Mode présentation / lecture seule *(commande + barre d'état + raccourci)*
 - [x] Blocs déplaçables (drag handle)
+- [x] Barre d'outils supérieure (insérer/éditer image, localiser les assets, renommer la note, présentation, réglages)
+- [x] Assets façon vault : nommage `NoteName-<hash>`, localisation des images distantes, réconciliation des noms au renommage
 - [ ] Texte droite-à-gauche (RTL)
 - [ ] CSS personnalisé utilisateur
 - [ ] Export / copie HTML
