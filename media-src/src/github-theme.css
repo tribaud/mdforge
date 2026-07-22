@@ -133,9 +133,16 @@ body.mdforge-width-full .milkdown .ProseMirror {
 .milkdown .ProseMirror blockquote {
   position: relative;
   margin: 0 0 16px;
-  padding: 0 1em;
+  padding: 8px 1em;
+  border-radius: 6px;
   color: var(--gh-muted);
   border-left: 0.25em solid var(--gh-border);
+  background: var(--gh-canvas-subtle);
+}
+/* Let the blockquote padding control the vertical rhythm so the type
+   dropdown sits inside the block instead of overflowing it. */
+.milkdown .ProseMirror blockquote > :last-child {
+  margin-bottom: 0;
 }
 
 /* Type dropdown shown on every blockquote (empty by default). */
@@ -155,11 +162,14 @@ body.mdforge-width-full .milkdown .ProseMirror {
   opacity: 0.85;
 }
 .milkdown .ProseMirror blockquote .mdforge-alert-select.mdforge-alert-select-empty {
-  opacity: 0;
+  /* Coherent gray pill matching the gray blockquote (like a note's blue). */
+  border-color: var(--gh-muted);
+  color: var(--gh-muted);
+  opacity: 0.85;
 }
 .milkdown .ProseMirror blockquote:hover .mdforge-alert-select.mdforge-alert-select-empty,
 .milkdown .ProseMirror blockquote .mdforge-alert-select.mdforge-alert-select-empty:focus {
-  opacity: 0.7;
+  opacity: 1;
 }
 .milkdown .ProseMirror .mdforge-alert-marker-hidden {
   display: none;
