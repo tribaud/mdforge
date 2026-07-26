@@ -17,6 +17,7 @@ import {
 import { insertTableCommand } from '@milkdown/preset-gfm'
 import { insertDiagramCommand } from '@milkdown/plugin-diagram'
 import { slashFactory, SlashProvider } from '@milkdown/plugin-slash'
+import { openInsertImageDialog } from './images'
 
 export const slash = slashFactory('mdforge-slash')
 
@@ -60,6 +61,7 @@ const ITEMS: SlashItem[] = [
   { title: 'Code block', hint: 'Fenced code with syntax highlight', keywords: ['code', 'pre', 'fence', 'snippet'], run: () => run(createCodeBlockCommand, '') },
   { title: 'Divider', hint: 'Horizontal rule', keywords: ['hr', 'rule', 'divider', 'separator'], run: () => run(insertHrCommand) },
   { title: 'Table', hint: 'Insert a table', keywords: ['table', 'grid'], run: () => run(insertTableCommand) },
+  { title: 'Image', hint: 'Insert an image (file or URL)', keywords: ['image', 'img', 'picture', 'photo'], run: (view) => openInsertImageDialog(view) },
   { title: 'Mermaid diagram', hint: 'Flowchart / diagram', keywords: ['mermaid', 'diagram', 'graph', 'flowchart'], run: () => run(insertDiagramCommand) }
 ]
 

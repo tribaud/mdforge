@@ -2,7 +2,7 @@
   "name": "mdforge",
   "displayName": "MDForge",
   "description": "Transform VS Code into a Typora-like WYSIWYG Markdown editor with GitHub-style rendering, Mermaid diagrams and rich task lists.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "tribaud",
   "license": "MIT",
   "engines": {
@@ -133,6 +133,55 @@
           ],
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
+        },
+        "mdforge.images.folder": {
+          "type": "string",
+          "default": "assets",
+          "description": "Folder (relative to the note) where pasted/dropped/picked images are saved. Empty = next to the note."
+        },
+        "mdforge.images.naming": {
+          "type": "string",
+          "default": "${noteName}-${hash}",
+          "markdownDescription": "File name pattern for saved images. Tokens: `${noteName}` (note file name without extension), `${hash}` (content hash), `${originalName}` (original file name without extension). The default mirrors the vault convention `NoteName-<hash>.ext`."
+        },
+        "mdforge.images.hashLength": {
+          "type": "number",
+          "default": 8,
+          "minimum": 4,
+          "maximum": 32,
+          "description": "Number of hex characters of the content MD5 hash used in the image file name."
+        },
+        "mdforge.mermaid.theme": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "default",
+            "dark",
+            "neutral",
+            "forest"
+          ],
+          "default": "auto",
+          "markdownEnumDescriptions": [
+            "Follow the VS Code theme (dark editor → dark diagrams).",
+            "Mermaid 'default' theme (light).",
+            "Mermaid 'dark' theme.",
+            "Mermaid 'neutral' theme (grayscale, print-friendly).",
+            "Mermaid 'forest' theme (green)."
+          ],
+          "description": "Theme used to render Mermaid diagrams."
+        },
+        "mdforge.images.linkStyle": {
+          "type": "string",
+          "enum": [
+            "markdown",
+            "wikilink-embed"
+          ],
+          "default": "markdown",
+          "markdownEnumDescriptions": [
+            "Standard Markdown image link `![](assets/...)` (round-trips with the vault asset scripts).",
+            "Obsidian embed `![[assets/...]]` (inserted as literal text; not rendered as an image yet)."
+          ],
+          "description": "How an inserted image is written into the Markdown."
         }
       }
     }

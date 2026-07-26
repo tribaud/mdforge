@@ -16,18 +16,39 @@ import { highlightMermaidInto } from './mermaid-highlight'
 
 let mermaidCounter = 0
 let mermaidReady = false
+/** Configured Mermaid theme: 'auto' follows VS Code light/dark. */
+let mermaidTheme = 'auto'
+/** Re-render callbacks for every live diagram, so a theme change refreshes all. */
+const diagramRenderers = new Set<() => void>()
 
-/** Initialize Mermaid once, matching the current VS Code light/dark theme. */
+/** Resolve the effective Mermaid theme from the setting and the VS Code theme. */
+function effectiveMermaidTheme(): 'default' | 'dark' | 'neutral' | 'forest' {
+  if (mermaidTheme === 'auto') {
+    return document.body.classList.contains('vscode-dark') ? 'dark' : 'default'
+  }
+  return mermaidTheme as 'default' | 'dark' | 'neutral' | 'forest'
+}
+
+/** Initialize Mermaid once, using the configured (or auto) theme. */
 function ensureMermaid(): void {
   if (mermaidReady) return
-  const dark = document.body.classList.contains('vscode-dark')
   mermaid.initialize({
     startOnLoad: false,
-    theme: dark ? 'dark' : 'default',
+    theme: effectiveMermaidTheme(),
     securityLevel: 'loose',
     fontFamily: 'inherit'
   })
   mermaidReady = true
+}
+
+/** Apply a new Mermaid theme setting and re-render all diagrams in place. */
+export function setMermaidTheme(theme: string): void {
+  const next = theme || 'auto'
+  if (next === mermaidTheme) return
+  mermaidTheme = next
+  mermaidReady = false
+  ensureMermaid()
+  for (const rerender of diagramRenderers) rerender()
 }
 
 /** Renders Mermaid diagrams; click the diagram to edit its source. */
@@ -126,6 +147,12 @@ export const diagramNodeView = $view(diagramSchema.node, () => {
 
     void renderMermaid(currentValue)
 
+    // Re-render this diagram when the Mermaid theme setting changes.
+    const rerender = (): void => {
+      if (!editing) void renderMermaid(currentValue)
+    }
+    diagramRenderers.add(rerender)
+
     return {
       dom,
       update: (updatedNode: any) => {
@@ -136,7 +163,9 @@ export const diagramNodeView = $view(diagramSchema.node, () => {
       },
       stopEvent: () => editing,
       ignoreMutation: () => true,
-      destroy: () => {}
+      destroy: () => {
+        diagramRenderers.delete(rerender)
+      }
     }
   }
 })

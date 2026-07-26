@@ -1,13 +1,15 @@
 import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx } from '@milkdown/core'
 import { commonmark } from '@milkdown/preset-commonmark'
 import { gfm } from '@milkdown/preset-gfm'
+import { $prose } from '@milkdown/utils'
+import { gapCursor } from '@milkdown/prose/gapcursor'
 import { listener, listenerCtx } from '@milkdown/plugin-listener'
 import { history } from '@milkdown/plugin-history'
 import { clipboard } from '@milkdown/plugin-clipboard'
 import { math } from '@milkdown/plugin-math'
 import { diagram } from '@milkdown/plugin-diagram'
 import { inProgressTask } from './inprogress-task'
-import { nodeViews } from './views'
+import { nodeViews, setMermaidTheme } from './views'
 import { slash, slashPluginView } from './slash'
 import { toolbar, toolbarPluginView } from './toolbar'
 import { githubAlert } from './github-alerts'
@@ -16,7 +18,18 @@ import { frontmatter } from './frontmatter'
 import { block, blockView } from './block'
 import { wikilinks } from './wikilinks'
 import { shikiHighlight } from './shiki-highlight'
+import {
+  imagePaste,
+  imageNodeView,
+  openInsertImageDialog,
+  handleImageResponse,
+  setAssetsBaseUri,
+  setImagePost
+} from './images'
+import { createTopbar } from './topbar'
+import { headingFold } from './heading-fold'
 import 'katex/dist/katex.min.css'
+import 'prosemirror-gapcursor/style/gapcursor.css'
 import './github-theme.css'
 
 declare function acquireVsCodeApi(): {
@@ -29,10 +42,21 @@ interface MdForgeConfig {
   fontSize: number
   pageWidth: 'comfortable' | 'full'
   enableInProgress: boolean
+  mermaidTheme?: string
+  assetsBaseUri?: string
 }
 
 const vscode = acquireVsCodeApi()
 const root = document.getElementById('app') as HTMLElement
+
+// Route image bytes from paste/drop/picker to the extension host.
+setImagePost((message) => vscode.postMessage(message))
+
+// Gap cursor: lets you place the caret (and start typing) after a trailing
+// block that is not a paragraph — e.g. a code block, table or diagram at the
+// very end of the document. Non-destructive: the Markdown is untouched until
+// you actually type.
+const gapCursorPlugin = $prose(() => gapCursor())
 
 /** Turn a blank page into a visible error so failures are diagnosable. */
 function showError(error: unknown): void {
@@ -56,6 +80,18 @@ let applyingRemote = false
 /** Read-only presentation mode. */
 let presentation = false
 let currentView: any = null
+
+// Persistent top toolbar (document-level actions). Lives outside the Milkdown
+// root so it survives editor recreation on external changes.
+const topbar = createTopbar({
+  getView: () => currentView,
+  insertImage: (view) => openInsertImageDialog(view),
+  localizeAssets: () => vscode.postMessage({ type: 'localizeAssets' }),
+  renameNote: () => vscode.postMessage({ type: 'renameNote' }),
+  togglePresentation: () => togglePresentation(),
+  openSettings: () => vscode.postMessage({ type: 'openSettings' })
+})
+document.body.insertBefore(topbar, root)
 
 async function createEditor(initial: string): Promise<void> {
   currentText = initial
@@ -91,6 +127,10 @@ async function createEditor(initial: string): Promise<void> {
     .use(block)
     .use(wikilinks((target) => vscode.postMessage({ type: 'openWikilink', target })))
     .use(shikiHighlight)
+    .use(imagePaste)
+    .use(imageNodeView)
+    .use(gapCursorPlugin)
+    .use(headingFold)
     .create()
 
   currentView = editor.ctx.get(editorViewCtx)
@@ -122,6 +162,8 @@ function applyConfig(config: MdForgeConfig): void {
   document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
   document.body.classList.toggle('mdforge-inprogress', config.enableInProgress)
+  if (config.assetsBaseUri) setAssetsBaseUri(config.assetsBaseUri)
+  if (config.mermaidTheme) setMermaidTheme(config.mermaidTheme)
 }
 
 function revealHeading(index: number): void {
@@ -146,6 +188,11 @@ window.addEventListener('message', (event) => {
     text?: string
     config?: MdForgeConfig
     index?: number
+    id?: number
+    src?: string
+    alt?: string
+    linkStyle?: string
+    error?: string
   }
   switch (msg.type) {
     case 'setContent':
@@ -153,6 +200,9 @@ window.addEventListener('message', (event) => {
       break
     case 'config':
       if (msg.config) applyConfig(msg.config)
+      break
+    case 'imageInserted':
+      if (typeof msg.id === 'number') handleImageResponse(msg as { id: number })
       break
     case 'revealHeading':
       if (typeof msg.index === 'number') revealHeading(msg.index)

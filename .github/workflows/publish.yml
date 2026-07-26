@@ -1,0 +1,49 @@
+name: Publish
+
+# Publishes the extension to the VS Code Marketplace and Open VSX when a
+# version tag (e.g. v0.1.0) is pushed. The published version is derived from
+# the tag, so the tag is the single source of truth. Requires two secrets:
+#   VSCE_PAT — Azure DevOps PAT with "Marketplace > Manage" scope
+#   OVSX_PAT — Open VSX access token (optional; step is skipped when unset)
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Publishing version $VERSION (from tag $GITHUB_REF_NAME)"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - run: npm ci
+      - run: npm run build
+      - run: npx tsc -p media-src --noEmit
+
+      - name: Package
+        run: npx @vscode/vsce package --out mdforge.vsix
+
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish --packagePath mdforge.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      # Tolerate a version that already exists on Open VSX (e.g. published
+      # manually) so it never fails the job.
+      - name: Publish to Open VSX
+        if: ${{ env.OVSX_PAT != '' }}
+        continue-on-error: true
+        run: npx ovsx publish mdforge.vsix -p "$OVSX_PAT"

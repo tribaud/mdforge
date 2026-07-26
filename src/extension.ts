@@ -1,3 +1,4 @@
+import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
 
@@ -153,6 +154,78 @@ class OutlineProvider implements vscode.TreeDataProvider<HeadingNode> {
 
 export function deactivate(): void {}
 
+/** Pick a file extension for a saved image from its MIME type or source name. */
+function imageExtension(mime: string | undefined, name: string | undefined): string {
+  const byMime: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
+    'image/avif': 'avif',
+    'image/bmp': 'bmp'
+  }
+  if (mime && byMime[mime]) return byMime[mime]
+  const ext = name ? path.extname(name).replace('.', '').toLowerCase() : ''
+  return ext || 'png'
+}
+
+/** Strip characters illegal in file names while keeping the note-derived name. */
+function sanitizeFileName(value: string): string {
+  return value.replace(/[\\/:*?"<>|]/g, '').trim() || 'image'
+}
+
+/** Fetch a remote or decode an embedded (`data:`) image to bytes + extension. */
+async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; ext: string }> {
+  if (/^data:image\//i.test(url)) {
+    const match = /^data:(image\/[a-z0-9.+-]+);base64,(.*)$/i.exec(url)
+    if (!match) throw new Error('invalid data URI')
+    return { bytes: Buffer.from(match[2], 'base64'), ext: imageExtension(match[1], undefined) }
+  }
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+  const contentType = response.headers.get('content-type')?.split(';')[0]?.trim()
+  const ext = imageExtension(contentType, url.split(/[?#]/)[0])
+  return { bytes, ext }
+}
+
+/**
+ * Suggest a note file name that follows the vault convention: accents stripped,
+ * words PascalCased and dash-joined, truncated to 60 chars on a word boundary.
+ * Mirrors `note_renamer.py` (e.g. "O365 (Admin)" → "O365-Admin").
+ */
+function suggestNoteName(name: string): string {
+  let decoded = name
+  try {
+    decoded = decodeURIComponent(name)
+  } catch {
+    decoded = name.replace(/%20/gi, ' ')
+  }
+  const deaccented = decoded.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const words = deaccented
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
+
+  let result = ''
+  for (const word of words) {
+    const next = result ? `${result}-${word}` : word
+    if (next.length > 60) break
+    result = next
+  }
+  if (!result && words.length) result = words[0].slice(0, 60)
+  return result || 'Untitled'
+}
+
+/** Derive a base name (no extension, no query) from a remote image URL. */
+function remoteBaseName(url: string): string {
+  const clean = url.split(/[?#]/)[0]
+  const base = clean.substring(clean.lastIndexOf('/') + 1)
+  return path.basename(base, path.extname(base)) || 'image'
+}
+
 class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
   public constructor(
     private readonly context: vscode.ExtensionContext,
@@ -187,7 +260,11 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         config: {
           fontSize: config.get<number>('fontSize', 15),
           pageWidth: config.get<string>('pageWidth', 'comfortable'),
-          enableInProgress: config.get<boolean>('checkbox.enableInProgress', true)
+          enableInProgress: config.get<boolean>('checkbox.enableInProgress', true),
+          mermaidTheme: config.get<string>('mermaid.theme', 'auto'),
+          assetsBaseUri: webview
+            .asWebviewUri(vscode.Uri.file(path.dirname(document.uri.fsPath)))
+            .toString()
         }
       })
     }
@@ -215,7 +292,16 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     })
 
     webview.onDidReceiveMessage(
-      async (message: { type: string; text?: string; target?: string }) => {
+      async (message: {
+        type: string
+        text?: string
+        target?: string
+        id?: number
+        data?: string
+        mime?: string
+        name?: string
+        path?: string
+      }) => {
         switch (message.type) {
           case 'ready':
             postConfig()
@@ -229,6 +315,24 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           case 'openWikilink':
             if (message.target) await this.openWikilink(document, message.target)
+            break
+          case 'insertImage':
+            await this.insertImage(document, webview, message)
+            break
+          case 'importImagePath':
+            await this.importImagePath(document, webview, message)
+            break
+          case 'localizeAssets':
+            await this.localizeAssets(document)
+            break
+          case 'renameNote':
+            await this.renameNote(document)
+            break
+          case 'openSettings':
+            void vscode.commands.executeCommand(
+              'workbench.action.openSettings',
+              '@ext:tribaud.mdforge'
+            )
             break
           case 'error':
             console.error('[MDForge webview]', message.text)
@@ -254,6 +358,324 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     )
     edit.replace(document.uri, fullRange, text)
     await vscode.workspace.applyEdit(edit)
+  }
+
+  /**
+   * Write image bytes next to the note following the configured convention
+   * (folder + name pattern + content dedup) and return the note-relative link.
+   * Shared by paste/drop/pick insertion and the "localize remote images" action.
+   */
+  private async saveAsset(
+    document: vscode.TextDocument,
+    bytes: Buffer,
+    ext: string,
+    originalName: string
+  ): Promise<string> {
+    const { relPath, dirUri, targetUri } = this.assetTarget(document, bytes, ext, originalName)
+    // Dedup: reuse an existing file with identical content, else write it.
+    let reused = false
+    try {
+      const existing = await vscode.workspace.fs.readFile(targetUri)
+      if (Buffer.from(existing).equals(bytes)) reused = true
+    } catch {
+      // not present yet
+    }
+    if (!reused) {
+      await vscode.workspace.fs.createDirectory(dirUri)
+      await vscode.workspace.fs.writeFile(targetUri, bytes)
+    }
+    return relPath
+  }
+
+  /** Compute the convention-conforming target (name + location) for an asset. */
+  private assetTarget(
+    document: vscode.TextDocument,
+    bytes: Buffer,
+    ext: string,
+    originalName: string
+  ): { relPath: string; dirUri: vscode.Uri; targetUri: vscode.Uri; fileName: string } {
+    const config = vscode.workspace.getConfiguration('mdforge', document.uri)
+    const folder = (config.get<string>('images.folder', 'assets') ?? '').trim()
+    const naming = config.get<string>('images.naming', '${noteName}-${hash}')
+    const hashLength = Math.max(4, Math.min(32, config.get<number>('images.hashLength', 8)))
+
+    const hash = crypto.createHash('md5').update(bytes).digest('hex').slice(0, hashLength)
+    const noteName = path.basename(document.uri.fsPath).replace(/\.(md|markdown)$/i, '')
+    const base = naming
+      .replace(/\$\{noteName\}/g, noteName)
+      .replace(/\$\{originalName\}/g, originalName)
+      .replace(/\$\{hash\}/g, hash)
+    const fileName = `${sanitizeFileName(base)}.${ext}`
+
+    const noteDir = path.dirname(document.uri.fsPath)
+    const dirUri = folder ? vscode.Uri.file(path.join(noteDir, folder)) : vscode.Uri.file(noteDir)
+    const targetUri = vscode.Uri.joinPath(dirUri, fileName)
+    return { relPath: folder ? `${folder}/${fileName}` : fileName, dirUri, targetUri, fileName }
+  }
+
+  /**
+   * Rename every local asset referenced by the note to the convention name
+   * (`NoteName-<hash>.ext` in the assets folder) and rewrite the links. Content
+   * is unchanged, so only the note-derived name/location is corrected. Mirrors
+   * `asset_fixer.py`. Returns the number of assets moved. Remote/`data:` links
+   * are left to `localizeAssets`.
+   */
+  private async reconcileAssets(document: vscode.TextDocument): Promise<number> {
+    const text = document.getText()
+    const noteDir = path.dirname(document.uri.fsPath)
+    const findLinks = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
+
+    const sources = new Set<string>()
+    let match: RegExpExecArray | null
+    while ((match = findLinks.exec(text)) !== null) {
+      const src = match[1]
+      if (!/^(https?:|data:|blob:|file:|vscode-|\/)/i.test(src)) sources.add(src)
+    }
+    if (sources.size === 0) return 0
+
+    const moved = new Map<string, string>()
+    for (const src of sources) {
+      try {
+        const decoded = decodeURI(src)
+        const sourceUri = vscode.Uri.file(path.resolve(noteDir, decoded))
+        const bytes = Buffer.from(await vscode.workspace.fs.readFile(sourceUri))
+        const ext =
+          path.extname(sourceUri.fsPath).replace('.', '').toLowerCase() ||
+          imageExtension(undefined, sourceUri.fsPath)
+        const originalName = path.basename(sourceUri.fsPath, path.extname(sourceUri.fsPath))
+        const { relPath, dirUri, targetUri } = this.assetTarget(
+          document,
+          bytes,
+          ext,
+          originalName
+        )
+        if (src.replace(/^\.\//, '') === relPath) continue // already conforms
+        if (path.resolve(targetUri.fsPath) === path.resolve(sourceUri.fsPath)) continue
+
+        // Dedup: if the target already holds this content, drop the source.
+        let targetHasSame = false
+        try {
+          const existing = Buffer.from(await vscode.workspace.fs.readFile(targetUri))
+          targetHasSame = existing.equals(bytes)
+        } catch {
+          // target free
+        }
+        if (targetHasSame) {
+          await vscode.workspace.fs.delete(sourceUri)
+        } else {
+          await vscode.workspace.fs.createDirectory(dirUri)
+          await vscode.workspace.fs.rename(sourceUri, targetUri, { overwrite: false })
+        }
+        moved.set(src, relPath)
+      } catch {
+        // unreadable / missing → leave the link untouched
+      }
+    }
+
+    if (moved.size > 0) {
+      const newText = text.replace(
+        /(!\[[^\]]*\]\(\s*)([^)\s]+)((?:\s+"[^"]*")?\s*\))/g,
+        (whole, pre: string, url: string, post: string) => {
+          const rel = moved.get(url)
+          return rel ? `${pre}${rel}${post}` : whole
+        }
+      )
+      if (newText !== text) await this.writeDocument(document, newText)
+    }
+    return moved.size
+  }
+
+  /**
+   * Save an image sent from the webview next to the note, then post the relative
+   * link back so the webview can insert it at its saved position.
+   */
+  private async insertImage(
+    document: vscode.TextDocument,
+    webview: vscode.Webview,
+    message: { id?: number; data?: string; mime?: string; name?: string }
+  ): Promise<void> {
+    const id = message.id ?? 0
+    try {
+      if (!message.data) throw new Error('no image data received')
+      const linkStyle = vscode.workspace
+        .getConfiguration('mdforge', document.uri)
+        .get<string>('images.linkStyle', 'markdown')
+      const bytes = Buffer.from(message.data, 'base64')
+      const originalName = message.name
+        ? path.basename(message.name, path.extname(message.name))
+        : 'image'
+      const ext = imageExtension(message.mime, message.name)
+      const src = await this.saveAsset(document, bytes, ext, originalName)
+      void webview.postMessage({ type: 'imageInserted', id, src, alt: originalName, linkStyle })
+    } catch (error) {
+      void webview.postMessage({ type: 'imageInserted', id, error: String(error) })
+      void vscode.window.showErrorMessage(`MDForge: could not insert image — ${error}`)
+    }
+  }
+
+  /**
+   * Import an existing file (dragged from the Explorer / another app as a URI)
+   * into the assets folder and post the relative link back for insertion.
+   */
+  private async importImagePath(
+    document: vscode.TextDocument,
+    webview: vscode.Webview,
+    message: { id?: number; path?: string }
+  ): Promise<void> {
+    const id = message.id ?? 0
+    try {
+      if (!message.path) throw new Error('no path received')
+      const uri = /^[a-z][a-z0-9+.-]*:\/\//i.test(message.path)
+        ? vscode.Uri.parse(message.path)
+        : vscode.Uri.file(message.path)
+      const bytes = Buffer.from(await vscode.workspace.fs.readFile(uri))
+      const linkStyle = vscode.workspace
+        .getConfiguration('mdforge', document.uri)
+        .get<string>('images.linkStyle', 'markdown')
+      const originalName = path.basename(uri.fsPath, path.extname(uri.fsPath)) || 'image'
+      const ext = imageExtension(undefined, uri.fsPath)
+      const src = await this.saveAsset(document, bytes, ext, originalName)
+      void webview.postMessage({ type: 'imageInserted', id, src, alt: originalName, linkStyle })
+    } catch (error) {
+      void webview.postMessage({ type: 'imageInserted', id, error: String(error) })
+      void vscode.window.showErrorMessage(`MDForge: could not import image — ${error}`)
+    }
+  }
+
+  /**
+   * Download every remote (`http(s):`) or embedded (`data:`) image referenced by
+   * the note into the assets folder and rewrite the links to the local files.
+   * Mirrors the vault's `asset_fixer.py` remote-download behavior.
+   */
+  private async localizeAssets(document: vscode.TextDocument): Promise<void> {
+    const text = document.getText()
+    const imageLink = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
+    const urls = new Set<string>()
+    let match: RegExpExecArray | null
+    while ((match = imageLink.exec(text)) !== null) {
+      const url = match[1]
+      if (/^https?:/i.test(url) || /^data:image\//i.test(url)) urls.add(url)
+    }
+    if (urls.size === 0) {
+      // Nothing to download, but still conform any existing local asset names.
+      const conformed = await this.reconcileAssets(document)
+      void vscode.window.showInformationMessage(
+        conformed > 0
+          ? `MDForge: renamed ${conformed} asset(s) to match the convention.`
+          : 'MDForge: no remote images to localize and all asset names conform.'
+      )
+      return
+    }
+
+    const resolved = new Map<string, string>()
+    let failed = 0
+    for (const url of urls) {
+      try {
+        const { bytes, ext } = await fetchImageBytes(url)
+        const originalName = /^data:/i.test(url) ? 'image' : remoteBaseName(url)
+        resolved.set(url, await this.saveAsset(document, bytes, ext, originalName))
+      } catch {
+        failed += 1
+      }
+    }
+
+    const newText = text.replace(
+      /(!\[[^\]]*\]\(\s*)([^)\s]+)((?:\s+"[^"]*")?\s*\))/g,
+      (whole, pre: string, url: string, post: string) => {
+        const rel = resolved.get(url)
+        return rel ? `${pre}${rel}${post}` : whole
+      }
+    )
+    if (newText !== text) await this.writeDocument(document, newText)
+
+    // Also conform any pre-existing local asset names to the convention.
+    const renamed = await this.reconcileAssets(document)
+
+    const parts = [`localized ${resolved.size} image(s)`]
+    if (failed) parts.push(`${failed} failed (left as links)`)
+    if (renamed) parts.push(`renamed ${renamed} local asset(s)`)
+    void vscode.window.showInformationMessage(`MDForge: ${parts.join(', ')}.`)
+    // The document write triggers onDidChangeTextDocument → setContent, which
+    // refreshes the webview with the now-local (rendered) images.
+  }
+
+  /**
+   * Rename the note file via a native input box, offering a one-click suggestion
+   * that conforms to the vault convention (PascalCase-With-Dashes, ≤60 chars).
+   * The file extension is preserved; open editors follow the rename.
+   */
+  private async renameNote(document: vscode.TextDocument): Promise<void> {
+    const oldUri = document.uri
+    const dir = path.dirname(oldUri.fsPath)
+    const ext = path.extname(oldUri.fsPath)
+    const currentBase = path.basename(oldUri.fsPath, ext)
+
+    const validate = (raw: string): string | undefined => {
+      const value = raw.trim()
+      if (!value) return 'Name cannot be empty'
+      if (value.length > 60) return `Too long (${value.length}/60)`
+      if (/[\\/:*?"<>|]/.test(value)) return 'Contains characters not allowed in a file name'
+      return undefined
+    }
+
+    const input = vscode.window.createInputBox()
+    input.title = 'MDForge — Rename note'
+    input.value = currentBase
+    input.prompt = 'New file name (PascalCase-With-Dashes, ≤60 characters). Extension is kept.'
+    input.buttons = [
+      {
+        iconPath: new vscode.ThemeIcon('sparkle'),
+        tooltip: 'Suggest a PascalCase-With-Dashes name (≤60 chars)'
+      }
+    ]
+    input.onDidChangeValue((value) => {
+      input.validationMessage = validate(value)
+    })
+    input.onDidTriggerButton(() => {
+      input.value = suggestNoteName(input.value || currentBase)
+    })
+    input.onDidAccept(async () => {
+      const value = input.value.trim()
+      const error = validate(value)
+      if (error) {
+        input.validationMessage = error
+        return
+      }
+      if (value === currentBase) {
+        input.hide()
+        return
+      }
+      const newUri = vscode.Uri.file(path.join(dir, value + ext))
+      try {
+        await vscode.workspace.fs.stat(newUri)
+        input.validationMessage = 'A file with that name already exists'
+        return
+      } catch {
+        // free to use
+      }
+      input.busy = true
+      try {
+        const edit = new vscode.WorkspaceEdit()
+        edit.renameFile(oldUri, newUri)
+        const done = await vscode.workspace.applyEdit(edit)
+        if (!done) throw new Error('rename was rejected')
+        input.hide()
+        // Bring the co-located assets in line with the new note name.
+        const renamedDoc = await vscode.workspace.openTextDocument(newUri)
+        const count = await this.reconcileAssets(renamedDoc)
+        if (count > 0) {
+          void vscode.window.showInformationMessage(
+            `MDForge: renamed note and ${count} asset(s) to match.`
+          )
+        }
+      } catch (renameError) {
+        input.validationMessage = `Rename failed: ${renameError}`
+      } finally {
+        input.busy = false
+      }
+    })
+    input.onDidHide(() => input.dispose())
+    input.show()
   }
 
   /** Resolve a `[[wikilink]]` target relative to the document and open it. */
