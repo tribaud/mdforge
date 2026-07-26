@@ -328,6 +328,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           case 'renameNote':
             await this.renameNote(document)
             break
+          case 'moveNote':
+            await this.moveNote(document)
+            break
           case 'openSettings':
             void vscode.commands.executeCommand(
               'workbench.action.openSettings',
@@ -690,6 +693,134 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     })
     input.onDidHide(() => input.dispose())
     input.show()
+  }
+
+  /** Local (relative) image links of a note, as `{ src, absPath }`. */
+  private localAssets(document: vscode.TextDocument): Array<{ src: string; absPath: string }> {
+    const noteDir = path.dirname(document.uri.fsPath)
+    const findLinks = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
+    const assets: Array<{ src: string; absPath: string }> = []
+    const seen = new Set<string>()
+    let match: RegExpExecArray | null
+    const text = document.getText()
+    while ((match = findLinks.exec(text)) !== null) {
+      const src = match[1]
+      if (/^(https?:|data:|blob:|file:|vscode-|\/)/i.test(src)) continue
+      if (seen.has(src)) continue
+      seen.add(src)
+      assets.push({ src, absPath: path.resolve(noteDir, decodeURI(src)) })
+    }
+    return assets
+  }
+
+  /** Which of `assetPaths` are also referenced by another note in the workspace. */
+  private async assetsSharedElsewhere(
+    document: vscode.TextDocument,
+    assetPaths: Set<string>
+  ): Promise<string[]> {
+    if (assetPaths.size === 0) return []
+    const files = await vscode.workspace.findFiles('**/*.{md,markdown}', '**/node_modules/**')
+    const shared = new Set<string>()
+    for (const file of files) {
+      if (file.toString() === document.uri.toString()) continue
+      let text: string
+      try {
+        text = Buffer.from(await vscode.workspace.fs.readFile(file)).toString('utf8')
+      } catch {
+        continue
+      }
+      const dir = path.dirname(file.fsPath)
+      const re = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text)) !== null) {
+        const src = m[1]
+        if (/^(https?:|data:|blob:|file:|vscode-|\/)/i.test(src)) continue
+        const abs = path.resolve(dir, decodeURI(src))
+        if (assetPaths.has(abs)) {
+          shared.add(`${path.basename(abs)} (also in ${path.basename(file.fsPath)})`)
+        }
+      }
+    }
+    return [...shared]
+  }
+
+  /**
+   * Move the note and its co-located assets to another workspace folder. Aborts
+   * with a warning if any asset is also used by a different note (moving it
+   * would break that note). Links are relative, so preserving the folder layout
+   * keeps them valid — no rewrite needed. Mirrors `para_mover.py`.
+   */
+  private async moveNote(document: vscode.TextDocument): Promise<void> {
+    const oldUri = document.uri
+    const noteDir = path.dirname(oldUri.fsPath)
+    const assets = this.localAssets(document)
+
+    // Safety: refuse to move assets shared with another note.
+    const shared = await this.assetsSharedElsewhere(
+      document,
+      new Set(assets.map((a) => a.absPath))
+    )
+    if (shared.length > 0) {
+      void vscode.window.showWarningMessage(
+        `MDForge: cannot move — these assets are used by other notes:\n${shared.join('\n')}`,
+        { modal: true }
+      )
+      return
+    }
+
+    // Pick the destination folder.
+    const workspaceUri = vscode.workspace.getWorkspaceFolder(oldUri)?.uri
+    const picked = await vscode.window.showOpenDialog({
+      canSelectFolders: true,
+      canSelectFiles: false,
+      canSelectMany: false,
+      defaultUri: workspaceUri,
+      openLabel: 'Move here',
+      title: 'Move note & assets to…'
+    })
+    if (!picked || picked.length === 0) return
+    const destDir = picked[0].fsPath
+    if (path.resolve(destDir) === path.resolve(noteDir)) return // same folder
+
+    const newUri = vscode.Uri.file(path.join(destDir, path.basename(oldUri.fsPath)))
+    try {
+      await vscode.workspace.fs.stat(newUri)
+      void vscode.window.showErrorMessage('MDForge: a note with that name already exists there.')
+      return
+    } catch {
+      // free to use
+    }
+
+    try {
+      // Move each asset, preserving its path relative to the note (keeps links valid).
+      for (const asset of assets) {
+        const sourceUri = vscode.Uri.file(asset.absPath)
+        try {
+          await vscode.workspace.fs.stat(sourceUri)
+        } catch {
+          continue // asset missing on disk → skip it, leave the link
+        }
+        const targetUri = vscode.Uri.file(path.resolve(destDir, decodeURI(asset.src)))
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(targetUri.fsPath)))
+        await vscode.workspace.fs.rename(sourceUri, targetUri, { overwrite: false })
+      }
+      // Move the note file (the open editor follows it).
+      const edit = new vscode.WorkspaceEdit()
+      edit.renameFile(oldUri, newUri)
+      const done = await vscode.workspace.applyEdit(edit)
+      if (!done) throw new Error('move was rejected')
+
+      // Re-open fresh at the new location so the webview rebinds its asset base
+      // URI + local-resource root to the destination folder (images resolve).
+      await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+      await vscode.commands.executeCommand('vscode.openWith', newUri, VIEW_TYPE)
+
+      void vscode.window.showInformationMessage(
+        `MDForge: moved note${assets.length ? ` and ${assets.length} asset(s)` : ''} to ${vscode.workspace.asRelativePath(destDir)}.`
+      )
+    } catch (moveError) {
+      void vscode.window.showErrorMessage(`MDForge: move failed — ${moveError}`)
+    }
   }
 
   /** Resolve a `[[wikilink]]` target relative to the document and open it. */

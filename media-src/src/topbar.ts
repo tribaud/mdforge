@@ -14,6 +14,7 @@ export interface TopbarActions {
   insertImage: (view: EditorView) => void
   localizeAssets: () => void
   renameNote: () => void
+  moveNote: () => void
   toggleSource: () => void
   togglePresentation: () => void
   openSettings: () => void
@@ -31,7 +32,9 @@ const ICONS = {
   rename:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
   source:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+  move:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 10 15 13 12 16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>'
 }
 
 interface TopbarButton {
@@ -56,7 +59,8 @@ const LEFT: TopbarButton[] = [
     icon: ICONS.localize,
     run: (a) => a.localizeAssets()
   },
-  { title: 'Rename note', icon: ICONS.rename, run: (a) => a.renameNote() }
+  { title: 'Rename note', icon: ICONS.rename, run: (a) => a.renameNote() },
+  { title: 'Move note & assets to another folder', icon: ICONS.move, run: (a) => a.moveNote() }
 ]
 
 const RIGHT: TopbarButton[] = [
