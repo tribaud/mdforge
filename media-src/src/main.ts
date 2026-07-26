@@ -96,6 +96,7 @@ const topbar = createTopbar({
   insertImage: (view) => openInsertImageDialog(view),
   localizeAssets: () => vscode.postMessage({ type: 'localizeAssets' }),
   renameNote: () => vscode.postMessage({ type: 'renameNote' }),
+  moveNote: () => vscode.postMessage({ type: 'moveNote' }),
   toggleSource: () => toggleSource(),
   togglePresentation: () => togglePresentation(),
   openSettings: () => vscode.postMessage({ type: 'openSettings' })
