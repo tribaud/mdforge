@@ -23,6 +23,7 @@ import {
   imageNodeView,
   openInsertImageDialog,
   handleImageResponse,
+  refreshImages,
   setAssetsBaseUri,
   setImagePost
 } from './images'
@@ -97,6 +98,7 @@ const topbar = createTopbar({
   localizeAssets: () => vscode.postMessage({ type: 'localizeAssets' }),
   renameNote: () => vscode.postMessage({ type: 'renameNote' }),
   moveNote: () => vscode.postMessage({ type: 'moveNote' }),
+  refreshImages: () => refreshImages(),
   toggleSource: () => toggleSource(),
   togglePresentation: () => togglePresentation(),
   openSettings: () => vscode.postMessage({ type: 'openSettings' })
@@ -255,6 +257,9 @@ window.addEventListener('message', (event) => {
       break
     case 'imageInserted':
       if (typeof msg.id === 'number') handleImageResponse(msg as { id: number })
+      break
+    case 'refreshImages':
+      refreshImages()
       break
     case 'revealHeading':
       if (typeof msg.index === 'number') revealHeading(msg.index)
