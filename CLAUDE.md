@@ -163,21 +163,33 @@ bundles. When working from an environment without a GUI, drive validation via
 F5 locally (or a local Claude Code instance) and report screenshots / the
 on-screen error text.
 
-## 8. Merge workflow (required)
+## 8. Branch & release workflow (required)
 
-Branch granularity is flexible (one feature, several features, or parallel
-branches). The one rule that keeps history clean: **rebase the branch's commits
-onto the latest `main` right before merging**.
+`main` is **protected**: no direct pushes (even for admins), force-push and
+deletion disabled. Every change lands through a **pull request** (0 approvals
+required — you merge your own — but the CI check must pass). Tags are **not**
+protected, so releases still push tags directly.
 
-1. `git fetch origin && git rebase origin/main` — so the branch sits directly
-   on top of `main` and no lines cross.
-2. **Code review** the branch diff (`/code-review`) and address findings.
-3. **Merge `--no-ff`** (a real merge commit) once the review is clean and the
-   work is verified via F5. Never fast-forward.
+**Feature flow**
 
-Result: a linear `main` spine where each branch hangs off as one clean merge
-bubble. Do NOT create merge commits by merging successive points of a single
-shared linear chain — that tangles the graph. `main` stays releasable.
+1. Branch off `main`: `git checkout -b feat/xyz`.
+2. Commit, then `git push -u origin feat/xyz`.
+3. Open a PR: `gh pr create --fill --base main`.
+4. **Code review** the diff (`/code-review`) and address findings; verify via F5.
+5. The **CI check** (`.github/workflows/ci.yml`: build + webview type-check) must
+   be green.
+6. Merge: `gh pr merge --merge --delete-branch` (a real merge commit; never
+   squash-to-linear if you want the bubble). Rebase onto `origin/main` first if
+   `main` moved, so the branch hangs off as one clean bubble.
+
+**Release flow** (publishes to the VS Code Marketplace + Open VSX)
+
+1. Make sure `main` has the code to release.
+2. Tag = the version: `git tag -a v0.2.0 -m "MDForge 0.2.0" && git push origin v0.2.0`.
+3. `.github/workflows/publish.yml` derives the version from the tag, packages,
+   and publishes. Each version must be unique per registry. Secrets: `VSCE_PAT`
+   (Azure PAT, Marketplace › Manage) and `OVSX_PAT` (Open VSX; step is skipped
+   when unset). See §10.
 
 ## 9. Conventions & known limitations
 
