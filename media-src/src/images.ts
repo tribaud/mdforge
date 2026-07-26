@@ -32,8 +32,18 @@ let post: Post = () => {}
 /** Webview URI of the note's directory; base for resolving relative images. */
 let assetsBaseUri = ''
 let seq = 0
+/** Bumped to bust the webview image cache when an asset's content changes. */
+let cacheBust = 0
 /** id → callback invoked when the host answers with the saved link. */
 const pending = new Map<number, (response: ImageResponse) => void>()
+/** Live image node views' re-apply callbacks, so a refresh reloads them all. */
+const imageAppliers = new Set<() => void>()
+
+/** Re-fetch every rendered local image (cache-busted) after a content change. */
+export function refreshImages(): void {
+  cacheBust += 1
+  for (const apply of imageAppliers) apply()
+}
 
 /** Wire the channel to the extension host (called once from main.ts). */
 export function setImagePost(fn: Post): void {
@@ -54,7 +64,9 @@ function isAbsolute(src: string): boolean {
 export function resolveImageSrc(src: string): string {
   if (!src || isAbsolute(src) || !assetsBaseUri) return src
   const clean = src.replace(/^\.\//, '')
-  return `${assetsBaseUri}/${encodeURI(clean)}`
+  const url = `${assetsBaseUri}/${encodeURI(clean)}`
+  // A cache-busting query forces the webview to re-fetch a changed local file.
+  return cacheBust > 0 ? `${url}${url.includes('?') ? '&' : '?'}mdforge=${cacheBust}` : url
 }
 
 function readAsBase64(file: File): Promise<string> {
@@ -307,6 +319,7 @@ export const imageNodeView = $view(imageSchema.node, () => (initialNode, view, g
     if (node.attrs.title) img.title = node.attrs.title
   }
   apply()
+  imageAppliers.add(apply)
 
   return {
     dom,
@@ -315,6 +328,9 @@ export const imageNodeView = $view(imageSchema.node, () => (initialNode, view, g
       node = updated
       apply()
       return true
+    },
+    destroy: () => {
+      imageAppliers.delete(apply)
     }
   }
 })

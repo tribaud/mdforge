@@ -291,6 +291,19 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       if (event.affectsConfiguration('mdforge', document.uri)) postConfig()
     })
 
+    // Auto-refresh rendered images when a co-located asset file changes on disk
+    // (the link is unchanged, so the webview would otherwise show a stale cache).
+    const assetWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(
+        path.dirname(document.uri.fsPath),
+        '**/*.{png,jpg,jpeg,gif,webp,avif,svg,bmp}'
+      )
+    )
+    const postRefresh = (): void => void webview.postMessage({ type: 'refreshImages' })
+    assetWatcher.onDidChange(postRefresh)
+    assetWatcher.onDidCreate(postRefresh)
+    assetWatcher.onDidDelete(postRefresh)
+
     webview.onDidReceiveMessage(
       async (message: {
         type: string
@@ -348,6 +361,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       changeSubscription.dispose()
       configSubscription.dispose()
       viewStateSubscription.dispose()
+      assetWatcher.dispose()
       this.outline.clear(document)
     })
   }

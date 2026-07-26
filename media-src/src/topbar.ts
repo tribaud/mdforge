@@ -15,6 +15,7 @@ export interface TopbarActions {
   localizeAssets: () => void
   renameNote: () => void
   moveNote: () => void
+  refreshImages: () => void
   toggleSource: () => void
   togglePresentation: () => void
   openSettings: () => void
@@ -34,7 +35,9 @@ const ICONS = {
   source:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
   move:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 10 15 13 12 16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>'
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 10 15 13 12 16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>',
+  refresh:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
 }
 
 interface TopbarButton {
@@ -64,6 +67,7 @@ const LEFT: TopbarButton[] = [
 ]
 
 const RIGHT: TopbarButton[] = [
+  { title: 'Refresh images (reload changed files)', icon: ICONS.refresh, run: (a) => a.refreshImages() },
   {
     title: 'Toggle Markdown source view',
     icon: ICONS.source,
