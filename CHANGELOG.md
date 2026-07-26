@@ -4,6 +4,30 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2]
+
+### Added
+
+- **Source view** — a toolbar button toggles between the WYSIWYG editor and an
+  editable raw-Markdown view; leaving it commits the edits back.
+- **Move note** — a toolbar button moves the note and its co-located assets to a
+  picked workspace folder (relative links are preserved), refusing with a
+  warning if an asset is shared by another note.
+- **Refresh images** — a toolbar button plus a file-system watcher reload
+  rendered images when a co-located asset changes on disk.
+
+### Fixed
+
+- Renaming a note now refreshes the editor in place instead of showing stale
+  links (broken images) until the file was reopened.
+- Images no longer serialize a redundant `title` that just mirrors the `alt`.
+
+## [0.1.1]
+
+### Added
+
+- Extension icon.
+
 ## [0.1.0]
 
 ### Added
