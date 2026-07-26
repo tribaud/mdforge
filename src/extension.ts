@@ -387,12 +387,17 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     return relPath
   }
 
-  /** Compute the convention-conforming target (name + location) for an asset. */
+  /**
+   * Compute the convention-conforming target (name + location) for an asset.
+   * `noteNameOverride` lets a pending rename compute names for the *future*
+   * note name while the file is still at its current path.
+   */
   private assetTarget(
     document: vscode.TextDocument,
     bytes: Buffer,
     ext: string,
-    originalName: string
+    originalName: string,
+    noteNameOverride?: string
   ): { relPath: string; dirUri: vscode.Uri; targetUri: vscode.Uri; fileName: string } {
     const config = vscode.workspace.getConfiguration('mdforge', document.uri)
     const folder = (config.get<string>('images.folder', 'assets') ?? '').trim()
@@ -400,7 +405,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     const hashLength = Math.max(4, Math.min(32, config.get<number>('images.hashLength', 8)))
 
     const hash = crypto.createHash('md5').update(bytes).digest('hex').slice(0, hashLength)
-    const noteName = path.basename(document.uri.fsPath).replace(/\.(md|markdown)$/i, '')
+    const noteName =
+      noteNameOverride ?? path.basename(document.uri.fsPath).replace(/\.(md|markdown)$/i, '')
     const base = naming
       .replace(/\$\{noteName\}/g, noteName)
       .replace(/\$\{originalName\}/g, originalName)
@@ -420,7 +426,10 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
    * `asset_fixer.py`. Returns the number of assets moved. Remote/`data:` links
    * are left to `localizeAssets`.
    */
-  private async reconcileAssets(document: vscode.TextDocument): Promise<number> {
+  private async reconcileAssets(
+    document: vscode.TextDocument,
+    noteNameOverride?: string
+  ): Promise<number> {
     const text = document.getText()
     const noteDir = path.dirname(document.uri.fsPath)
     const findLinks = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
@@ -447,7 +456,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           document,
           bytes,
           ext,
-          originalName
+          originalName,
+          noteNameOverride
         )
         if (src.replace(/^\.\//, '') === relPath) continue // already conforms
         if (path.resolve(targetUri.fsPath) === path.resolve(sourceUri.fsPath)) continue
@@ -655,14 +665,18 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       }
       input.busy = true
       try {
+        // Reconcile assets to the FUTURE name and rewrite links *before* the
+        // rename, while the document is still the one the open editor is bound
+        // to — so the webview refreshes (otherwise it keeps the stale links and
+        // the renamed images render broken until the file is reopened).
+        const count = await this.reconcileAssets(document, value)
+        if (document.isDirty) await document.save()
+        // Now move the note file; the editor follows, content already correct.
         const edit = new vscode.WorkspaceEdit()
         edit.renameFile(oldUri, newUri)
         const done = await vscode.workspace.applyEdit(edit)
         if (!done) throw new Error('rename was rejected')
         input.hide()
-        // Bring the co-located assets in line with the new note name.
-        const renamedDoc = await vscode.workspace.openTextDocument(newUri)
-        const count = await this.reconcileAssets(renamedDoc)
         if (count > 0) {
           void vscode.window.showInformationMessage(
             `MDForge: renamed note and ${count} asset(s) to match.`
