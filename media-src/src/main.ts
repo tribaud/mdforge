@@ -21,6 +21,7 @@ import { shikiHighlight } from './shiki-highlight'
 import {
   imagePaste,
   imageNodeView,
+  imageTitleNormalizer,
   openInsertImageDialog,
   handleImageResponse,
   refreshImages,
@@ -142,6 +143,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(shikiHighlight)
     .use(imagePaste)
     .use(imageNodeView)
+    .use(imageTitleNormalizer)
     .use(gapCursorPlugin)
     .use(headingFold)
     .create()

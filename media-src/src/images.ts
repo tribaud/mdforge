@@ -277,6 +277,32 @@ export const imagePaste = $prose(
     })
 )
 
+/**
+ * Drop a redundant image `title` that merely mirrors the `alt`. Milkdown's image
+ * `parseDOM` defaults `title` to `alt` (`title || alt`), so pasted HTML images
+ * serialize as `![alt](src "alt")` — a duplicated caption. Clearing the title
+ * when it equals the alt restores `![alt](src)`; a distinct title is kept.
+ */
+export const imageTitleNormalizer = $prose(
+  () =>
+    new Plugin({
+      appendTransaction: (trs, _oldState, newState) => {
+        if (!trs.some((tr) => tr.docChanged)) return null
+        let tr: ReturnType<typeof newState.tr.setNodeMarkup> | null = null
+        newState.doc.descendants((node, pos) => {
+          if (
+            node.type.name === 'image' &&
+            node.attrs.title &&
+            node.attrs.title === node.attrs.alt
+          ) {
+            tr = (tr ?? newState.tr).setNodeMarkup(pos, undefined, { ...node.attrs, title: '' })
+          }
+        })
+        return tr
+      }
+    })
+)
+
 /** Image node view: render a resolved URI + a hover "edit" button (path/alt). */
 export const imageNodeView = $view(imageSchema.node, () => (initialNode, view, getPos) => {
   let node = initialNode
