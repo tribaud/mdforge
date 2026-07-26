@@ -79,7 +79,15 @@ let currentText = ''
 let applyingRemote = false
 /** Read-only presentation mode. */
 let presentation = false
+/** Raw Markdown source view (editable textarea) instead of the WYSIWYG editor. */
+let sourceMode = false
 let currentView: any = null
+
+// Editable raw-source textarea, shown when source view is toggled on. Lives
+// outside the Milkdown root and persists across editor recreation.
+const sourceTextarea = document.createElement('textarea')
+sourceTextarea.className = 'mdforge-source'
+sourceTextarea.spellcheck = false
 
 // Persistent top toolbar (document-level actions). Lives outside the Milkdown
 // root so it survives editor recreation on external changes.
@@ -88,10 +96,12 @@ const topbar = createTopbar({
   insertImage: (view) => openInsertImageDialog(view),
   localizeAssets: () => vscode.postMessage({ type: 'localizeAssets' }),
   renameNote: () => vscode.postMessage({ type: 'renameNote' }),
+  toggleSource: () => toggleSource(),
   togglePresentation: () => togglePresentation(),
   openSettings: () => vscode.postMessage({ type: 'openSettings' })
 })
 document.body.insertBefore(topbar, root)
+document.body.appendChild(sourceTextarea)
 
 async function createEditor(initial: string): Promise<void> {
   currentText = initial
@@ -151,6 +161,8 @@ async function setContent(text: string): Promise<void> {
       editor = null
     }
     await createEditor(text)
+    // An external change while viewing source: reflect it in the textarea.
+    if (sourceMode) sourceTextarea.value = text
   } catch (error) {
     showError(error)
   } finally {
@@ -175,11 +187,50 @@ function revealHeading(index: number): void {
 }
 
 function togglePresentation(): void {
+  // Source view and presentation are mutually exclusive; leave source first.
+  if (!presentation && sourceMode) void toggleSource()
   presentation = !presentation
   document.body.classList.toggle('mdforge-presentation', presentation)
   // Re-evaluate the editable prop (read from editorViewOptionsCtx).
   if (currentView) currentView.dispatch(currentView.state.tr)
   vscode.postMessage({ type: 'presentationState', enabled: presentation })
+}
+
+/**
+ * Toggle the raw Markdown source view. Entering mirrors the current Markdown
+ * into an editable textarea; leaving commits any edits back to the WYSIWYG
+ * editor and the host (whole-document replace), rebuilding Milkdown from source.
+ */
+async function toggleSource(): Promise<void> {
+  if (!sourceMode) {
+    sourceMode = true
+    sourceTextarea.value = currentText
+    document.body.classList.add('mdforge-source-mode')
+    sourceTextarea.focus()
+    return
+  }
+  sourceMode = false
+  document.body.classList.remove('mdforge-source-mode')
+  const next = sourceTextarea.value
+  if (next === currentText) {
+    currentView?.focus?.()
+    return
+  }
+  currentText = next
+  vscode.postMessage({ type: 'edit', text: next })
+  applyingRemote = true
+  try {
+    if (editor) {
+      await editor.destroy()
+      editor = null
+    }
+    await createEditor(next)
+    currentView?.focus?.()
+  } catch (error) {
+    showError(error)
+  } finally {
+    applyingRemote = false
+  }
 }
 
 window.addEventListener('message', (event) => {

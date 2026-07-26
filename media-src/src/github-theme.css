@@ -124,6 +124,39 @@ body.mdforge-presentation .mdforge-topbar-btn-present {
   color: #ffffff;
 }
 
+/* Raw Markdown source view (editable textarea, toggled from the toolbar) */
+.mdforge-source {
+  display: none;
+}
+body.mdforge-source-mode #app {
+  display: none;
+}
+body.mdforge-source-mode .mdforge-source {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-height: calc(100vh - 42px);
+  padding: 24px 48px 40vh;
+  border: none;
+  outline: none;
+  resize: none;
+  background: var(--gh-bg);
+  color: var(--gh-fg);
+  font-family: var(--mdforge-mono);
+  font-size: var(--mdforge-font-size);
+  line-height: 1.6;
+  tab-size: 2;
+}
+body.mdforge-width-full .mdforge-source {
+  max-width: none;
+}
+body.mdforge-source-mode .mdforge-topbar-btn-source {
+  background: var(--gh-accent);
+  color: #ffffff;
+}
+
 /* Headings */
 .milkdown .ProseMirror h1,
 .milkdown .ProseMirror h2,
