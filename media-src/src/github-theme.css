@@ -62,6 +62,9 @@ body {
   line-height: 1.6;
   color: var(--gh-fg);
   word-wrap: break-word;
+  /* Preserve typed/trailing spaces (ProseMirror's expected editing behavior);
+     otherwise a caret after a trailing space glues the next character. */
+  white-space: break-spaces;
 }
 
 body.mdforge-width-full .milkdown .ProseMirror {
