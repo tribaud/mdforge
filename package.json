@@ -2,7 +2,7 @@
   "name": "mdforge",
   "displayName": "MDForge",
   "description": "Transform VS Code into a Typora-like WYSIWYG Markdown editor with GitHub-style rendering, Mermaid diagrams and rich task lists.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "tribaud",
   "license": "MIT",
   "icon": "icon.png",
@@ -134,6 +134,11 @@
           ],
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
+        },
+        "mdforge.debug.pasteHtml": {
+          "type": "boolean",
+          "default": false,
+          "description": "Debug: on paste, open the raw clipboard HTML/plain-text in a new tab (to inspect what a web page actually puts on the clipboard, e.g. math markup)."
         },
         "mdforge.textAlign": {
           "type": "string",

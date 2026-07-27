@@ -1,10 +1,12 @@
 name: Publish
 
-# Publishes the extension to the VS Code Marketplace and Open VSX when a
-# version tag (e.g. v0.1.0) is pushed. The published version is derived from
-# the tag, so the tag is the single source of truth. Requires two secrets:
+# Publishes on a version tag. The tag is the single source of truth:
+#   v0.2.0          → stable release to the Marketplace + Open VSX
+#   v0.2.0-beta.1   → pre-release to the Marketplace only (opt-in beta channel)
+# A tag with a "-suffix" is treated as a pre-release; the numeric version is
+# the part before the dash. Requires secrets:
 #   VSCE_PAT — Azure DevOps PAT with "Marketplace > Manage" scope
-#   OVSX_PAT — Open VSX access token (optional; step is skipped when unset)
+#   OVSX_PAT — Open VSX access token (optional; step skipped when unset)
 on:
   push:
     tags:
@@ -15,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      PRERELEASE: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +28,15 @@ jobs:
 
       - name: Set version from tag
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "Publishing version $VERSION (from tag $GITHUB_REF_NAME)"
+          RAW="${GITHUB_REF_NAME#v}"        # 0.2.0 or 0.2.0-beta.1
+          VERSION="${RAW%%-*}"              # 0.2.0
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          if [ "$RAW" != "$VERSION" ]; then
+            echo "PRERELEASE=--pre-release" >> "$GITHUB_ENV"
+            echo "Publishing PRE-RELEASE $VERSION (from tag $GITHUB_REF_NAME)"
+          else
+            echo "Publishing RELEASE $VERSION (from tag $GITHUB_REF_NAME)"
+          fi
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - run: npm ci
@@ -34,16 +44,16 @@ jobs:
       - run: npx tsc -p media-src --noEmit
 
       - name: Package
-        run: npx @vscode/vsce package --out mdforge.vsix
+        run: npx @vscode/vsce package $PRERELEASE --out mdforge.vsix
 
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --packagePath mdforge.vsix
+        run: npx @vscode/vsce publish $PRERELEASE --packagePath mdforge.vsix
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      # Tolerate a version that already exists on Open VSX (e.g. published
-      # manually) so it never fails the job.
+      # Stable only: Open VSX has no opt-in pre-release channel, so betas would
+      # reach everyone. continue-on-error tolerates an already-published version.
       - name: Publish to Open VSX
-        if: ${{ env.OVSX_PAT != '' }}
+        if: ${{ env.OVSX_PAT != '' && env.PRERELEASE == '' }}
         continue-on-error: true
         run: npx ovsx publish mdforge.vsix -p "$OVSX_PAT"

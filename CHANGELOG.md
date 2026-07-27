@@ -4,6 +4,31 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0]
+
+### Added
+
+- **Web math paste** — MathJax/KaTeX formulas copied from a web page paste as
+  real `$...$` / `$$...$$` math (recovered by converting the pasted MathML to
+  LaTeX) instead of plain text.
+- **Source view** — toolbar toggle between the WYSIWYG editor and editable raw
+  Markdown.
+- **Move note** — move a note and its co-located assets to another workspace
+  folder (warns if an asset is shared by another note).
+- **Refresh images** — a toolbar button and a file-system watcher reload
+  rendered images when a co-located asset changes on disk.
+- **Re-hash on change** — when an image's content changes, its `<hash>` name is
+  updated and the link rewritten (`mdforge.images.renameOnChange`).
+- **Code block button** in the selection toolbar.
+- **Format popup** from the top toolbar (formatting controls for the selection).
+- **Paragraph alignment** setting (`mdforge.textAlign`: left / justify),
+  viewer-only.
+- Debug helper `mdforge.debug.pasteHtml` to inspect pasted clipboard HTML.
+
+### Fixed
+
+- Typing now works immediately in a brand-new empty note.
+
 ## [0.1.2]
 
 ### Added
