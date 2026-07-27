@@ -33,7 +33,7 @@ import { createTopbar } from './topbar'
 import { makeFormatMenu } from './format-menu'
 import { headingFold } from './heading-fold'
 import { transformPastedMath } from './paste-math'
-import { pasteSource, setAppendSource } from './paste-source'
+import { handleSourcePaste, setAppendSource } from './paste-source'
 import 'katex/dist/katex.min.css'
 import 'prosemirror-gapcursor/style/gapcursor.css'
 import './github-theme.css'
@@ -135,6 +135,10 @@ async function createEditor(initial: string): Promise<void> {
       ctx.update(editorViewOptionsCtx, (prev) => ({
         ...prev,
         editable: () => !presentation,
+        // Append the source address for external web pastes. Runs before the
+        // clipboard plugin (editor props win in someProp) and returns false so
+        // the normal paste still happens.
+        handlePaste: (view: any, event: ClipboardEvent) => handleSourcePaste(view, event),
         // Recover web math (MathJax/KaTeX) on paste, chaining any existing hook.
         transformPastedHTML: (html: string, view: unknown) => {
           const chained =
@@ -167,7 +171,6 @@ async function createEditor(initial: string): Promise<void> {
     .use(imageTitleNormalizer)
     .use(gapCursorPlugin)
     .use(headingFold)
-    .use(pasteSource)
     .create()
 
   currentView = editor.ctx.get(editorViewCtx)
