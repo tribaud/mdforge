@@ -8,6 +8,7 @@
  * so you can see — and remove — the current formatting.
  */
 import {
+  createCodeBlockCommand,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   toggleStrongCommand,
@@ -107,6 +108,12 @@ const ENTRIES: Entry[] = [
       else run(wrapInBulletListCommand)
     },
     active: (s) => ancestorActive(s, 'bullet_list')
+  },
+  {
+    label: '{ }',
+    title: 'Code block',
+    run: () => run(createCodeBlockCommand, ''),
+    active: (s) => blockActive(s, 'code_block')
   }
 ]
 
