@@ -779,6 +779,19 @@ body.vscode-dark .milkdown .ProseMirror .mm-label { color: #79c0ff; }
   background: var(--gh-border);
 }
 
+/* Top-toolbar format popup (reuses the toolbar button/separator styles) */
+.mdforge-format-popup {
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--gh-border);
+  border-radius: 8px;
+  background: var(--gh-bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
 /* Wikilinks */
 .milkdown .ProseMirror .mdforge-wikilink {
   color: var(--gh-accent);
