@@ -171,6 +171,21 @@
           ],
           "description": "Theme used to render Mermaid diagrams."
         },
+        "mdforge.images.renameOnChange": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "auto",
+            "off"
+          ],
+          "default": "prompt",
+          "markdownEnumDescriptions": [
+            "Ask before renaming a changed image so its `<hash>` matches the new content.",
+            "Rename automatically (and update the link) when a changed image's content hash drifts.",
+            "Never rename on change (the `<hash>` in the file name may become stale)."
+          ],
+          "description": "When a co-located image's content changes, its content hash in the file name drifts. This controls whether MDForge re-hashes (renames) it and updates the link."
+        },
         "mdforge.images.linkStyle": {
           "type": "string",
           "enum": [

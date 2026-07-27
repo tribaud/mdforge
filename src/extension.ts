@@ -227,6 +227,10 @@ function remoteBaseName(url: string): string {
 }
 
 class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
+  /** Asset paths currently being re-hashed, to ignore the watcher events that
+   *  the rename itself triggers (and to avoid double prompts). */
+  private readonly rehashing = new Set<string>()
+
   public constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly outline: OutlineProvider
@@ -300,7 +304,10 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       )
     )
     const postRefresh = (): void => void webview.postMessage({ type: 'refreshImages' })
-    assetWatcher.onDidChange(postRefresh)
+    assetWatcher.onDidChange((uri) => {
+      postRefresh()
+      void this.rehashAsset(document, uri)
+    })
     assetWatcher.onDidCreate(postRefresh)
     assetWatcher.onDidDelete(postRefresh)
 
@@ -624,6 +631,73 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     void vscode.window.showInformationMessage(`MDForge: ${parts.join(', ')}.`)
     // The document write triggers onDidChangeTextDocument → setContent, which
     // refreshes the webview with the now-local (rendered) images.
+  }
+
+  /**
+   * When a co-located image's content changes, its file name's `<hash>` no longer
+   * matches — re-hash (rename) it and update the link, per the configured policy
+   * (`prompt` / `auto` / `off`). Triggered by the asset file-system watcher.
+   */
+  private async rehashAsset(document: vscode.TextDocument, changedUri: vscode.Uri): Promise<void> {
+    const policy = vscode.workspace
+      .getConfiguration('mdforge', document.uri)
+      .get<string>('images.renameOnChange', 'prompt')
+    if (policy === 'off') return
+
+    const key = path.resolve(changedUri.fsPath)
+    if (this.rehashing.has(key)) return // our own rename, or already handling
+
+    const asset = this
+      .localAssets(document)
+      .find((a) => path.resolve(a.absPath) === key)
+    if (!asset) return // not an image this note references
+
+    let bytes: Buffer
+    try {
+      bytes = Buffer.from(await vscode.workspace.fs.readFile(changedUri))
+    } catch {
+      return
+    }
+    const ext =
+      path.extname(changedUri.fsPath).replace('.', '').toLowerCase() ||
+      imageExtension(undefined, changedUri.fsPath)
+    const originalName = path.basename(changedUri.fsPath, path.extname(changedUri.fsPath))
+    const { relPath, dirUri, targetUri, fileName } = this.assetTarget(
+      document,
+      bytes,
+      ext,
+      originalName
+    )
+    if (fileName === path.basename(changedUri.fsPath)) return // hash still matches
+
+    // Guard before the prompt so rapid duplicate change events don't double-ask.
+    const targetKey = path.resolve(targetUri.fsPath)
+    this.rehashing.add(key)
+    this.rehashing.add(targetKey)
+    try {
+      if (policy === 'prompt') {
+        const choice = await vscode.window.showInformationMessage(
+          `MDForge: "${path.basename(changedUri.fsPath)}" changed — rename to "${fileName}" so its hash matches the new content?`,
+          'Rename',
+          'Keep'
+        )
+        if (choice !== 'Rename') return
+      }
+      await vscode.workspace.fs.createDirectory(dirUri)
+      await vscode.workspace.fs.rename(changedUri, targetUri, { overwrite: false })
+      const text = document.getText()
+      const newText = text.replace(
+        /(!\[[^\]]*\]\(\s*)([^)\s]+)((?:\s+"[^"]*")?\s*\))/g,
+        (whole, pre: string, url: string, post: string) =>
+          url === asset.src ? `${pre}${relPath}${post}` : whole
+      )
+      if (newText !== text) await this.writeDocument(document, newText)
+    } catch (error) {
+      void vscode.window.showErrorMessage(`MDForge: could not rename changed image — ${error}`)
+    } finally {
+      this.rehashing.delete(key)
+      this.rehashing.delete(targetKey)
+    }
   }
 
   /**
