@@ -32,6 +32,7 @@ import {
 import { createTopbar } from './topbar'
 import { makeFormatMenu } from './format-menu'
 import { headingFold } from './heading-fold'
+import { transformPastedMath } from './paste-math'
 import 'katex/dist/katex.min.css'
 import 'prosemirror-gapcursor/style/gapcursor.css'
 import './github-theme.css'
@@ -128,7 +129,18 @@ async function createEditor(initial: string): Promise<void> {
       ctx.set(slash.key, { view: slashPluginView })
       ctx.set(toolbar.key, { view: toolbarPluginView })
       ctx.set(block.key, { view: blockView(ctx) })
-      ctx.update(editorViewOptionsCtx, (prev) => ({ ...prev, editable: () => !presentation }))
+      ctx.update(editorViewOptionsCtx, (prev) => ({
+        ...prev,
+        editable: () => !presentation,
+        // Recover web math (MathJax/KaTeX) on paste, chaining any existing hook.
+        transformPastedHTML: (html: string, view: unknown) => {
+          const chained =
+            typeof prev.transformPastedHTML === 'function'
+              ? (prev.transformPastedHTML as (h: string, v: unknown) => string)(html, view)
+              : html
+          return transformPastedMath(chained)
+        }
+      }))
     })
     .use(commonmark)
     .use(gfm)
