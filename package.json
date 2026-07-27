@@ -135,6 +135,19 @@
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
         },
+        "mdforge.textAlign": {
+          "type": "string",
+          "enum": [
+            "left",
+            "justify"
+          ],
+          "default": "left",
+          "markdownEnumDescriptions": [
+            "Paragraphs align left (default).",
+            "Paragraphs are justified. Display-only — no HTML is written to the Markdown."
+          ],
+          "description": "Text alignment for paragraphs in the editor view (viewer preference; not stored in the file)."
+        },
         "mdforge.images.folder": {
           "type": "string",
           "default": "assets",

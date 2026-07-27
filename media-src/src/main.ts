@@ -44,6 +44,7 @@ declare function acquireVsCodeApi(): {
 interface MdForgeConfig {
   fontSize: number
   pageWidth: 'comfortable' | 'full'
+  textAlign?: 'left' | 'justify'
   enableInProgress: boolean
   mermaidTheme?: string
   assetsBaseUri?: string
@@ -161,7 +162,10 @@ async function createEditor(initial: string): Promise<void> {
  * editor. External edits are rare, so the cursor reset is acceptable for now.
  */
 async function setContent(text: string): Promise<void> {
-  if (text === currentText) return
+  // Only skip when the editor already exists; a brand-new empty file arrives as
+  // '' which equals the initial currentText, and must still build the editor
+  // (otherwise there is nothing to type into until switching to source view).
+  if (text === currentText && editor) return
   applyingRemote = true
   try {
     if (editor) {
@@ -171,6 +175,8 @@ async function setContent(text: string): Promise<void> {
     await createEditor(text)
     // An external change while viewing source: reflect it in the textarea.
     if (sourceMode) sourceTextarea.value = text
+    // Focus an empty document so the caret is ready without an extra click.
+    if (!sourceMode && text.trim() === '') currentView?.focus?.()
   } catch (error) {
     showError(error)
   } finally {
@@ -180,6 +186,10 @@ async function setContent(text: string): Promise<void> {
 
 function applyConfig(config: MdForgeConfig): void {
   document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
+  document.documentElement.style.setProperty(
+    '--mdforge-text-align',
+    config.textAlign === 'justify' ? 'justify' : 'left'
+  )
   document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
   document.body.classList.toggle('mdforge-inprogress', config.enableInProgress)
   if (config.assetsBaseUri) setAssetsBaseUri(config.assetsBaseUri)

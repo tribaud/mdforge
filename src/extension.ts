@@ -264,6 +264,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         config: {
           fontSize: config.get<number>('fontSize', 15),
           pageWidth: config.get<string>('pageWidth', 'comfortable'),
+          textAlign: config.get<string>('textAlign', 'left'),
           enableInProgress: config.get<boolean>('checkbox.enableInProgress', true),
           mermaidTheme: config.get<string>('mermaid.theme', 'auto'),
           assetsBaseUri: webview
