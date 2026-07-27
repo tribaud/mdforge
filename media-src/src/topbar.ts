@@ -11,6 +11,7 @@ import type { EditorView } from '@milkdown/prose/view'
 
 export interface TopbarActions {
   getView: () => EditorView | null
+  openFormatMenu: (anchor: HTMLElement) => void
   insertImage: (view: EditorView) => void
   localizeAssets: () => void
   renameNote: () => void
@@ -37,18 +38,25 @@ const ICONS = {
   move:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 10 15 13 12 16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>',
   refresh:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+  format:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>'
 }
 
 interface TopbarButton {
   title: string
   icon: string
-  run: (actions: TopbarActions) => void
+  run: (actions: TopbarActions, el: HTMLElement) => void
   /** Extra class for CSS targeting (e.g. keeping this button in presentation). */
   extraClass?: string
 }
 
 const LEFT: TopbarButton[] = [
+  {
+    title: 'Text formatting',
+    icon: ICONS.format,
+    run: (a, el) => a.openFormatMenu(el)
+  },
   {
     title: 'Insert image',
     icon: ICONS.image,
@@ -92,7 +100,7 @@ function button(def: TopbarButton, actions: TopbarActions): HTMLElement {
   el.innerHTML = def.icon
   // Keep the editor selection when clicking a toolbar button.
   el.addEventListener('mousedown', (event) => event.preventDefault())
-  el.addEventListener('click', () => def.run(actions))
+  el.addEventListener('click', () => def.run(actions, el))
   return el
 }
 

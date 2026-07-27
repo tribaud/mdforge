@@ -76,7 +76,7 @@ interface Btn {
 
 type Entry = Btn | 'separator'
 
-const ENTRIES: Entry[] = [
+export const formatEntries: Entry[] = [
   { label: 'B', title: 'Bold', shortcut: 'Mod-b', run: () => run(toggleStrongCommand), active: (s) => markActive(s, 'strong') },
   { label: 'I', title: 'Italic', shortcut: 'Mod-i', run: () => run(toggleEmphasisCommand), active: (s) => markActive(s, 'emphasis') },
   { label: 'S', title: 'Strikethrough', shortcut: 'Mod-Alt-x', run: () => run(toggleStrikethroughCommand), active: (s) => markActive(s, 'strike_through') },
@@ -128,7 +128,7 @@ class ToolbarView {
     this.content = document.createElement('div')
     this.content.className = 'mdforge-toolbar'
 
-    for (const entry of ENTRIES) {
+    for (const entry of formatEntries) {
       if (entry === 'separator') {
         const sep = document.createElement('span')
         sep.className = 'mdforge-toolbar-sep'

@@ -29,6 +29,7 @@ import {
   setImagePost
 } from './images'
 import { createTopbar } from './topbar'
+import { makeFormatMenu } from './format-menu'
 import { headingFold } from './heading-fold'
 import 'katex/dist/katex.min.css'
 import 'prosemirror-gapcursor/style/gapcursor.css'
@@ -93,8 +94,10 @@ sourceTextarea.spellcheck = false
 
 // Persistent top toolbar (document-level actions). Lives outside the Milkdown
 // root so it survives editor recreation on external changes.
+const openFormatMenu = makeFormatMenu(() => currentView)
 const topbar = createTopbar({
   getView: () => currentView,
+  openFormatMenu: (anchor) => openFormatMenu(anchor),
   insertImage: (view) => openInsertImageDialog(view),
   localizeAssets: () => vscode.postMessage({ type: 'localizeAssets' }),
   renameNote: () => vscode.postMessage({ type: 'renameNote' }),
