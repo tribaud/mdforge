@@ -40,6 +40,7 @@ conventions. Read it fully before making changes.
 | `media-src/src/shiki-highlight.ts` | Shiki code highlighting (non-blocking). |
 | `media-src/src/slash.ts` | `/` slash command menu. |
 | `media-src/src/toolbar.ts` | Selection toolbar (bubble menu), shortcuts in tooltips. |
+| `media-src/src/table-toolbar.ts` | Floating table toolbar (add/delete row & column, column align, delete table) shown when the caret is in a table. |
 | `media-src/src/github-alerts.ts` | GitHub alerts + per-blockquote type dropdown. |
 | `media-src/src/footnotes.ts` | Footnote reference → definition jump. |
 | `media-src/src/frontmatter.ts` | YAML frontmatter node + discreet editor + `title`→H1. |
@@ -109,6 +110,27 @@ conventions. Read it fully before making changes.
   click posts `openWikilink`; the host resolves it relative to the file (adds
   `.md`/`.markdown`) and opens it.
 - **Draggable blocks** (`block.ts`): `plugin-block` drag handle.
+- **Tables** (`table-toolbar.ts`): GFM ships the schema + every command but no
+  UI, so a table was a trap (type in cells, but no way to add/drop rows or
+  delete it). A floating toolbar (same `TooltipProvider` pattern as the bubble)
+  appears when the caret is in a table — structural ops use the
+  `@milkdown/prose/tables` (prosemirror-tables) commands directly (they act on
+  the current selection, no index). It shows on a collapsed caret or a
+  `CellSelection`; a text selection in a cell is left to the format bubble so
+  the two never fight for the same spot. Buttons carry a `data-tip` CSS tooltip
+  (native `title` is slow/suppressed in the webview). The table can be inserted
+  from the **top toolbar** (grid icon → `insertTableCommand`) or the slash menu.
+  - **Alignment gotcha**: GFM's table content model is
+    `table_header_row table_row+`; a plugin **force-syncs every body cell's
+    `alignment` to its header cell** on each change. So `setAlignCommand`
+    (= `setCellAttr` on the caret's body cell) is instantly reverted and looks
+    like it does nothing. We instead write the whole column (header included)
+    via `selectedRect` + `setNodeMarkup`. Same reason "delete row" is a no-op in
+    the header row — the header is mandatory, it only deletes body rows.
+- **Delete note** (`src/extension.ts` `deleteNote`): top-toolbar trash button →
+  modal confirmation listing the assets that will be trashed vs. kept (assets
+  also referenced by another note are kept). Everything goes to the OS trash
+  (recoverable), not a hard delete. Shares the asset-scan logic with `moveNote`.
 
 ## 5. Milkdown gotchas we learned (read before debugging)
 
