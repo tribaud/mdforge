@@ -49,9 +49,15 @@ function brace(value: string): string {
   return value.length <= 1 ? value : `{${value}}`
 }
 
+/** Add a trailing space after a letter control word (`\times`) so a following
+ *  letter doesn't glue onto it (`\timesa`). Harmless for other tokens. */
+function spaced(latex: string): string {
+  return /^\\[a-zA-Z]+$/.test(latex) ? `${latex} ` : latex
+}
+
 function mapSymbol(text: string): string {
   const t = text.trim()
-  if (t.length === 1 && SYMBOLS[t]) return SYMBOLS[t]
+  if (t.length === 1 && SYMBOLS[t]) return spaced(SYMBOLS[t])
   return t
 }
 
@@ -96,8 +102,10 @@ function convertNode(node: Node): string {
     }
     case 'mn':
       return (el.textContent ?? '').trim()
-    case 'mo':
-      return OPERATORS[(el.textContent ?? '').trim()] ?? (el.textContent ?? '').trim()
+    case 'mo': {
+      const op = (el.textContent ?? '').trim()
+      return op in OPERATORS ? spaced(OPERATORS[op]) : op
+    }
     case 'mtext':
       return `\\text{${el.textContent ?? ''}}`
     case 'mspace':
