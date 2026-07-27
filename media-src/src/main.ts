@@ -26,6 +26,7 @@ import {
   handleImageResponse,
   refreshImages,
   setAssetsBaseUri,
+  setDebugPaste,
   setImagePost
 } from './images'
 import { createTopbar } from './topbar'
@@ -48,6 +49,7 @@ interface MdForgeConfig {
   enableInProgress: boolean
   mermaidTheme?: string
   assetsBaseUri?: string
+  debugPasteHtml?: boolean
 }
 
 const vscode = acquireVsCodeApi()
@@ -194,6 +196,7 @@ function applyConfig(config: MdForgeConfig): void {
   document.body.classList.toggle('mdforge-inprogress', config.enableInProgress)
   if (config.assetsBaseUri) setAssetsBaseUri(config.assetsBaseUri)
   if (config.mermaidTheme) setMermaidTheme(config.mermaidTheme)
+  setDebugPaste(Boolean(config.debugPasteHtml))
 }
 
 function revealHeading(index: number): void {

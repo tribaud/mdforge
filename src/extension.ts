@@ -265,6 +265,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           fontSize: config.get<number>('fontSize', 15),
           pageWidth: config.get<string>('pageWidth', 'comfortable'),
           textAlign: config.get<string>('textAlign', 'left'),
+          debugPasteHtml: config.get<boolean>('debug.pasteHtml', false),
           enableInProgress: config.get<boolean>('checkbox.enableInProgress', true),
           mermaidTheme: config.get<string>('mermaid.theme', 'auto'),
           assetsBaseUri: webview
@@ -322,6 +323,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         mime?: string
         name?: string
         path?: string
+        html?: string
       }) => {
         switch (message.type) {
           case 'ready':
@@ -358,6 +360,12 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
               '@ext:tribaud.mdforge'
             )
             break
+          case 'debugPasteHtml': {
+            const content = `<!-- ==== text/html ==== -->\n${message.html || '(empty)'}\n\n<!-- ==== text/plain ==== -->\n${message.text || '(empty)'}\n`
+            const doc = await vscode.workspace.openTextDocument({ content, language: 'html' })
+            await vscode.window.showTextDocument(doc, { preview: false })
+            break
+          }
           case 'error':
             console.error('[MDForge webview]', message.text)
             break

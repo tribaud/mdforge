@@ -29,8 +29,15 @@ interface ImageResponse {
 }
 
 let post: Post = () => {}
+/** Debug: when on, each paste's raw HTML/text is sent to the host to inspect. */
+let debugPaste = false
 /** Webview URI of the note's directory; base for resolving relative images. */
 let assetsBaseUri = ''
+
+/** Toggle the paste-HTML debug capture (from config). */
+export function setDebugPaste(on: boolean): void {
+  debugPaste = on
+}
 let seq = 0
 /** Bumped to bust the webview image cache when an asset's content changes. */
 let cacheBust = 0
@@ -212,6 +219,15 @@ export const imagePaste = $prose(
 
         const onPaste = (event: ClipboardEvent): void => {
           if (!owns(event)) return
+          if (debugPaste) {
+            // Non-destructive: capture what's on the clipboard, then let the
+            // paste proceed as usual.
+            post({
+              type: 'debugPasteHtml',
+              html: event.clipboardData?.getData('text/html') ?? '',
+              text: event.clipboardData?.getData('text/plain') ?? ''
+            })
+          }
           const file = imageFileFrom(event.clipboardData)
           if (file) {
             event.preventDefault()

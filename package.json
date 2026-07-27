@@ -135,6 +135,11 @@
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
         },
+        "mdforge.debug.pasteHtml": {
+          "type": "boolean",
+          "default": false,
+          "description": "Debug: on paste, open the raw clipboard HTML/plain-text in a new tab (to inspect what a web page actually puts on the clipboard, e.g. math markup)."
+        },
         "mdforge.textAlign": {
           "type": "string",
           "enum": [
