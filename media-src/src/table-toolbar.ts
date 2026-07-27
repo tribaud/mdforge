@@ -23,7 +23,7 @@ import {
   deleteRow,
   deleteTable,
   isInTable,
-  selectedRect
+  selectionCell
 } from '@milkdown/prose/tables'
 import type { Command } from '@milkdown/prose/state'
 import type { EditorView } from '@milkdown/prose/view'
@@ -70,26 +70,26 @@ function runCommand(view: EditorView, command: Command): void {
 function setColumnAlign(view: EditorView, align: 'left' | 'center' | 'right'): void {
   const { state } = view
   if (!isInTable(state)) return
-  let rect
+  const sel = state.selection
+  // Build a full-column CellSelection (header + body) from the current
+  // selection, then set alignment on every cell in it — the canonical
+  // prosemirror-tables pattern, so the header is included and the sync keeps
+  // body cells consistent.
+  let anchor
+  let head
   try {
-    rect = selectedRect(state)
+    anchor = sel instanceof CellSelection ? sel.$anchorCell : selectionCell(state)
+    head = sel instanceof CellSelection ? sel.$headCell : anchor
   } catch {
     return
   }
-  const { map, table, tableStart } = rect
+  const colSel = CellSelection.colSelection(anchor, head)
   const tr = state.tr
-  const done = new Set<number>()
-  for (let col = rect.left; col < rect.right; col++) {
-    for (let row = 0; row < map.height; row++) {
-      const offset = map.map[row * map.width + col]
-      if (done.has(offset)) continue // spanning cell already handled
-      done.add(offset)
-      const node = table.nodeAt(offset)
-      if (node && node.attrs.alignment !== align) {
-        tr.setNodeMarkup(tableStart + offset, undefined, { ...node.attrs, alignment: align })
-      }
+  colSel.forEachCell((node, pos) => {
+    if (node.attrs.alignment !== align) {
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, alignment: align })
     }
-  }
+  })
   if (tr.docChanged) view.dispatch(tr)
   view.focus()
 }
