@@ -135,6 +135,16 @@
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
         },
+        "mdforge.paste.appendSource": {
+          "type": "boolean",
+          "default": false,
+          "description": "When pasting from a web page, append a '> <label> <url>' blockquote below the paste and place the caret on it (the source URL is auto-filled only if the clipboard carries one)."
+        },
+        "mdforge.paste.sourceLabel": {
+          "type": "string",
+          "default": "À partir de l'adresse",
+          "description": "Label used by mdforge.paste.appendSource before the URL."
+        },
         "mdforge.debug.pasteHtml": {
           "type": "boolean",
           "default": false,

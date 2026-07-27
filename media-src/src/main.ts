@@ -33,6 +33,7 @@ import { createTopbar } from './topbar'
 import { makeFormatMenu } from './format-menu'
 import { headingFold } from './heading-fold'
 import { transformPastedMath } from './paste-math'
+import { pasteSource, setAppendSource } from './paste-source'
 import 'katex/dist/katex.min.css'
 import 'prosemirror-gapcursor/style/gapcursor.css'
 import './github-theme.css'
@@ -51,6 +52,8 @@ interface MdForgeConfig {
   mermaidTheme?: string
   assetsBaseUri?: string
   debugPasteHtml?: boolean
+  appendSource?: boolean
+  sourceLabel?: string
 }
 
 const vscode = acquireVsCodeApi()
@@ -164,6 +167,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(imageTitleNormalizer)
     .use(gapCursorPlugin)
     .use(headingFold)
+    .use(pasteSource)
     .create()
 
   currentView = editor.ctx.get(editorViewCtx)
@@ -209,6 +213,7 @@ function applyConfig(config: MdForgeConfig): void {
   if (config.assetsBaseUri) setAssetsBaseUri(config.assetsBaseUri)
   if (config.mermaidTheme) setMermaidTheme(config.mermaidTheme)
   setDebugPaste(Boolean(config.debugPasteHtml))
+  setAppendSource(Boolean(config.appendSource), config.sourceLabel)
 }
 
 function revealHeading(index: number): void {
