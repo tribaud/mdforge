@@ -4,17 +4,28 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [0.2.3]
+## [0.2.4]
+
+### Added
+
+- **One-click switch** between the text editor and MDForge, in the editor's
+  title bar: *Open with MDForge* (book icon) on a Markdown text editor, and
+  *Reopen with Text Editor* (code icon) while in MDForge.
 
 ### Changed
 
-- MDForge is now the **default editor** for Markdown files (`priority:
-  "default"`). Use *Reopen Editor With…* to fall back to the raw text editor.
-- **Git diffs use the native text diff.** Because a custom editor can't render
-  inside VS Code's diff editor, "Open Changes" now shows the built-in red/green
-  text diff instead of the MDForge webview. Remove any
-  `workbench.editorAssociations` mapping `"*.md"` to `mdforge.editor` — that
-  setting forced the webview onto both sides of the diff and broke it.
+- MDForge stays an **opt-in** editor (`priority: "option"`). A custom editor
+  can't render inside VS Code's diff editor, so keeping the native text editor
+  as the default is what lets **all git comparisons** (commits, files, "Compare
+  Selected", Source Control) work as the usual red/green text diff. Open MDForge
+  on the file you want to edit visually via the title-bar button or
+  `Ctrl/Cmd+Shift+Alt+M`; do **not** map `"*.md"` to `mdforge.editor` in
+  `workbench.editorAssociations` (that breaks diffs).
+
+### Fixed
+
+- The relative scroll position is preserved when toggling between the source and
+  preview views (it no longer jumps to the top).
 
 ## [0.2.2]
 

@@ -2,7 +2,7 @@
   "name": "mdforge",
   "displayName": "MDForge",
   "description": "Transform VS Code into a Typora-like WYSIWYG Markdown editor with GitHub-style rendering, Mermaid diagrams and rich task lists.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "tribaud",
   "license": "MIT",
   "icon": "icon.png",
@@ -52,19 +52,21 @@
             "filenamePattern": "*.markdown"
           }
         ],
-        "priority": "default"
+        "priority": "option"
       }
     ],
     "commands": [
       {
         "command": "mdforge.openEditor",
         "title": "MDForge: Open with MDForge",
-        "category": "MDForge"
+        "category": "MDForge",
+        "icon": "$(book)"
       },
       {
         "command": "mdforge.openWithTextEditor",
         "title": "MDForge: Reopen with Text Editor",
-        "category": "MDForge"
+        "category": "MDForge",
+        "icon": "$(code)"
       },
       {
         "command": "mdforge.togglePresentation",
@@ -94,6 +96,18 @@
           "when": "resourceLangId == markdown",
           "command": "mdforge.openEditor",
           "group": "1_open"
+        }
+      ],
+      "editor/title": [
+        {
+          "when": "resourceLangId == markdown && !isInDiffEditor && activeCustomEditorId != 'mdforge.editor'",
+          "command": "mdforge.openEditor",
+          "group": "navigation"
+        },
+        {
+          "when": "activeCustomEditorId == 'mdforge.editor'",
+          "command": "mdforge.openWithTextEditor",
+          "group": "navigation"
         }
       ]
     },
