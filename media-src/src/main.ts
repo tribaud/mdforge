@@ -1,50 +1,23 @@
-import {
-  Editor,
-  rootCtx,
-  defaultValueCtx,
-  editorViewCtx,
-  editorViewOptionsCtx,
-  remarkStringifyOptionsCtx
-} from '@milkdown/core'
-import { commonmark } from '@milkdown/preset-commonmark'
-import { gfm, insertTableCommand } from '@milkdown/preset-gfm'
-import { $prose } from '@milkdown/utils'
-import { gapCursor } from '@milkdown/prose/gapcursor'
-import { listener, listenerCtx } from '@milkdown/plugin-listener'
-import { history } from '@milkdown/plugin-history'
-import { clipboard } from '@milkdown/plugin-clipboard'
-import { math } from '@milkdown/plugin-math'
-import { diagram } from '@milkdown/plugin-diagram'
-import { inProgressTask } from './inprogress-task'
-import { nodeViews, setMermaidTheme } from './views'
-import { slash, slashPluginView } from './slash'
-import { toolbar, toolbarPluginView } from './toolbar'
-import { tableToolbar, tableToolbarPluginView } from './table-toolbar'
-import { githubAlert } from './github-alerts'
-import { footnoteJump } from './footnotes'
-import { frontmatter } from './frontmatter'
-import { block, blockView } from './block'
-import { wikilinks } from './wikilinks'
-import { shikiHighlight } from './shiki-highlight'
-import {
-  imagePaste,
-  imageNodeView,
-  imageTitleNormalizer,
-  openInsertImageDialog,
-  handleImageResponse,
-  refreshImages,
-  setAssetsBaseUri,
-  setDebugPaste,
-  setImagePost
-} from './images'
-import { createTopbar } from './topbar'
-import { makeFormatMenu } from './format-menu'
-import { headingFold } from './heading-fold'
-import { transformPastedMath } from './paste-math'
-import { handleSourcePaste, setAppendSource } from './paste-source'
-import 'katex/dist/katex.min.css'
-import 'prosemirror-gapcursor/style/gapcursor.css'
-import './github-theme.css'
+/*
+ * MDForge — CodeMirror 6 "Live Preview" experiment (branch: experiment/codemirror).
+ *
+ * This is an alternative editor engine to the Milkdown/ProseMirror build on
+ * `main`. The document here IS the Markdown text (CodeMirror is a text editor),
+ * so editing never re-serializes: a one-character change is a one-character
+ * diff, and identifiers stay grep-able. Rendering is done inline via decorations
+ * (see cm-livepreview.ts), Obsidian-style.
+ *
+ * It speaks the same host protocol as the Milkdown build (`ready`/`edit` out,
+ * `setContent`/`config` in), so src/extension.ts is unchanged.
+ */
+import { EditorState } from '@codemirror/state'
+import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view'
+import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
+import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { markdown } from '@codemirror/lang-markdown'
+import { GFM } from '@lezer/markdown'
+import { livePreview, setAssetsBase } from './cm-livepreview'
+import './cm-theme.css'
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void
@@ -53,340 +26,97 @@ declare function acquireVsCodeApi(): {
 }
 
 interface MdForgeConfig {
-  fontSize: number
-  pageWidth: 'comfortable' | 'full'
-  textAlign?: 'left' | 'justify'
-  enableInProgress: boolean
-  mermaidTheme?: string
+  fontSize?: number
+  pageWidth?: 'comfortable' | 'full'
   assetsBaseUri?: string
-  debugPasteHtml?: boolean
-  appendSource?: boolean
-  sourceLabel?: string
 }
 
 const vscode = acquireVsCodeApi()
 const root = document.getElementById('app') as HTMLElement
 
-// Route image bytes from paste/drop/picker to the extension host.
-setImagePost((message) => vscode.postMessage(message))
-
-// Gap cursor: lets you place the caret (and start typing) after a trailing
-// block that is not a paragraph — e.g. a code block, table or diagram at the
-// very end of the document. Non-destructive: the Markdown is untouched until
-// you actually type.
-const gapCursorPlugin = $prose(() => gapCursor())
-
-/**
- * Undo escapes that GFM/CommonMark don't actually require, so identifiers stay
- * grep-able (`zfs_backup`, not `zfs\_backup`). `mdast-util-to-markdown` escapes
- * conservatively; we only strip escapes at provably-safe positions:
- *  - `_` between two word characters (intra-word `_` can't open emphasis);
- *  - a lone `\~` not forming `~~` (a single tilde has no meaning in GFM);
- *  - the `\[~]` in-progress task marker (our own `[~]` state, which the
- *    serializer emits as a text node and escapes) right after a list bullet.
- * These never round-trip back to a different meaning. Escapes inside code are
- * never emitted by the serializer, so this only ever touches prose/link text.
- */
-function normalizeMarkdown(markdown: string): string {
-  return markdown
-    .replace(/(\w)\\_(?=\w)/g, '$1_')
-    .replace(/\\~(?!~)/g, '~')
-    .replace(/(^|\n)(\s*[-*+]\s+)\\(\[~\])/g, '$1$2$3')
-}
-
-/** Turn a blank page into a visible error so failures are diagnosable. */
-function showError(error: unknown): void {
-  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
-  const pre = document.createElement('pre')
-  pre.style.cssText =
-    'white-space:pre-wrap;word-break:break-word;color:#f85149;padding:16px;font:12px/1.5 monospace'
-  pre.textContent = `MDForge failed to initialize:\n\n${detail}`
-  root.replaceChildren(pre)
-  vscode.postMessage({ type: 'error', text: detail })
-}
-
-window.addEventListener('error', (event) => showError(event.error ?? event.message))
-window.addEventListener('unhandledrejection', (event) => showError(event.reason))
-
-let editor: Editor | null = null
-/** Last markdown we are in sync with (from either side). Guards echo loops. */
+/** Last markdown we are in sync with. Guards echo loops with the host. */
 let currentText = ''
-/** True while we are applying a change coming from the extension host. */
+/** True while applying a host change, so we don't post it straight back. */
 let applyingRemote = false
-/** Read-only presentation mode. */
-let presentation = false
-/** Raw Markdown source view (editable textarea) instead of the WYSIWYG editor. */
-let sourceMode = false
-let currentView: any = null
 
-// Editable raw-source textarea, shown when source view is toggled on. Lives
-// outside the Milkdown root and persists across editor recreation.
-const sourceTextarea = document.createElement('textarea')
-sourceTextarea.className = 'mdforge-source'
-sourceTextarea.spellcheck = false
-
-// Persistent top toolbar (document-level actions). Lives outside the Milkdown
-// root so it survives editor recreation on external changes.
-const openFormatMenu = makeFormatMenu(() => currentView)
-const topbar = createTopbar({
-  getView: () => currentView,
-  openFormatMenu: (anchor) => openFormatMenu(anchor),
-  insertImage: (view) => openInsertImageDialog(view),
-  insertTable: () => insertTableCommand.run?.(),
-  localizeAssets: () => vscode.postMessage({ type: 'localizeAssets' }),
-  renameNote: () => vscode.postMessage({ type: 'renameNote' }),
-  moveNote: () => vscode.postMessage({ type: 'moveNote' }),
-  deleteNote: () => vscode.postMessage({ type: 'deleteNote' }),
-  refreshImages: () => refreshImages(),
-  toggleSource: () => toggleSource(),
-  togglePresentation: () => togglePresentation(),
-  openSettings: () => vscode.postMessage({ type: 'openSettings' })
-})
-document.body.insertBefore(topbar, root)
-document.body.appendChild(sourceTextarea)
-
-async function createEditor(initial: string): Promise<void> {
-  currentText = initial
-  editor = await Editor.make()
-    .config((ctx) => {
-      ctx.set(rootCtx, root)
-      ctx.set(defaultValueCtx, initial)
-      // Serialize close to common GFM conventions so a small edit produces a
-      // small diff (the file is rewritten whole on every change). remark's
-      // defaults (`*` bullets/rules, `***` thematic breaks) would churn the
-      // whole document.
-      ctx.update(remarkStringifyOptionsCtx, (prev) => ({
-        ...prev,
-        bullet: '-' as const,
-        bulletOther: '*' as const,
-        rule: '-' as const,
-        ruleRepetition: 3,
-        ruleSpaces: false,
-        emphasis: '*' as const,
-        strong: '*' as const,
-        listItemIndent: 'one' as const,
-        fences: true,
-        incrementListMarker: true
-      }))
-      ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
-        if (applyingRemote) return
-        const normalized = normalizeMarkdown(markdown)
-        if (normalized === currentText) return
-        currentText = normalized
-        vscode.postMessage({ type: 'edit', text: normalized })
-      })
-      ctx.set(slash.key, { view: slashPluginView })
-      ctx.set(toolbar.key, { view: toolbarPluginView })
-      ctx.set(tableToolbar.key, { view: tableToolbarPluginView })
-      ctx.set(block.key, { view: blockView(ctx) })
-      ctx.update(editorViewOptionsCtx, (prev) => ({
-        ...prev,
-        editable: () => !presentation,
-        // Append the source address for external web pastes. Runs before the
-        // clipboard plugin (editor props win in someProp) and returns false so
-        // the normal paste still happens.
-        handlePaste: (view: any, event: ClipboardEvent) => handleSourcePaste(view, event),
-        // Recover web math (MathJax/KaTeX) on paste, chaining any existing hook.
-        transformPastedHTML: (html: string, view: unknown) => {
-          const chained =
-            typeof prev.transformPastedHTML === 'function'
-              ? (prev.transformPastedHTML as (h: string, v: unknown) => string)(html, view)
-              : html
-          return transformPastedMath(chained)
-        }
-      }))
-    })
-    .use(commonmark)
-    .use(gfm)
-    .use(frontmatter)
-    .use(inProgressTask)
-    .use(listener)
-    .use(history)
-    .use(clipboard)
-    .use(math)
-    .use(diagram)
-    .use(nodeViews)
-    .use(slash)
-    .use(toolbar)
-    .use(tableToolbar)
-    .use(githubAlert)
-    .use(footnoteJump)
-    .use(block)
-    .use(wikilinks((target) => vscode.postMessage({ type: 'openWikilink', target })))
-    .use(shikiHighlight)
-    .use(imagePaste)
-    .use(imageNodeView)
-    .use(imageTitleNormalizer)
-    .use(gapCursorPlugin)
-    .use(headingFold)
-    .create()
-
-  currentView = editor.ctx.get(editorViewCtx)
-}
-
-/**
- * Replace the whole document when the change originates from the extension host
- * (external edit, git checkout, undo in the text editor...). Milkdown has no
- * cheap "set whole value" that preserves the schema state, so we recreate the
- * editor. External edits are rare, so the cursor reset is acceptable for now.
- */
-async function setContent(text: string): Promise<void> {
-  // Only skip when the editor already exists; a brand-new empty file arrives as
-  // '' which equals the initial currentText, and must still build the editor
-  // (otherwise there is nothing to type into until switching to source view).
-  if (text === currentText && editor) return
-  applyingRemote = true
-  try {
-    if (editor) {
-      await editor.destroy()
-      editor = null
-    }
-    await createEditor(text)
-    // An external change while viewing source: reflect it in the textarea.
-    if (sourceMode) sourceTextarea.value = text
-    // Focus an empty document so the caret is ready without an extra click.
-    if (!sourceMode && text.trim() === '') currentView?.focus?.()
-  } catch (error) {
-    showError(error)
-  } finally {
-    applyingRemote = false
+const editorTheme = EditorView.theme({
+  '&': {
+    height: '100%',
+    color: 'var(--vscode-editor-foreground)',
+    backgroundColor: 'transparent'
+  },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-scroller': {
+    fontFamily: 'var(--mdforge-font)',
+    lineHeight: '1.7',
+    overflow: 'auto'
+  },
+  '.cm-content': {
+    maxWidth: '900px',
+    margin: '0 auto',
+    padding: '24px 48px 40vh',
+    fontSize: 'var(--mdforge-font-size, 15px)',
+    caretColor: 'var(--vscode-editorCursor-foreground)'
+  },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--vscode-editorCursor-foreground)' },
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+    backgroundColor: 'var(--vscode-editor-selectionBackground)'
   }
+})
+
+const view = new EditorView({
+  parent: root,
+  state: EditorState.create({
+    doc: '',
+    extensions: [
+      history(),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
+      EditorView.lineWrapping,
+      drawSelection(),
+      highlightActiveLine(),
+      markdown({ extensions: GFM }),
+      syntaxHighlighting(defaultHighlightStyle),
+      livePreview,
+      editorTheme,
+      EditorView.updateListener.of((update) => {
+        if (applyingRemote || !update.docChanged) return
+        const text = update.state.doc.toString()
+        if (text === currentText) return
+        currentText = text
+        vscode.postMessage({ type: 'edit', text })
+      })
+    ]
+  })
+})
+
+function setContent(text: string): void {
+  if (text === currentText) return
+  applyingRemote = true
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } })
+  currentText = text
+  applyingRemote = false
 }
 
 function applyConfig(config: MdForgeConfig): void {
-  document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
-  document.documentElement.style.setProperty(
-    '--mdforge-text-align',
-    config.textAlign === 'justify' ? 'justify' : 'left'
-  )
+  if (typeof config.fontSize === 'number') {
+    document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
+  }
   document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
-  document.body.classList.toggle('mdforge-inprogress', config.enableInProgress)
-  if (config.assetsBaseUri) setAssetsBaseUri(config.assetsBaseUri)
-  if (config.mermaidTheme) setMermaidTheme(config.mermaidTheme)
-  setDebugPaste(Boolean(config.debugPasteHtml))
-  setAppendSource(Boolean(config.appendSource), config.sourceLabel)
-}
-
-function revealHeading(index: number): void {
-  const headings = document.querySelectorAll(
-    '.milkdown .ProseMirror h1, .milkdown .ProseMirror h2, .milkdown .ProseMirror h3, .milkdown .ProseMirror h4, .milkdown .ProseMirror h5, .milkdown .ProseMirror h6'
-  )
-  const target = headings[index] as HTMLElement | undefined
-  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-function togglePresentation(): void {
-  // Source view and presentation are mutually exclusive; leave source first.
-  if (!presentation && sourceMode) void toggleSource()
-  presentation = !presentation
-  document.body.classList.toggle('mdforge-presentation', presentation)
-  // Re-evaluate the editable prop (read from editorViewOptionsCtx).
-  if (currentView) currentView.dispatch(currentView.state.tr)
-  vscode.postMessage({ type: 'presentationState', enabled: presentation })
-}
-
-/** Preview scrolls the window; source scrolls the textarea. Sync the relative
- * position between the two so toggling keeps you roughly where you were instead
- * of jumping to the top. */
-function previewScrollMax(): number {
-  return Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
-}
-function sourceScrollMax(): number {
-  return Math.max(0, sourceTextarea.scrollHeight - sourceTextarea.clientHeight)
-}
-function previewFraction(): number {
-  const max = previewScrollMax()
-  return max > 0 ? window.scrollY / max : 0
-}
-function sourceFraction(): number {
-  const max = sourceScrollMax()
-  return max > 0 ? sourceTextarea.scrollTop / max : 0
-}
-
-/**
- * Toggle the raw Markdown source view. Entering mirrors the current Markdown
- * into an editable textarea; leaving commits any edits back to the WYSIWYG
- * editor and the host (whole-document replace), rebuilding Milkdown from source.
- * The relative scroll position is carried across so the view doesn't jump.
- */
-async function toggleSource(): Promise<void> {
-  if (!sourceMode) {
-    const fraction = previewFraction()
-    sourceMode = true
-    sourceTextarea.value = currentText
-    document.body.classList.add('mdforge-source-mode')
-    sourceTextarea.focus()
-    // Layout is now the textarea's — place it at the same relative position.
-    requestAnimationFrame(() => {
-      sourceTextarea.scrollTop = Math.round(fraction * sourceScrollMax())
-    })
-    return
-  }
-  const fraction = sourceFraction()
-  sourceMode = false
-  document.body.classList.remove('mdforge-source-mode')
-  // Restore the window scroll after the preview lays out (and after any focus,
-  // which would otherwise scroll the caret into view at the top).
-  const restore = (): void => {
-    requestAnimationFrame(() => window.scrollTo(0, Math.round(fraction * previewScrollMax())))
-  }
-  const next = sourceTextarea.value
-  if (next === currentText) {
-    currentView?.focus?.()
-    restore()
-    return
-  }
-  currentText = next
-  vscode.postMessage({ type: 'edit', text: next })
-  applyingRemote = true
-  try {
-    if (editor) {
-      await editor.destroy()
-      editor = null
-    }
-    await createEditor(next)
-    currentView?.focus?.()
-    restore()
-  } catch (error) {
-    showError(error)
-  } finally {
-    applyingRemote = false
-  }
+  if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
 }
 
 window.addEventListener('message', (event) => {
-  const msg = event.data as {
-    type: string
-    text?: string
-    config?: MdForgeConfig
-    index?: number
-    id?: number
-    src?: string
-    alt?: string
-    linkStyle?: string
-    error?: string
-  }
+  const msg = event.data as { type: string; text?: string; config?: MdForgeConfig }
   switch (msg.type) {
     case 'setContent':
-      if (typeof msg.text === 'string') void setContent(msg.text)
+      if (typeof msg.text === 'string') setContent(msg.text)
       break
     case 'config':
       if (msg.config) applyConfig(msg.config)
       break
-    case 'imageInserted':
-      if (typeof msg.id === 'number') handleImageResponse(msg as { id: number })
-      break
-    case 'refreshImages':
-      refreshImages()
-      break
-    case 'revealHeading':
-      if (typeof msg.index === 'number') revealHeading(msg.index)
-      break
-    case 'togglePresentation':
-      togglePresentation()
-      break
+    // Other host messages (imageInserted, refreshImages, revealHeading,
+    // togglePresentation) are not wired in this experiment yet.
   }
 })
 
-// Tell the host we are ready to receive the initial document + config.
 vscode.postMessage({ type: 'ready' })
