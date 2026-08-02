@@ -2,7 +2,7 @@
   "name": "mdforge",
   "displayName": "MDForge",
   "description": "Transform VS Code into a Typora-like WYSIWYG Markdown editor with GitHub-style rendering, Mermaid diagrams and rich task lists.",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "publisher": "tribaud",
   "license": "MIT",
   "icon": "icon.png",
