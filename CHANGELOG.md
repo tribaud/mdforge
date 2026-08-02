@@ -4,6 +4,29 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.5]
+
+### Changed
+
+- **Serialization fidelity** — a small edit now produces a small diff instead of
+  rewriting the whole file. The Markdown is serialized close to common GFM
+  conventions: `-` bullets, `---` thematic breaks (`ruleRepetition: 3`,
+  `ruleSpaces: false`), `*` emphasis/strong, one-space list-item indent.
+
+### Fixed
+
+- **No more spurious escaping** of identifiers: `zfs_backup`, `APP_DATA`,
+  `~830 G`, `a_b_c` stay grep-able (were `zfs\_backup`, `\~830 G`…). Only
+  provably-safe escapes are stripped (intra-word `_`, a lone `\~`).
+- The `[~]` in-progress task marker is no longer written as `\[~]`.
+
+### Known limitations
+
+- Nested inline marks can still be reordered/split on round-trip (e.g.
+  `~~**A** b~~`) — that happens in Milkdown's ProseMirror→mdast step, not the
+  Markdown serializer, and is tracked separately. Tight lists may still widen to
+  loose (Milkdown parser `spread`).
+
 ## [0.2.4]
 
 ### Added

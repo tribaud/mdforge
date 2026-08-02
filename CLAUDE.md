@@ -72,6 +72,16 @@ conventions. Read it fully before making changes.
 - **Sync**: host → webview posts `setContent` on external changes; webview →
   host posts `edit` with the new Markdown (whole-document replace via
   `WorkspaceEdit`). A `syncedText` guard avoids echo loops.
+- **Serialization fidelity** (`main.ts`): every edit rewrites the *whole* file
+  (ProseMirror has no source offsets, so targeted per-node rewrites aren't
+  possible). To keep a small edit → small diff, we tune `remarkStringifyOptionsCtx`
+  (`bullet: '-'`, `rule: '-'`, `ruleRepetition: 3`, `ruleSpaces: false`,
+  `emphasis/strong: '*'`, `listItemIndent: 'one'`) and post-process with
+  `normalizeMarkdown()` to strip escapes `mdast-util-to-markdown` adds but GFM
+  doesn't need (intra-word `_`, lone `\~`, the `\[~]` marker). Byte-perfect
+  round-trip is impossible (ProseMirror drops `_`vs`*`, tight/loose, mark
+  nesting) — we only get *close*. Known-open: nested marks reorder/split
+  (ProseMirror→mdast), tight→loose lists (Milkdown parser `spread`).
 - **External changes recreate the editor** (`setContent` destroys + rebuilds
   the Milkdown editor). Milkdown has no cheap "set whole value"; external edits
   are rare so a cursor reset is acceptable.

@@ -76,6 +76,24 @@ setImagePost((message) => vscode.postMessage(message))
 // you actually type.
 const gapCursorPlugin = $prose(() => gapCursor())
 
+/**
+ * Undo escapes that GFM/CommonMark don't actually require, so identifiers stay
+ * grep-able (`zfs_backup`, not `zfs\_backup`). `mdast-util-to-markdown` escapes
+ * conservatively; we only strip escapes at provably-safe positions:
+ *  - `_` between two word characters (intra-word `_` can't open emphasis);
+ *  - a lone `\~` not forming `~~` (a single tilde has no meaning in GFM);
+ *  - the `\[~]` in-progress task marker (our own `[~]` state, which the
+ *    serializer emits as a text node and escapes) right after a list bullet.
+ * These never round-trip back to a different meaning. Escapes inside code are
+ * never emitted by the serializer, so this only ever touches prose/link text.
+ */
+function normalizeMarkdown(markdown: string): string {
+  return markdown
+    .replace(/(\w)\\_(?=\w)/g, '$1_')
+    .replace(/\\~(?!~)/g, '~')
+    .replace(/(^|\n)(\s*[-*+]\s+)\\(\[~\])/g, '$1$2$3')
+}
+
 /** Turn a blank page into a visible error so failures are diagnosable. */
 function showError(error: unknown): void {
   const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
@@ -133,13 +151,29 @@ async function createEditor(initial: string): Promise<void> {
     .config((ctx) => {
       ctx.set(rootCtx, root)
       ctx.set(defaultValueCtx, initial)
-      // Serialize unordered/task lists with `-` (remark defaults to `*`).
-      ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: '-' as const }))
+      // Serialize close to common GFM conventions so a small edit produces a
+      // small diff (the file is rewritten whole on every change). remark's
+      // defaults (`*` bullets/rules, `***` thematic breaks) would churn the
+      // whole document.
+      ctx.update(remarkStringifyOptionsCtx, (prev) => ({
+        ...prev,
+        bullet: '-' as const,
+        bulletOther: '*' as const,
+        rule: '-' as const,
+        ruleRepetition: 3,
+        ruleSpaces: false,
+        emphasis: '*' as const,
+        strong: '*' as const,
+        listItemIndent: 'one' as const,
+        fences: true,
+        incrementListMarker: true
+      }))
       ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
         if (applyingRemote) return
-        if (markdown === currentText) return
-        currentText = markdown
-        vscode.postMessage({ type: 'edit', text: markdown })
+        const normalized = normalizeMarkdown(markdown)
+        if (normalized === currentText) return
+        currentText = normalized
+        vscode.postMessage({ type: 'edit', text: normalized })
       })
       ctx.set(slash.key, { view: slashPluginView })
       ctx.set(toolbar.key, { view: toolbarPluginView })
