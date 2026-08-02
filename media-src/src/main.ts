@@ -1,4 +1,11 @@
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx } from '@milkdown/core'
+import {
+  Editor,
+  rootCtx,
+  defaultValueCtx,
+  editorViewCtx,
+  editorViewOptionsCtx,
+  remarkStringifyOptionsCtx
+} from '@milkdown/core'
 import { commonmark } from '@milkdown/preset-commonmark'
 import { gfm, insertTableCommand } from '@milkdown/preset-gfm'
 import { $prose } from '@milkdown/utils'
@@ -126,6 +133,8 @@ async function createEditor(initial: string): Promise<void> {
     .config((ctx) => {
       ctx.set(rootCtx, root)
       ctx.set(defaultValueCtx, initial)
+      // Serialize unordered/task lists with `-` (remark defaults to `*`).
+      ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: '-' as const }))
       ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
         if (applyingRemote) return
         if (markdown === currentText) return
