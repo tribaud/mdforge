@@ -251,24 +251,55 @@ function togglePresentation(): void {
   vscode.postMessage({ type: 'presentationState', enabled: presentation })
 }
 
+/** Preview scrolls the window; source scrolls the textarea. Sync the relative
+ * position between the two so toggling keeps you roughly where you were instead
+ * of jumping to the top. */
+function previewScrollMax(): number {
+  return Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+}
+function sourceScrollMax(): number {
+  return Math.max(0, sourceTextarea.scrollHeight - sourceTextarea.clientHeight)
+}
+function previewFraction(): number {
+  const max = previewScrollMax()
+  return max > 0 ? window.scrollY / max : 0
+}
+function sourceFraction(): number {
+  const max = sourceScrollMax()
+  return max > 0 ? sourceTextarea.scrollTop / max : 0
+}
+
 /**
  * Toggle the raw Markdown source view. Entering mirrors the current Markdown
  * into an editable textarea; leaving commits any edits back to the WYSIWYG
  * editor and the host (whole-document replace), rebuilding Milkdown from source.
+ * The relative scroll position is carried across so the view doesn't jump.
  */
 async function toggleSource(): Promise<void> {
   if (!sourceMode) {
+    const fraction = previewFraction()
     sourceMode = true
     sourceTextarea.value = currentText
     document.body.classList.add('mdforge-source-mode')
     sourceTextarea.focus()
+    // Layout is now the textarea's — place it at the same relative position.
+    requestAnimationFrame(() => {
+      sourceTextarea.scrollTop = Math.round(fraction * sourceScrollMax())
+    })
     return
   }
+  const fraction = sourceFraction()
   sourceMode = false
   document.body.classList.remove('mdforge-source-mode')
+  // Restore the window scroll after the preview lays out (and after any focus,
+  // which would otherwise scroll the caret into view at the top).
+  const restore = (): void => {
+    requestAnimationFrame(() => window.scrollTo(0, Math.round(fraction * previewScrollMax())))
+  }
   const next = sourceTextarea.value
   if (next === currentText) {
     currentView?.focus?.()
+    restore()
     return
   }
   currentText = next
@@ -281,6 +312,7 @@ async function toggleSource(): Promise<void> {
     }
     await createEditor(next)
     currentView?.focus?.()
+    restore()
   } catch (error) {
     showError(error)
   } finally {
