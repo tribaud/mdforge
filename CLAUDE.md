@@ -53,16 +53,22 @@ conventions. Read it fully before making changes.
 ## 3. How it fits together
 
 - The extension registers a `CustomTextEditorProvider` for `*.md`/`*.markdown`
-  at `priority: "default"` (opens MDForge automatically; use *Reopen Editor
-  With…* for the raw text editor). For each document it creates a webview whose
-  HTML loads `media/dist/main.js` under a strict CSP (nonce + `webview.cspSource`,
-  plus `wasm-unsafe-eval`, `worker-src blob:`, `connect-src` for Mermaid/Shiki).
-- **Git diffs stay text.** Custom editors can't render inside VS Code's diff
-  editor, so "Open Changes" uses the built-in red/green text diff — which is
-  what we want. Do **not** set `workbench.editorAssociations` (`"*.md"` →
-  `mdforge.editor`): that forces the webview onto *both sides* of the diff and
-  breaks it. `priority: "default"` makes MDForge the default without that
-  side effect.
+  at `priority: "option"` (**opt-in**, not the default editor). For each
+  document it creates a webview whose HTML loads `media/dist/main.js` under a
+  strict CSP (nonce + `webview.cspSource`, plus `wasm-unsafe-eval`,
+  `worker-src blob:`, `connect-src` for Mermaid/Shiki).
+- **Why opt-in, not default (the diff constraint).** A custom editor (webview)
+  *cannot* render inside VS Code's diff editor: each side is handed to a
+  separate webview that only receives its own version — never the counterpart or
+  VS Code's computed diff — so red/green is impossible. Making MDForge the
+  default (via `priority: "default"` or `editorAssociations`) therefore breaks
+  **every** git comparison (commits, files, "Compare Selected", Source Control).
+  Keeping the native text editor as the default preserves all of those. Users
+  switch to MDForge per file via the **`editor/title` buttons** (book icon →
+  `mdforge.openEditor`; code icon → `mdforge.openWithTextEditor` while in
+  MDForge, gated on `activeCustomEditorId`) or `Ctrl/Cmd+Shift+Alt+M`. This is
+  the same reason VS Code's own Markdown preview is a side panel, not an
+  in-place editor swap.
 - **Sync**: host → webview posts `setContent` on external changes; webview →
   host posts `edit` with the new Markdown (whole-document replace via
   `WorkspaceEdit`). A `syncedText` guard avoids echo loops.
