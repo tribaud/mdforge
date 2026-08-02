@@ -36,15 +36,25 @@ function detectUrl(data: DataTransfer | null): string {
   return /^https?:\/\/\S+$/i.test(text) ? text : ''
 }
 
-/** Insert the `> <label> <url>` blockquote below the paste, caret on it. */
+/** Insert the source blockquote below the paste, caret on it.
+ *
+ * Layout is `<label> :` then a hard line break then the URL, so a long address
+ * lands on its own line — justified text stretched a URL across the whole width
+ * with huge gaps when label + URL shared one line. */
 function insertSource(view: EditorView, url: string): void {
   const { state } = view
   const blockquote = state.schema.nodes.blockquote
   const paragraph = state.schema.nodes.paragraph
+  const hardbreak = state.schema.nodes.hardbreak
   if (!blockquote || !paragraph) return
 
-  const text = url ? `${label} ${url}` : `${label} `
-  const node = blockquote.create(null, paragraph.create(null, state.schema.text(text)))
+  // Drop any trailing colon on the configured label so we never double it.
+  const head = label.replace(/\s*:\s*$/, '')
+  const content: any[] = [state.schema.text(`${head} :`)]
+  if (hardbreak) content.push(hardbreak.create())
+  else content.push(state.schema.text(' ')) // fallback: keep it on one line
+  if (url) content.push(state.schema.text(url))
+  const node = blockquote.create(null, paragraph.create(null, content))
   const sel = state.selection
   const at = sel.$to.depth >= 1 ? sel.$to.after(1) : state.doc.content.size
 

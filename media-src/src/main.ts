@@ -1,6 +1,13 @@
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx } from '@milkdown/core'
+import {
+  Editor,
+  rootCtx,
+  defaultValueCtx,
+  editorViewCtx,
+  editorViewOptionsCtx,
+  remarkStringifyOptionsCtx
+} from '@milkdown/core'
 import { commonmark } from '@milkdown/preset-commonmark'
-import { gfm } from '@milkdown/preset-gfm'
+import { gfm, insertTableCommand } from '@milkdown/preset-gfm'
 import { $prose } from '@milkdown/utils'
 import { gapCursor } from '@milkdown/prose/gapcursor'
 import { listener, listenerCtx } from '@milkdown/plugin-listener'
@@ -12,6 +19,7 @@ import { inProgressTask } from './inprogress-task'
 import { nodeViews, setMermaidTheme } from './views'
 import { slash, slashPluginView } from './slash'
 import { toolbar, toolbarPluginView } from './toolbar'
+import { tableToolbar, tableToolbarPluginView } from './table-toolbar'
 import { githubAlert } from './github-alerts'
 import { footnoteJump } from './footnotes'
 import { frontmatter } from './frontmatter'
@@ -106,9 +114,11 @@ const topbar = createTopbar({
   getView: () => currentView,
   openFormatMenu: (anchor) => openFormatMenu(anchor),
   insertImage: (view) => openInsertImageDialog(view),
+  insertTable: () => insertTableCommand.run?.(),
   localizeAssets: () => vscode.postMessage({ type: 'localizeAssets' }),
   renameNote: () => vscode.postMessage({ type: 'renameNote' }),
   moveNote: () => vscode.postMessage({ type: 'moveNote' }),
+  deleteNote: () => vscode.postMessage({ type: 'deleteNote' }),
   refreshImages: () => refreshImages(),
   toggleSource: () => toggleSource(),
   togglePresentation: () => togglePresentation(),
@@ -123,6 +133,8 @@ async function createEditor(initial: string): Promise<void> {
     .config((ctx) => {
       ctx.set(rootCtx, root)
       ctx.set(defaultValueCtx, initial)
+      // Serialize unordered/task lists with `-` (remark defaults to `*`).
+      ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: '-' as const }))
       ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
         if (applyingRemote) return
         if (markdown === currentText) return
@@ -131,6 +143,7 @@ async function createEditor(initial: string): Promise<void> {
       })
       ctx.set(slash.key, { view: slashPluginView })
       ctx.set(toolbar.key, { view: toolbarPluginView })
+      ctx.set(tableToolbar.key, { view: tableToolbarPluginView })
       ctx.set(block.key, { view: blockView(ctx) })
       ctx.update(editorViewOptionsCtx, (prev) => ({
         ...prev,
@@ -161,6 +174,7 @@ async function createEditor(initial: string): Promise<void> {
     .use(nodeViews)
     .use(slash)
     .use(toolbar)
+    .use(tableToolbar)
     .use(githubAlert)
     .use(footnoteJump)
     .use(block)

@@ -356,6 +356,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           case 'moveNote':
             await this.moveNote(document)
             break
+          case 'deleteNote':
+            await this.deleteNote(document)
+            break
           case 'openSettings':
             void vscode.commands.executeCommand(
               'workbench.action.openSettings',
@@ -919,6 +922,100 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       )
     } catch (moveError) {
       void vscode.window.showErrorMessage(`MDForge: move failed — ${moveError}`)
+    }
+  }
+
+  /** Which of `assetPaths` are also referenced by another note (as abs paths). */
+  private async sharedAssetPaths(
+    document: vscode.TextDocument,
+    assetPaths: Set<string>
+  ): Promise<Set<string>> {
+    const shared = new Set<string>()
+    if (assetPaths.size === 0) return shared
+    const files = await vscode.workspace.findFiles('**/*.{md,markdown}', '**/node_modules/**')
+    for (const file of files) {
+      if (file.toString() === document.uri.toString()) continue
+      let text: string
+      try {
+        text = Buffer.from(await vscode.workspace.fs.readFile(file)).toString('utf8')
+      } catch {
+        continue
+      }
+      const dir = path.dirname(file.fsPath)
+      const re = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text)) !== null) {
+        const src = m[1]
+        if (/^(https?:|data:|blob:|file:|vscode-|\/)/i.test(src)) continue
+        const abs = path.resolve(dir, decodeURI(src))
+        if (assetPaths.has(abs)) shared.add(abs)
+      }
+    }
+    return shared
+  }
+
+  /**
+   * Delete the note and its co-located assets, after a modal confirmation that
+   * lists exactly what will go. Assets also referenced by another note are kept
+   * (deleting them would break that note) and listed as such. Everything goes to
+   * the OS trash (recoverable), not a hard delete.
+   */
+  private async deleteNote(document: vscode.TextDocument): Promise<void> {
+    const uri = document.uri
+    const name = path.basename(uri.fsPath)
+
+    // Assets referenced by this note that actually exist on disk.
+    const existing: string[] = []
+    for (const asset of this.localAssets(document)) {
+      try {
+        await vscode.workspace.fs.stat(vscode.Uri.file(asset.absPath))
+        existing.push(asset.absPath)
+      } catch {
+        // missing on disk → nothing to delete
+      }
+    }
+    const shared = await this.sharedAssetPaths(document, new Set(existing))
+    const toDelete = existing.filter((p) => !shared.has(p))
+    const kept = existing.filter((p) => shared.has(p))
+
+    const sections: string[] = []
+    if (toDelete.length) {
+      sections.push(
+        `Assets to delete (${toDelete.length}):\n` +
+          toDelete.map((p) => `  • ${path.basename(p)}`).join('\n')
+      )
+    }
+    if (kept.length) {
+      sections.push(
+        `Kept — shared with other notes (${kept.length}):\n` +
+          kept.map((p) => `  • ${path.basename(p)}`).join('\n')
+      )
+    }
+    const detail = sections.join('\n\n') || 'This note has no co-located assets.'
+
+    const choice = await vscode.window.showWarningMessage(
+      `Delete “${name}” and its assets? This moves them to the trash.`,
+      { modal: true, detail },
+      'Delete'
+    )
+    if (choice !== 'Delete') return
+
+    try {
+      for (const p of toDelete) {
+        try {
+          await vscode.workspace.fs.delete(vscode.Uri.file(p), { useTrash: true })
+        } catch {
+          // best-effort per asset; keep going
+        }
+      }
+      // Close this editor before removing the file so no stale view lingers.
+      await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+      await vscode.workspace.fs.delete(uri, { useTrash: true })
+      void vscode.window.showInformationMessage(
+        `MDForge: deleted ${name}${toDelete.length ? ` and ${toDelete.length} asset(s)` : ''}.`
+      )
+    } catch (deleteError) {
+      void vscode.window.showErrorMessage(`MDForge: delete failed — ${deleteError}`)
     }
   }
 

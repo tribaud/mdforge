@@ -13,9 +13,11 @@ export interface TopbarActions {
   getView: () => EditorView | null
   openFormatMenu: (anchor: HTMLElement) => void
   insertImage: (view: EditorView) => void
+  insertTable: (view: EditorView) => void
   localizeAssets: () => void
   renameNote: () => void
   moveNote: () => void
+  deleteNote: () => void
   refreshImages: () => void
   toggleSource: () => void
   togglePresentation: () => void
@@ -40,7 +42,11 @@ const ICONS = {
   refresh:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
   format:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>'
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
+  table:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
 }
 
 interface TopbarButton {
@@ -66,12 +72,26 @@ const LEFT: TopbarButton[] = [
     }
   },
   {
+    title: 'Insert table at the cursor',
+    icon: ICONS.table,
+    run: (a) => {
+      const view = a.getView()
+      if (view) a.insertTable(view)
+    }
+  },
+  {
     title: 'Localize remote & embedded images into the assets folder',
     icon: ICONS.localize,
     run: (a) => a.localizeAssets()
   },
   { title: 'Rename note', icon: ICONS.rename, run: (a) => a.renameNote() },
-  { title: 'Move note & assets to another folder', icon: ICONS.move, run: (a) => a.moveNote() }
+  { title: 'Move note & assets to another folder', icon: ICONS.move, run: (a) => a.moveNote() },
+  {
+    title: 'Delete note & its assets',
+    icon: ICONS.trash,
+    run: (a) => a.deleteNote(),
+    extraClass: 'mdforge-topbar-btn-danger'
+  }
 ]
 
 const RIGHT: TopbarButton[] = [
