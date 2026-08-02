@@ -495,6 +495,13 @@ body.vscode-dark {
   background: var(--gh-canvas-subtle);
 }
 .milkdown .ProseMirror th { font-weight: 600; }
+/* Cell paragraphs must follow the cell's own text-align (set by the column
+   alignment attr) — not the global paragraph alignment, whose explicit rule
+   would otherwise override the inherited value and pin cells to the left. */
+.milkdown .ProseMirror th p,
+.milkdown .ProseMirror td p {
+  text-align: inherit;
+}
 
 /* Images */
 .milkdown .ProseMirror img {
