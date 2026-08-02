@@ -4,6 +4,30 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.2]
+
+### Added
+
+- **Table toolbar** — a floating toolbar appears when the caret is in a table:
+  insert/delete rows and columns, set the column alignment, and delete the
+  table. Insert a table from the top toolbar or the slash menu.
+- **Delete note** — a top-toolbar button removes the note and its co-located
+  assets after a confirmation that lists what will be trashed versus kept
+  (assets also used by another note are kept). Everything goes to the OS trash.
+- **Source address on web paste** — with `mdforge.paste.appendSource`, pasting
+  from a web page appends a `> <label> :` blockquote with the source URL on its
+  own line.
+
+### Changed
+
+- Bullet and task lists now serialize with `-` (was `*`).
+
+### Fixed
+
+- Column alignment is now actually rendered (cell text follows the column
+  alignment instead of being pinned left by the global paragraph rule).
+- Typed/trailing spaces are preserved instead of being collapsed.
+
 ## [0.2.0]
 
 ### Added
