@@ -52,10 +52,17 @@ conventions. Read it fully before making changes.
 
 ## 3. How it fits together
 
-- The extension registers a `CustomTextEditorProvider` for `*.md`/`*.markdown`.
-  For each document it creates a webview whose HTML loads `media/dist/main.js`
-  under a strict CSP (nonce + `webview.cspSource`, plus `wasm-unsafe-eval`,
-  `worker-src blob:`, `connect-src` for Mermaid/Shiki).
+- The extension registers a `CustomTextEditorProvider` for `*.md`/`*.markdown`
+  at `priority: "default"` (opens MDForge automatically; use *Reopen Editor
+  With…* for the raw text editor). For each document it creates a webview whose
+  HTML loads `media/dist/main.js` under a strict CSP (nonce + `webview.cspSource`,
+  plus `wasm-unsafe-eval`, `worker-src blob:`, `connect-src` for Mermaid/Shiki).
+- **Git diffs stay text.** Custom editors can't render inside VS Code's diff
+  editor, so "Open Changes" uses the built-in red/green text diff — which is
+  what we want. Do **not** set `workbench.editorAssociations` (`"*.md"` →
+  `mdforge.editor`): that forces the webview onto *both sides* of the diff and
+  breaks it. `priority: "default"` makes MDForge the default without that
+  side effect.
 - **Sync**: host → webview posts `setContent` on external changes; webview →
   host posts `edit` with the new Markdown (whole-document replace via
   `WorkspaceEdit`). A `syncedText` guard avoids echo loops.

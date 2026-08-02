@@ -4,6 +4,18 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.3]
+
+### Changed
+
+- MDForge is now the **default editor** for Markdown files (`priority:
+  "default"`). Use *Reopen Editor With…* to fall back to the raw text editor.
+- **Git diffs use the native text diff.** Because a custom editor can't render
+  inside VS Code's diff editor, "Open Changes" now shows the built-in red/green
+  text diff instead of the MDForge webview. Remove any
+  `workbench.editorAssociations` mapping `"*.md"` to `mdforge.editor` — that
+  setting forced the webview onto both sides of the diff and broke it.
+
 ## [0.2.2]
 
 ### Added
