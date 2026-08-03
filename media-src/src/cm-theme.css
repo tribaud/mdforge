@@ -153,8 +153,54 @@ body.mdforge-width-full .cm-content {
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
 }
 
+/* Edit affordance on rendered blocks (mermaid / table / block math) */
+.cm-block-edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 5px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  font: 11px/1.4 var(--mdforge-font);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cm-mermaid:hover .cm-block-edit,
+.cm-md-table-wrap:hover .cm-block-edit,
+.cm-math-block:hover .cm-block-edit {
+  opacity: 1;
+}
+.cm-block-edit:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+
+/* Live preview shown under the source while a block is being edited */
+.cm-block-preview {
+  position: relative;
+  margin: 4px 0 10px;
+  padding: 8px 10px;
+  border: 1px dashed var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.5));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-textLink-foreground, #58a6ff) 5%, transparent);
+}
+.cm-block-preview::before {
+  content: 'Aperçu';
+  position: absolute;
+  top: -8px;
+  left: 8px;
+  padding: 0 6px;
+  font: 10px/1 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+  background: var(--vscode-editor-background);
+}
+
 /* Mermaid diagram widget */
 .cm-mermaid {
+  position: relative;
   display: flex;
   justify-content: center;
   margin: 10px 0;
@@ -254,6 +300,7 @@ body.mdforge-width-full .cm-content {
 
 /* KaTeX math */
 .cm-math-block {
+  position: relative;
   display: block;
   margin: 10px 0;
   text-align: center;
@@ -276,6 +323,7 @@ body.mdforge-presentation .cm-cursor {
 
 /* Rendered GFM table */
 .cm-md-table-wrap {
+  position: relative;
   overflow-x: auto;
   margin: 8px 0;
 }

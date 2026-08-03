@@ -128,6 +128,27 @@ function editing(state: EditorState, from: number, to: number): boolean {
 }
 
 /* ---------- widgets ---------- */
+type BlockMode = 'render' | 'preview'
+
+/**
+ * Add an "✎ Éditer" affordance to a rendered block widget. Clicking it drops
+ * the caret into the block's source (`pos`), which — via the reveal-on-edit
+ * rule — shows the editable source with a live preview underneath.
+ */
+function addEditButton(host: HTMLElement, view: EditorView, pos: number): void {
+  const btn = document.createElement('button')
+  btn.className = 'cm-block-edit'
+  btn.textContent = '✎ Éditer'
+  btn.title = 'Éditer la source'
+  btn.addEventListener('mousedown', (e) => e.preventDefault())
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+    view.focus()
+  })
+  host.appendChild(btn)
+}
+
 type TaskState = ' ' | '~' | 'x'
 const NEXT_STATE: Record<TaskState, TaskState> = { ' ': '~', '~': 'x', x: ' ' }
 
@@ -182,16 +203,24 @@ class ImageWidget extends WidgetType {
 }
 
 class MermaidWidget extends WidgetType {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly pos: number,
+    readonly mode: BlockMode
+  ) {
     super()
   }
   eq(other: MermaidWidget): boolean {
-    return other.code === this.code
+    return other.code === this.code && other.mode === this.mode
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const el = document.createElement('div')
-    el.className = 'cm-mermaid'
-    renderMermaid(el, this.code)
+    el.className = this.mode === 'preview' ? 'cm-mermaid cm-block-preview' : 'cm-mermaid'
+    const target = document.createElement('div')
+    target.className = 'cm-mermaid-target'
+    el.appendChild(target)
+    renderMermaid(target, this.code)
+    if (this.mode === 'render') addEditButton(el, view, this.pos)
     return el
   }
 }
@@ -199,17 +228,28 @@ class MermaidWidget extends WidgetType {
 class MathWidget extends WidgetType {
   constructor(
     readonly code: string,
-    readonly display: boolean
+    readonly display: boolean,
+    readonly pos = -1,
+    readonly mode: BlockMode = 'render'
   ) {
     super()
   }
   eq(other: MathWidget): boolean {
-    return other.code === this.code && other.display === this.display
+    return other.code === this.code && other.display === this.display && other.mode === this.mode
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const el = document.createElement(this.display ? 'div' : 'span')
-    el.className = this.display ? 'cm-math cm-math-block' : 'cm-math cm-math-inline'
-    renderMath(el, this.code, this.display)
+    el.className =
+      (this.display ? 'cm-math cm-math-block' : 'cm-math cm-math-inline') +
+      (this.mode === 'preview' ? ' cm-block-preview' : '')
+    if (this.display) {
+      const target = document.createElement('div')
+      el.appendChild(target)
+      renderMath(target, this.code, true)
+      if (this.mode === 'render' && this.pos >= 0) addEditButton(el, view, this.pos)
+    } else {
+      renderMath(el, this.code, false)
+    }
     return el
   }
   ignoreEvent(): boolean {
@@ -226,15 +266,20 @@ function parseRow(line: string): string[] {
 }
 
 class TableWidget extends WidgetType {
-  constructor(readonly source: string) {
+  constructor(
+    readonly source: string,
+    readonly pos: number,
+    readonly mode: BlockMode
+  ) {
     super()
   }
   eq(other: TableWidget): boolean {
-    return other.source === this.source
+    return other.source === this.source && other.mode === this.mode
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div')
-    wrap.className = 'cm-md-table-wrap'
+    wrap.className = this.mode === 'preview' ? 'cm-md-table-wrap cm-block-preview' : 'cm-md-table-wrap'
+    if (this.mode === 'render') addEditButton(wrap, view, this.pos)
     const lines = this.source.split('\n').filter((l) => l.trim())
     if (lines.length < 2) {
       wrap.textContent = this.source
@@ -351,10 +396,25 @@ function buildDecorations(state: EditorState): DecorationSet {
         codeRanges.push([from, to])
         const info = node.node.getChild('CodeInfo')
         const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : ''
-        if (lang === 'mermaid' && !editing(state, from, to)) {
+        if (lang === 'mermaid') {
           const textNode = node.node.getChild('CodeText')
           const code = textNode ? doc.sliceString(textNode.from, textNode.to) : ''
-          deco.push(Decoration.replace({ widget: new MermaidWidget(code), block: true }).range(from, to))
+          const contentPos = textNode ? textNode.from : from
+          if (!editing(state, from, to)) {
+            deco.push(
+              Decoration.replace({ widget: new MermaidWidget(code, contentPos, 'render'), block: true }).range(from, to)
+            )
+            return false
+          }
+          // Editing: keep the source (styled) and show a live preview below it.
+          const mf = doc.lineAt(from).number
+          const ml = doc.lineAt(to).number
+          for (let n = mf; n <= ml; n++) {
+            deco.push(Decoration.line({ class: 'cm-md-codeblock' }).range(doc.line(n).from))
+          }
+          deco.push(
+            Decoration.widget({ widget: new MermaidWidget(code, contentPos, 'preview'), block: true, side: 1 }).range(to)
+          )
           return false
         }
         const first = doc.lineAt(from).number
@@ -369,11 +429,14 @@ function buildDecorations(state: EditorState): DecorationSet {
 
       if (name === 'InlineCode') codeRanges.push([from, to])
 
-      // GFM table → rendered HTML table (raw while editing).
+      // GFM table → rendered HTML table; raw source + live preview while editing.
       if (name === 'Table') {
+        const src = doc.sliceString(from, to)
         if (!editing(state, from, to)) {
+          deco.push(Decoration.replace({ widget: new TableWidget(src, from, 'render'), block: true }).range(from, to))
+        } else {
           deco.push(
-            Decoration.replace({ widget: new TableWidget(doc.sliceString(from, to)), block: true }).range(from, to)
+            Decoration.widget({ widget: new TableWidget(src, from, 'preview'), block: true, side: 1 }).range(to)
           )
         }
         return false
@@ -495,7 +558,13 @@ function buildDecorations(state: EditorState): DecorationSet {
     if (inFrontmatter(from) || inAny(codeRanges, from, to)) continue
     mathRanges.push([from, to])
     if (!editing(state, from, to)) {
-      deco.push(Decoration.replace({ widget: new MathWidget(m[1].trim(), true), block: true }).range(from, to))
+      deco.push(
+        Decoration.replace({ widget: new MathWidget(m[1].trim(), true, from, 'render'), block: true }).range(from, to)
+      )
+    } else {
+      deco.push(
+        Decoration.widget({ widget: new MathWidget(m[1].trim(), true, -1, 'preview'), block: true, side: 1 }).range(to)
+      )
     }
   }
 

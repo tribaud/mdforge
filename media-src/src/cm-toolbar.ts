@@ -6,50 +6,65 @@
  * line prefix), so — like the rest of this engine — it never re-serializes.
  */
 import { EditorView } from '@codemirror/view'
+import { syntaxTree } from '@codemirror/language'
+
+/** Lezer node the marker produces, and the child node that IS the marker. */
+const MARKER_NODE: Record<string, { node: string; mark: string }> = {
+  '**': { node: 'StrongEmphasis', mark: 'EmphasisMark' },
+  '*': { node: 'Emphasis', mark: 'EmphasisMark' },
+  '~~': { node: 'Strikethrough', mark: 'StrikethroughMark' },
+  '`': { node: 'InlineCode', mark: 'CodeMark' }
+}
+
+const WORD_CHAR = /[\p{L}\p{N}_]/u
 
 /**
- * Toggle a symmetric inline marker (`**`, `*`, `~~`, `` ` ``) around the
- * primary selection: wrap if absent, unwrap if already present — whether the
- * markers sit just outside the selection or are included in it.
+ * Toggle a symmetric inline marker (`**`, `*`, `~~`, `` ` ``).
+ *
+ * Real toggle, driven by the syntax tree — not by the characters next to the
+ * caret. If the caret/selection sits *anywhere inside* an existing span of the
+ * matching kind (even a whole italic paragraph), its markers are removed. With
+ * no selection, the word under the caret is used as the target to wrap.
  */
 function wrap(view: EditorView, marker: string): void {
-  const { from, to } = view.state.selection.main
-  const doc = view.state.doc
+  const { state } = view
+  const sel = state.selection.main
+  const kind = MARKER_NODE[marker]
+
+  // 1) Already emphasised? Walk up from the caret to an enclosing node of the
+  //    matching kind and strip its marker children — a genuine unwrap.
+  if (kind) {
+    const tree = syntaxTree(state)
+    for (let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(sel.from, 0); node; node = node.parent) {
+      if (node.name !== kind.node) continue
+      const changes: Array<{ from: number; to: number; insert: string }> = []
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (c.name === kind.mark) changes.push({ from: c.from, to: c.to, insert: '' })
+      }
+      if (changes.length) {
+        view.dispatch({ changes })
+        view.focus()
+        return
+      }
+    }
+  }
+
+  // 2) Not emphasised → wrap. Expand an empty selection to the word under caret.
+  let from = sel.from
+  let to = sel.to
+  if (from === to) {
+    const line = state.doc.lineAt(from)
+    const text = line.text
+    let s = from - line.from
+    let e = s
+    while (s > 0 && WORD_CHAR.test(text[s - 1])) s--
+    while (e < text.length && WORD_CHAR.test(text[e])) e++
+    if (e > s) {
+      from = line.from + s
+      to = line.from + e
+    }
+  }
   const len = marker.length
-  const before = doc.sliceString(Math.max(0, from - len), from)
-  const after = doc.sliceString(to, Math.min(doc.length, to + len))
-  const inner = doc.sliceString(from, to)
-
-  // Guard: don't let `*` (italic) treat the inner `*` of a surrounding `**`
-  // (bold) as its own marker.
-  const boldAmbiguity =
-    marker === '*' &&
-    (doc.sliceString(Math.max(0, from - 2), from) === '**' || doc.sliceString(to, to + 2) === '**')
-
-  // Markers just outside the selection → remove them.
-  if (before === marker && after === marker && !boldAmbiguity) {
-    view.dispatch({
-      changes: [
-        { from: from - len, to: from, insert: '' },
-        { from: to, to: to + len, insert: '' }
-      ],
-      selection: { anchor: from - len, head: to - len }
-    })
-    view.focus()
-    return
-  }
-
-  // Markers included in the selection → strip them.
-  if (inner.length >= 2 * len && inner.startsWith(marker) && inner.endsWith(marker)) {
-    view.dispatch({
-      changes: { from, to, insert: inner.slice(len, inner.length - len) },
-      selection: { anchor: from, head: to - 2 * len }
-    })
-    view.focus()
-    return
-  }
-
-  // Otherwise wrap.
   view.dispatch({
     changes: [
       { from, insert: marker },
