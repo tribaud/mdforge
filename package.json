@@ -250,6 +250,7 @@
     "build": "npm run compile:ext && npm run build:webview",
     "watch:ext": "tsc -watch -p ./",
     "watch:webview": "node esbuild.mjs --watch",
+    "preview": "node scripts/cm-preview.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
   },
@@ -282,6 +283,7 @@
     "esbuild": "^0.25.0",
     "katex": "^0.16.11",
     "mermaid": "^11.16.0",
+    "playwright-core": "^1.62.1",
     "prosemirror-highlight": "^0.15.3",
     "remark-frontmatter": "^5.0.0",
     "shiki": "^1.29.2",
