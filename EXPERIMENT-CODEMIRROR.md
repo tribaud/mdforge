@@ -17,14 +17,19 @@ The host (`src/extension.ts`) is **unchanged** — only the webview engine
 ## What's implemented (prototype)
 - Inline rendering via decorations (`media-src/src/cm-livepreview.ts`): headings,
   **bold**, *italic*, `inline code`, ~~strikethrough~~, links (URL hidden),
-  images (inline `<img>`), and interactive task checkboxes.
-- Raw syntax is revealed whenever the caret enters a node (fully editable).
-- Toggling a checkbox is a literal one-character text edit → one-line diff.
+  images (inline `<img>`), fenced **code blocks** (styled), **Mermaid** diagrams,
+  and GFM **tables** (rendered as HTML).
+- **Three-state task checkboxes**, including the MDForge `[~]` in-progress state
+  (empty → in-progress → done). Toggling is a one-character text edit → one-line
+  diff.
+- Raw syntax/source is revealed whenever the caret enters a node/block (fully
+  editable), so nothing is ever locked behind the rendering.
 
 ## Not implemented yet (would need more work to reach parity)
-- Tables, math (KaTeX), Mermaid, code-block syntax highlighting.
+- Math (KaTeX), code-block syntax highlighting, GitHub alerts, frontmatter,
+  wikilinks, footnotes.
 - The top toolbar, slash menu, outline, image paste/drop, rename/move/delete —
-  all the host-side features still exist but have no webview UI here.
+  the host-side features still exist but have no webview UI here.
 
 ## Try it
 1. `npm install` (adds the CodeMirror deps), then **F5**.

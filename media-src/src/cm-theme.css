@@ -84,10 +84,58 @@ body.mdforge-width-full .cm-content {
   cursor: pointer;
   accent-color: var(--vscode-textLink-foreground);
 }
+/* In-progress `[~]`: a half-filled look via the indeterminate state. */
+.cm-task-checkbox.cm-task-inprogress {
+  accent-color: var(--vscode-charts-yellow, #d4a72c);
+}
 
 .cm-inline-image {
   display: block;
   max-width: 100%;
   margin: 6px 0;
   border-radius: 4px;
+}
+
+/* Fenced code blocks (non-mermaid) */
+.cm-line.cm-md-codeblock {
+  font-family: var(--mdforge-mono);
+  font-size: 0.9em;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+}
+
+/* Mermaid diagram widget */
+.cm-mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 10px 0;
+  padding: 8px;
+}
+.cm-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.cm-mermaid-error {
+  display: block;
+  font-family: var(--mdforge-mono);
+  font-size: 0.85em;
+  color: var(--vscode-errorForeground, #f14c4c);
+  white-space: pre-wrap;
+}
+
+/* Rendered GFM table */
+.cm-md-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.cm-md-table {
+  border-collapse: collapse;
+}
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  padding: 5px 12px;
+}
+.cm-md-table th {
+  font-weight: 700;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
 }

@@ -16,7 +16,7 @@ import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
-import { livePreview, setAssetsBase } from './cm-livepreview'
+import { livePreview, setAssetsBase, setMermaidTheme } from './cm-livepreview'
 import './cm-theme.css'
 
 declare function acquireVsCodeApi(): {
@@ -29,6 +29,7 @@ interface MdForgeConfig {
   fontSize?: number
   pageWidth?: 'comfortable' | 'full'
   assetsBaseUri?: string
+  mermaidTheme?: string
 }
 
 const vscode = acquireVsCodeApi()
@@ -103,6 +104,7 @@ function applyConfig(config: MdForgeConfig): void {
   }
   document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
   if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
+  if (config.mermaidTheme) setMermaidTheme(config.mermaidTheme)
 }
 
 window.addEventListener('message', (event) => {
