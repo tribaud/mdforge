@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <text x="12" y="9.5" text-anchor="middle" fill="currentColor"
+  <text x="12" y="11" text-anchor="middle" fill="currentColor"
         font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-        font-size="9" font-weight="800">md</text>
-  <path fill="currentColor"
-        d="M2 14 L4 13 L16 13 L16 15 L11 15 L11.5 18 L14 18 L14 20 L5 20 L5 18 L8 18 L8.5 15 L4 15 Z"/>
+        font-size="11" font-weight="800">md</text>
+  <!-- horizontal hammer: head on the left, handle to the right -->
+  <rect x="3.5" y="15" width="4.5" height="6" rx="1" fill="currentColor"/>
+  <rect x="8" y="17" width="12" height="2.2" rx="1.1" fill="currentColor"/>
 </svg>

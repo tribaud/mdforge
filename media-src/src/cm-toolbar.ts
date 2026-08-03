@@ -7,15 +7,55 @@
  */
 import { EditorView } from '@codemirror/view'
 
-/** Wrap the primary selection in `before`/`after` (caret between when empty). */
-function wrap(view: EditorView, before: string, after: string = before): void {
+/**
+ * Toggle a symmetric inline marker (`**`, `*`, `~~`, `` ` ``) around the
+ * primary selection: wrap if absent, unwrap if already present — whether the
+ * markers sit just outside the selection or are included in it.
+ */
+function wrap(view: EditorView, marker: string): void {
   const { from, to } = view.state.selection.main
+  const doc = view.state.doc
+  const len = marker.length
+  const before = doc.sliceString(Math.max(0, from - len), from)
+  const after = doc.sliceString(to, Math.min(doc.length, to + len))
+  const inner = doc.sliceString(from, to)
+
+  // Guard: don't let `*` (italic) treat the inner `*` of a surrounding `**`
+  // (bold) as its own marker.
+  const boldAmbiguity =
+    marker === '*' &&
+    (doc.sliceString(Math.max(0, from - 2), from) === '**' || doc.sliceString(to, to + 2) === '**')
+
+  // Markers just outside the selection → remove them.
+  if (before === marker && after === marker && !boldAmbiguity) {
+    view.dispatch({
+      changes: [
+        { from: from - len, to: from, insert: '' },
+        { from: to, to: to + len, insert: '' }
+      ],
+      selection: { anchor: from - len, head: to - len }
+    })
+    view.focus()
+    return
+  }
+
+  // Markers included in the selection → strip them.
+  if (inner.length >= 2 * len && inner.startsWith(marker) && inner.endsWith(marker)) {
+    view.dispatch({
+      changes: { from, to, insert: inner.slice(len, inner.length - len) },
+      selection: { anchor: from, head: to - 2 * len }
+    })
+    view.focus()
+    return
+  }
+
+  // Otherwise wrap.
   view.dispatch({
     changes: [
-      { from, insert: before },
-      { from: to, insert: after }
+      { from, insert: marker },
+      { from: to, insert: marker }
     ],
-    selection: { anchor: from + before.length, head: to + before.length }
+    selection: { anchor: from + len, head: to + len }
   })
   view.focus()
 }
