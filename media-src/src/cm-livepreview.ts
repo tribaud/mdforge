@@ -10,11 +10,11 @@
  * checkboxes (incl. the MDForge `[~]` in-progress state), fenced code blocks,
  * Mermaid diagrams and GFM tables.
  */
-import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
-import type { DecorationSet, ViewUpdate } from '@codemirror/view'
+import { Decoration, EditorView, WidgetType } from '@codemirror/view'
+import type { DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import type { Range } from '@codemirror/state'
-import mermaid from 'mermaid'
+import { StateField } from '@codemirror/state'
+import type { EditorState, Range } from '@codemirror/state'
 
 /* ---------- assets (images) ---------- */
 let assetsBase = ''
@@ -26,14 +26,26 @@ function resolveSrc(src: string): string {
   return assetsBase ? `${assetsBase}/${src.replace(/^\.\//, '')}` : src
 }
 
-/* ---------- mermaid ---------- */
+/* ---------- mermaid (lazy-loaded so it can never block editor startup) ---------- */
 type MermaidTheme = 'default' | 'dark' | 'forest' | 'neutral'
 let mermaidTheme: MermaidTheme = 'default'
 function prefersDark(): boolean {
   return Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
 }
-function initMermaid(): void {
-  mermaid.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mermaidMod: any = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mermaidLoading: Promise<any> | null = null
+async function getMermaid(): Promise<unknown> {
+  if (mermaidMod) return mermaidMod
+  if (!mermaidLoading) {
+    mermaidLoading = import('mermaid').then((m) => {
+      mermaidMod = m.default ?? m
+      mermaidMod.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
+      return mermaidMod
+    })
+  }
+  return mermaidLoading
 }
 export function setMermaidTheme(theme: string): void {
   mermaidTheme =
@@ -48,15 +60,14 @@ export function setMermaidTheme(theme: string): void {
             : prefersDark()
               ? 'dark'
               : 'default'
-  initMermaid()
+  if (mermaidMod) mermaidMod.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
 }
-initMermaid()
 
 let mermaidCounter = 0
 function renderMermaid(el: HTMLElement, code: string): void {
   const id = `mdforge-mermaid-${mermaidCounter++}`
-  mermaid
-    .render(id, code)
+  getMermaid()
+    .then((m) => (m as { render: (id: string, code: string) => Promise<{ svg: string }> }).render(id, code))
     .then(({ svg }) => {
       el.innerHTML = svg
     })
@@ -67,8 +78,8 @@ function renderMermaid(el: HTMLElement, code: string): void {
 }
 
 /** True when a selection range touches [from, to] — then we reveal raw syntax. */
-function editing(view: EditorView, from: number, to: number): boolean {
-  for (const r of view.state.selection.ranges) {
+function editing(state: EditorState, from: number, to: number): boolean {
+  for (const r of state.selection.ranges) {
     if (r.from <= to && r.to >= from) return true
   }
   return false
@@ -203,10 +214,10 @@ class TableWidget extends WidgetType {
 }
 
 /* ---------- decoration builder ---------- */
-function buildDecorations(view: EditorView): DecorationSet {
+function buildDecorations(state: EditorState): DecorationSet {
   const deco: Array<Range<Decoration>> = []
-  const doc = view.state.doc
-  const tree = syntaxTree(view.state)
+  const doc = state.doc
+  const tree = syntaxTree(state)
   const taskRanges: Array<[number, number]> = []
 
   tree.iterate({
@@ -219,7 +230,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       if (name === 'FencedCode') {
         const info = node.node.getChild('CodeInfo')
         const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : ''
-        if (lang === 'mermaid' && !editing(view, from, to)) {
+        if (lang === 'mermaid' && !editing(state, from, to)) {
           const text = node.node.getChild('CodeText')
           const code = text ? doc.sliceString(text.from, text.to) : ''
           deco.push(Decoration.replace({ widget: new MermaidWidget(code), block: true }).range(from, to))
@@ -235,7 +246,7 @@ function buildDecorations(view: EditorView): DecorationSet {
 
       // GFM table → rendered HTML table (raw while editing).
       if (name === 'Table') {
-        if (!editing(view, from, to)) {
+        if (!editing(state, from, to)) {
           deco.push(
             Decoration.replace({ widget: new TableWidget(doc.sliceString(from, to)), block: true }).range(from, to)
           )
@@ -261,7 +272,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       if (headingMatch) {
         const line = doc.lineAt(from)
         deco.push(Decoration.line({ class: `cm-md-h cm-md-h${headingMatch[1]}` }).range(line.from))
-        if (!editing(view, line.from, line.to)) {
+        if (!editing(state, line.from, line.to)) {
           const mark = node.node.getChild('HeaderMark')
           if (mark) deco.push(Decoration.replace({}).range(mark.from, Math.min(mark.to + 1, line.to)))
         }
@@ -278,7 +289,7 @@ function buildDecorations(view: EditorView): DecorationSet {
                 ? 'cm-md-code'
                 : 'cm-md-strike'
         deco.push(Decoration.mark({ class: cls }).range(from, to))
-        if (!editing(view, from, to)) {
+        if (!editing(state, from, to)) {
           const markName =
             name === 'InlineCode' ? 'CodeMark' : name === 'Strikethrough' ? 'StrikethroughMark' : 'EmphasisMark'
           for (let c = node.node.firstChild; c; c = c.nextSibling) {
@@ -292,7 +303,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       // (which the parser also sees as a Link) — the checkbox already owns it.
       if (name === 'Link') {
         if (taskRanges.some(([a, b]) => from >= a && to <= b)) return
-        if (editing(view, from, to)) return
+        if (editing(state, from, to)) return
         const open = node.node.firstChild
         let close: { from: number; to: number } | null = null
         for (let c = node.node.firstChild; c; c = c.nextSibling) {
@@ -311,7 +322,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       }
 
       // Images: replace `![alt](src)` with an inline <img>.
-      if (name === 'Image' && !editing(view, from, to)) {
+      if (name === 'Image' && !editing(state, from, to)) {
         const text = doc.sliceString(from, to)
         const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)/.exec(text)
         if (m) deco.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1]) }).range(from, to))
@@ -323,17 +334,13 @@ function buildDecorations(view: EditorView): DecorationSet {
   return Decoration.set(deco, true)
 }
 
-export const livePreview = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-    constructor(view: EditorView) {
-      this.decorations = buildDecorations(view)
-    }
-    update(update: ViewUpdate): void {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = buildDecorations(update.view)
-      }
-    }
+// A StateField (not a ViewPlugin) so it can provide *block* decorations
+// (Mermaid diagrams, tables). Rebuilds when the doc or the selection changes.
+export const livePreview = StateField.define<DecorationSet>({
+  create: (state) => buildDecorations(state),
+  update: (deco, tr) => {
+    if (tr.docChanged || tr.selection) return buildDecorations(tr.state)
+    return deco.map(tr.changes)
   },
-  { decorations: (v) => v.decorations }
-)
+  provide: (field) => EditorView.decorations.from(field)
+})

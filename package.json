@@ -60,7 +60,7 @@
         "command": "mdforge.openEditor",
         "title": "MDForge: Open with MDForge",
         "category": "MDForge",
-        "icon": "$(book)"
+        "icon": "mdforge-editor.svg"
       },
       {
         "command": "mdforge.openWithTextEditor",

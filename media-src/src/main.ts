@@ -17,6 +17,7 @@ import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
 import { livePreview, setAssetsBase, setMermaidTheme } from './cm-livepreview'
+import { createTopbar, createBubble } from './cm-toolbar'
 import './cm-theme.css'
 
 declare function acquireVsCodeApi(): {
@@ -34,6 +35,19 @@ interface MdForgeConfig {
 
 const vscode = acquireVsCodeApi()
 const root = document.getElementById('app') as HTMLElement
+
+/** Turn a blank page into a visible, reportable error. */
+function showError(error: unknown): void {
+  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
+  const pre = document.createElement('pre')
+  pre.style.cssText =
+    'white-space:pre-wrap;word-break:break-word;color:#f14c4c;padding:16px;font:12px/1.5 monospace'
+  pre.textContent = `MDForge (CodeMirror) failed to initialize:\n\n${detail}`
+  root.replaceChildren(pre)
+  vscode.postMessage({ type: 'error', text: detail })
+}
+window.addEventListener('error', (event) => showError(event.error ?? event.message))
+window.addEventListener('unhandledrejection', (event) => showError(event.reason))
 
 /** Last markdown we are in sync with. Guards echo loops with the host. */
 let currentText = ''
@@ -65,30 +79,44 @@ const editorTheme = EditorView.theme({
   }
 })
 
-const view = new EditorView({
-  parent: root,
-  state: EditorState.create({
-    doc: '',
-    extensions: [
-      history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      EditorView.lineWrapping,
-      drawSelection(),
-      highlightActiveLine(),
-      markdown({ extensions: GFM }),
-      syntaxHighlighting(defaultHighlightStyle),
-      livePreview,
-      editorTheme,
-      EditorView.updateListener.of((update) => {
-        if (applyingRemote || !update.docChanged) return
-        const text = update.state.doc.toString()
-        if (text === currentText) return
-        currentText = text
-        vscode.postMessage({ type: 'edit', text })
-      })
-    ]
+let bubbleUpdate: () => void = () => {}
+
+let view!: EditorView
+try {
+  view = new EditorView({
+    parent: root,
+    state: EditorState.create({
+      doc: '',
+      extensions: [
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        EditorView.lineWrapping,
+        drawSelection(),
+        highlightActiveLine(),
+        markdown({ extensions: GFM }),
+        syntaxHighlighting(defaultHighlightStyle),
+        livePreview,
+        editorTheme,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged || update.selectionSet || update.focusChanged) bubbleUpdate()
+          if (applyingRemote || !update.docChanged) return
+          const text = update.state.doc.toString()
+          if (text === currentText) return
+          currentText = text
+          vscode.postMessage({ type: 'edit', text })
+        })
+      ]
+    })
   })
-})
+
+  // Formatting toolbar: a persistent top bar + a selection bubble.
+  document.body.insertBefore(createTopbar(view), root)
+  const bubble = createBubble(view)
+  bubbleUpdate = bubble.update
+} catch (error) {
+  showError(error)
+  throw error
+}
 
 function setContent(text: string): void {
   if (text === currentText) return

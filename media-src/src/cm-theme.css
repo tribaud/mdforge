@@ -10,11 +10,61 @@
 }
 
 html,
-body,
-#app {
+body {
   height: 100%;
   margin: 0;
   padding: 0;
+}
+body {
+  display: flex;
+  flex-direction: column;
+}
+#app {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* --- Formatting toolbar (top bar + selection bubble) --- */
+.cm-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3));
+  background: var(--vscode-editor-background);
+}
+.cm-bubble {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+.cm-tb-btn {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-editor-foreground);
+  font: 13px/1 var(--mdforge-font);
+  cursor: pointer;
+}
+.cm-tb-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+.cm-tb-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
 }
 
 body {
