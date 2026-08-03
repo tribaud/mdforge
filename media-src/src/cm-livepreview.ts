@@ -7,14 +7,25 @@
  * the raw syntax is revealed whenever the selection enters a node.
  *
  * Covers: headings, bold/italic/code/strike, links, images, three-state task
- * checkboxes (incl. the MDForge `[~]` in-progress state), fenced code blocks,
- * Mermaid diagrams and GFM tables.
+ * checkboxes (incl. the MDForge `[~]` in-progress state), fenced code blocks
+ * (with syntax highlighting), Mermaid diagrams, GFM tables, GitHub alerts,
+ * wikilinks, YAML frontmatter, footnotes and KaTeX math ($…$ / $$…$$).
  */
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { StateField } from '@codemirror/state'
 import type { EditorState, Range } from '@codemirror/state'
+
+/* ---------- host bridge (wikilink navigation) ---------- */
+let onWikilink: (target: string) => void = () => {}
+export function setWikilinkHandler(fn: (target: string) => void): void {
+  onWikilink = fn
+}
+/** Called by the DOM handler wired in main.ts. */
+export function openWikilink(target: string): void {
+  onWikilink(target)
+}
 
 /* ---------- assets (images) ---------- */
 let assetsBase = ''
@@ -74,6 +85,37 @@ function renderMermaid(el: HTMLElement, code: string): void {
     .catch((error: unknown) => {
       el.classList.add('cm-mermaid-error')
       el.textContent = `Mermaid error: ${error instanceof Error ? error.message : String(error)}`
+    })
+}
+
+/* ---------- KaTeX (lazy-loaded, same reasoning as Mermaid) ---------- */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let katexMod: any = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let katexLoading: Promise<any> | null = null
+async function getKatex(): Promise<unknown> {
+  if (katexMod) return katexMod
+  if (!katexLoading) {
+    katexLoading = import('katex').then((m) => {
+      katexMod = m.default ?? m
+      return katexMod
+    })
+  }
+  return katexLoading
+}
+function renderMath(el: HTMLElement, code: string, display: boolean): void {
+  getKatex()
+    .then((k) =>
+      (k as { render: (expr: string, el: HTMLElement, opts: object) => void }).render(code, el, {
+        displayMode: display,
+        throwOnError: false,
+        output: 'html'
+      })
+    )
+    .catch((error: unknown) => {
+      el.classList.add('cm-math-error')
+      el.textContent = code
+      void error
     })
 }
 
@@ -154,6 +196,27 @@ class MermaidWidget extends WidgetType {
   }
 }
 
+class MathWidget extends WidgetType {
+  constructor(
+    readonly code: string,
+    readonly display: boolean
+  ) {
+    super()
+  }
+  eq(other: MathWidget): boolean {
+    return other.code === this.code && other.display === this.display
+  }
+  toDOM(): HTMLElement {
+    const el = document.createElement(this.display ? 'div' : 'span')
+    el.className = this.display ? 'cm-math cm-math-block' : 'cm-math cm-math-inline'
+    renderMath(el, this.code, this.display)
+    return el
+  }
+  ignoreEvent(): boolean {
+    return false
+  }
+}
+
 function parseRow(line: string): string[] {
   return line
     .replace(/^\s*\|/, '')
@@ -213,12 +276,69 @@ class TableWidget extends WidgetType {
   }
 }
 
+/** Small leading icon shown before a GitHub alert's content. */
+class AlertIconWidget extends WidgetType {
+  constructor(readonly kind: string) {
+    super()
+  }
+  eq(other: AlertIconWidget): boolean {
+    return other.kind === this.kind
+  }
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = `cm-alert-icon cm-alert-icon-${this.kind}`
+    span.textContent = ALERT_LABELS[this.kind] ?? this.kind
+    return span
+  }
+}
+
+const ALERT_LABELS: Record<string, string> = {
+  note: 'ⓘ Note',
+  tip: '💡 Tip',
+  important: '❗ Important',
+  warning: '⚠ Warning',
+  caution: '🛑 Caution'
+}
+
+/* ---------- helpers for the regex post-pass ---------- */
+type Span = [number, number]
+function inAny(spans: Span[], from: number, to: number): boolean {
+  for (const [a, b] of spans) {
+    if (from < b && to > a) return true
+  }
+  return false
+}
+
 /* ---------- decoration builder ---------- */
 function buildDecorations(state: EditorState): DecorationSet {
   const deco: Array<Range<Decoration>> = []
   const doc = state.doc
+  const text = doc.toString()
   const tree = syntaxTree(state)
-  const taskRanges: Array<[number, number]> = []
+  const taskRanges: Span[] = []
+  const codeRanges: Span[] = []
+  // Ranges (character offsets) already claimed by a wikilink `[[…]]` so the
+  // Lezer Link handler doesn't also try to hide brackets in the same spot.
+  const wikilinkRanges: Span[] = []
+  for (const m of text.matchAll(/\[\[([^\]\n]+?)\]\]/g)) {
+    wikilinkRanges.push([m.index, m.index + m[0].length])
+  }
+
+  // YAML frontmatter: a `---` fenced block at the very top of the document.
+  // Its lines are styled and, crucially, exempt from Markdown inline rendering
+  // (so `tags: [a, b]` isn't mistaken for a link).
+  let frontmatterEnd = 0
+  if (text.startsWith('---\n')) {
+    const end = text.indexOf('\n---', 3)
+    if (end !== -1) {
+      const closeLine = doc.lineAt(end + 1)
+      frontmatterEnd = closeLine.to
+      for (let n = 1; n <= closeLine.number; n++) {
+        deco.push(Decoration.line({ class: 'cm-md-frontmatter' }).range(doc.line(n).from))
+      }
+    }
+  }
+  const inFrontmatter = (from: number): boolean => from < frontmatterEnd
 
   tree.iterate({
     enter: (node) => {
@@ -226,13 +346,14 @@ function buildDecorations(state: EditorState): DecorationSet {
       const from = node.from
       const to = node.to
 
-      // Fenced code: Mermaid diagram, or a styled code block.
+      // Fenced code: Mermaid diagram, or a styled/highlighted code block.
       if (name === 'FencedCode') {
+        codeRanges.push([from, to])
         const info = node.node.getChild('CodeInfo')
         const lang = info ? doc.sliceString(info.from, info.to).trim().toLowerCase() : ''
         if (lang === 'mermaid' && !editing(state, from, to)) {
-          const text = node.node.getChild('CodeText')
-          const code = text ? doc.sliceString(text.from, text.to) : ''
+          const textNode = node.node.getChild('CodeText')
+          const code = textNode ? doc.sliceString(textNode.from, textNode.to) : ''
           deco.push(Decoration.replace({ widget: new MermaidWidget(code), block: true }).range(from, to))
           return false
         }
@@ -241,8 +362,12 @@ function buildDecorations(state: EditorState): DecorationSet {
         for (let n = first; n <= last; n++) {
           deco.push(Decoration.line({ class: 'cm-md-codeblock' }).range(doc.line(n).from))
         }
-        return false
+        // Return true: descend so the nested language tree (from codeLanguages)
+        // is still highlighted by syntaxHighlighting().
+        return true
       }
+
+      if (name === 'InlineCode') codeRanges.push([from, to])
 
       // GFM table → rendered HTML table (raw while editing).
       if (name === 'Table') {
@@ -254,14 +379,40 @@ function buildDecorations(state: EditorState): DecorationSet {
         return false
       }
 
+      // Blockquote: plain quote, or a GitHub alert when the first line is `[!TYPE]`.
+      if (name === 'Blockquote') {
+        const firstLine = doc.lineAt(from)
+        const am = /^>\s*\[!(note|tip|important|warning|caution)\]\s*$/i.exec(firstLine.text)
+        const kind = am ? am[1].toLowerCase() : ''
+        const first = firstLine.number
+        const last = doc.lineAt(to).number
+        for (let n = first; n <= last; n++) {
+          const line = doc.line(n)
+          deco.push(Decoration.line({ class: kind ? `cm-alert cm-alert-${kind}` : 'cm-md-quote' }).range(line.from))
+          if (n === first && kind) {
+            // Replace the whole `> [!TYPE]` marker line with a labelled icon.
+            if (!editing(state, line.from, line.to)) {
+              deco.push(Decoration.replace({ widget: new AlertIconWidget(kind) }).range(line.from, line.to))
+            }
+            continue
+          }
+          // Hide the leading `> ` quote marker on body lines (revealed on edit).
+          const qm = /^\s*>\s?/.exec(line.text)
+          if (qm && qm[0].length && !editing(state, line.from, line.to)) {
+            deco.push(Decoration.replace({}).range(line.from, line.from + qm[0].length))
+          }
+        }
+        return
+      }
+
       // Task list items (incl. the MDForge `[~]` state): three-state checkbox.
       if (name === 'ListItem') {
         const line = doc.lineAt(from)
         const m = /^(\s*[-*+]\s+)\[([ xX~])\]/.exec(line.text)
         if (m) {
           const markFrom = line.from + m[1].length
-          const state = (m[2].toLowerCase() === 'x' ? 'x' : m[2]) as TaskState
-          deco.push(Decoration.replace({ widget: new TaskWidget(state) }).range(markFrom, markFrom + 3))
+          const st = (m[2].toLowerCase() === 'x' ? 'x' : m[2]) as TaskState
+          deco.push(Decoration.replace({ widget: new TaskWidget(st) }).range(markFrom, markFrom + 3))
           taskRanges.push([markFrom, markFrom + 3])
         }
         return
@@ -280,6 +431,7 @@ function buildDecorations(state: EditorState): DecorationSet {
       }
 
       if (name === 'StrongEmphasis' || name === 'Emphasis' || name === 'InlineCode' || name === 'Strikethrough') {
+        if (inFrontmatter(from)) return
         const cls =
           name === 'StrongEmphasis'
             ? 'cm-md-strong'
@@ -300,9 +452,11 @@ function buildDecorations(state: EditorState): DecorationSet {
       }
 
       // Links: hide `[`, `](url)` and style the text. Skip the `[~]` task marker
-      // (which the parser also sees as a Link) — the checkbox already owns it.
+      // and wikilinks `[[…]]` (both of which the parser also sees as Links).
       if (name === 'Link') {
+        if (inFrontmatter(from)) return
         if (taskRanges.some(([a, b]) => from >= a && to <= b)) return
+        if (inAny(wikilinkRanges, from, to)) return
         if (editing(state, from, to)) return
         const open = node.node.firstChild
         let close: { from: number; to: number } | null = null
@@ -322,20 +476,88 @@ function buildDecorations(state: EditorState): DecorationSet {
       }
 
       // Images: replace `![alt](src)` with an inline <img>.
-      if (name === 'Image' && !editing(state, from, to)) {
-        const text = doc.sliceString(from, to)
-        const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)/.exec(text)
+      if (name === 'Image' && !inFrontmatter(from) && !editing(state, from, to)) {
+        const t = doc.sliceString(from, to)
+        const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)/.exec(t)
         if (m) deco.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1]) }).range(from, to))
         return
       }
     }
   })
 
+  /* ---------- regex post-pass: math, wikilinks, footnotes ---------- */
+  const mathRanges: Span[] = []
+
+  // Block math $$…$$ (may span lines) → centered widget.
+  for (const m of text.matchAll(/\$\$([\s\S]+?)\$\$/g)) {
+    const from = m.index
+    const to = from + m[0].length
+    if (inFrontmatter(from) || inAny(codeRanges, from, to)) continue
+    mathRanges.push([from, to])
+    if (!editing(state, from, to)) {
+      deco.push(Decoration.replace({ widget: new MathWidget(m[1].trim(), true), block: true }).range(from, to))
+    }
+  }
+
+  // Inline math $…$ → inline widget (skip block-math and code spans).
+  for (const m of text.matchAll(/\$([^\s$][^$\n]*?)\$/g)) {
+    const from = m.index
+    const to = from + m[0].length
+    if (inFrontmatter(from) || inAny(codeRanges, from, to) || inAny(mathRanges, from, to)) continue
+    if (!editing(state, from, to)) {
+      deco.push(Decoration.replace({ widget: new MathWidget(m[1].trim(), false) }).range(from, to))
+    }
+  }
+
+  // Wikilinks [[target]] / [[target|alias]] → clickable, brackets hidden.
+  for (const m of text.matchAll(/\[\[([^\]\n]+?)\]\]/g)) {
+    const from = m.index
+    const to = from + m[0].length
+    if (inFrontmatter(from) || inAny(codeRanges, from, to)) continue
+    const raw = m[1]
+    const pipe = raw.indexOf('|')
+    const target = (pipe === -1 ? raw : raw.slice(0, pipe)).trim()
+    const label = (pipe === -1 ? raw : raw.slice(pipe + 1)).trim()
+    if (editing(state, from, to)) {
+      deco.push(Decoration.mark({ class: 'cm-md-wikilink-raw' }).range(from, to))
+      continue
+    }
+    // Hide `[[`, hide any `|alias` part, hide `]]`; style + tag the visible label.
+    deco.push(Decoration.replace({}).range(from, from + 2))
+    if (pipe === -1) {
+      deco.push(
+        Decoration.mark({ class: 'cm-md-wikilink', attributes: { 'data-wikilink': target } }).range(from + 2, to - 2)
+      )
+    } else {
+      const labelFrom = from + 2 + pipe + 1
+      deco.push(Decoration.replace({}).range(from + 2, labelFrom))
+      deco.push(
+        Decoration.mark({ class: 'cm-md-wikilink', attributes: { 'data-wikilink': target } }).range(labelFrom, to - 2)
+      )
+    }
+    deco.push(Decoration.replace({}).range(to - 2, to))
+    void label
+  }
+
+  // Footnotes: references `[^id]` (clickable) and definitions `[^id]:` (styled).
+  for (const m of text.matchAll(/\[\^([^\]\s]+)\]/g)) {
+    const from = m.index
+    const to = from + m[0].length
+    if (inFrontmatter(from) || inAny(codeRanges, from, to)) continue
+    const isDef = text[to] === ':'
+    deco.push(
+      Decoration.mark({
+        class: isDef ? 'cm-md-footnote-def' : 'cm-md-footnote-ref',
+        attributes: { 'data-footnote': m[1] }
+      }).range(from, to)
+    )
+  }
+
   return Decoration.set(deco, true)
 }
 
 // A StateField (not a ViewPlugin) so it can provide *block* decorations
-// (Mermaid diagrams, tables). Rebuilds when the doc or the selection changes.
+// (Mermaid diagrams, tables, block math). Rebuilds on doc/selection change.
 export const livePreview = StateField.define<DecorationSet>({
   create: (state) => buildDecorations(state),
   update: (deco, tr) => {

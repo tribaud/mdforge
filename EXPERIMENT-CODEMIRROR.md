@@ -14,22 +14,36 @@ The host (`src/extension.ts`) is **unchanged** — only the webview engine
 (`media-src/`) differs. The engine speaks the same protocol (`ready`/`edit` out,
 `setContent`/`config` in).
 
-## What's implemented (prototype)
+## What's implemented
 - Inline rendering via decorations (`media-src/src/cm-livepreview.ts`): headings,
   **bold**, *italic*, `inline code`, ~~strikethrough~~, links (URL hidden),
-  images (inline `<img>`), fenced **code blocks** (styled), **Mermaid** diagrams,
-  and GFM **tables** (rendered as HTML).
+  images (inline `<img>`), fenced **code blocks** with **syntax highlighting**
+  (`codeLanguages` → Lezer nested parsing), **Mermaid** diagrams, GFM **tables**
+  (rendered as HTML), **GitHub alerts** (`> [!NOTE]` → tinted callout + icon),
+  **wikilinks** (`[[target|alias]]`, click-to-open), YAML **frontmatter** (styled,
+  exempt from Markdown inline parsing), **footnotes** (`[^id]` ref → jump to def),
+  and **KaTeX math** (`$…$` inline and `$$…$$` block, lazy-loaded).
 - **Three-state task checkboxes**, including the MDForge `[~]` in-progress state
   (empty → in-progress → done). Toggling is a one-character text edit → one-line
   diff.
+- **Formatting toolbar**: a persistent top bar + a selection bubble; toggles are
+  idempotent (re-click removes the markers).
+- **Host features wired** to the existing protocol: image **paste/drop** (saved
+  next to the note via `insertImage`/`importImagePath`), **outline** click
+  (`revealHeading`, fenced code skipped so indices match), **presentation mode**
+  (read-only + chrome hidden), image **refresh** on disk change.
 - Raw syntax/source is revealed whenever the caret enters a node/block (fully
   editable), so nothing is ever locked behind the rendering.
 
-## Not implemented yet (would need more work to reach parity)
-- Math (KaTeX), code-block syntax highlighting, GitHub alerts, frontmatter,
-  wikilinks, footnotes.
-- The top toolbar, slash menu, outline, image paste/drop, rename/move/delete —
-  the host-side features still exist but have no webview UI here.
+## Blocking points vs Milkdown (honest)
+- No **in-place editing** of rendered tables/mermaid/math — the caret reveals the
+  raw text and you edit that (inherent to "the document is the text").
+- Every **rich-editing ergonomic** (list continue/indent, HTML-paste→Markdown,
+  block drag, slash menu, node views) must be hand-built; Milkdown ships them.
+- Reveal-on-edit shows the **whole node** raw, not just the marker under the caret.
+- Decorations are rebuilt on every selection change — fine here, but a big doc
+  would want a viewport-limited build.
+None are hard walls; the core win (perfect source fidelity) is already achieved.
 
 ## Try it
 1. `npm install` (adds the CodeMirror deps), then **F5**.

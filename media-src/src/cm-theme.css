@@ -172,6 +172,108 @@ body.mdforge-width-full .cm-content {
   white-space: pre-wrap;
 }
 
+/* Blockquotes */
+.cm-line.cm-md-quote {
+  border-left: 3px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  padding-left: 12px;
+  color: var(--vscode-descriptionForeground, inherit);
+}
+
+/* GitHub alerts (blockquote starting with [!TYPE]) */
+.cm-line.cm-alert {
+  border-left: 3px solid var(--alert-color, #58a6ff);
+  padding-left: 12px;
+  background: color-mix(in srgb, var(--alert-color, #58a6ff) 8%, transparent);
+}
+.cm-alert-note {
+  --alert-color: #58a6ff;
+}
+.cm-alert-tip {
+  --alert-color: #3fb950;
+}
+.cm-alert-important {
+  --alert-color: #a371f7;
+}
+.cm-alert-warning {
+  --alert-color: #d29922;
+}
+.cm-alert-caution {
+  --alert-color: #f85149;
+}
+.cm-alert-icon {
+  font-weight: 700;
+  color: var(--alert-color, #58a6ff);
+}
+.cm-alert-icon-note {
+  color: #58a6ff;
+}
+.cm-alert-icon-tip {
+  color: #3fb950;
+}
+.cm-alert-icon-important {
+  color: #a371f7;
+}
+.cm-alert-icon-warning {
+  color: #d29922;
+}
+.cm-alert-icon-caution {
+  color: #f85149;
+}
+
+/* Wikilinks [[target]] */
+.cm-md-wikilink {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  cursor: pointer;
+}
+.cm-md-wikilink-raw {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* YAML frontmatter */
+.cm-line.cm-md-frontmatter {
+  font-family: var(--mdforge-mono);
+  font-size: 0.88em;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+  border-left: 3px solid var(--vscode-charts-purple, #a371f7);
+  color: var(--vscode-descriptionForeground, inherit);
+}
+
+/* Footnotes */
+.cm-md-footnote-ref {
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  font-size: 0.85em;
+  vertical-align: super;
+}
+.cm-md-footnote-def {
+  color: var(--vscode-descriptionForeground, inherit);
+  font-size: 0.9em;
+}
+
+/* KaTeX math */
+.cm-math-block {
+  display: block;
+  margin: 10px 0;
+  text-align: center;
+}
+.cm-math-inline {
+  padding: 0 0.15em;
+}
+.cm-math-error {
+  font-family: var(--mdforge-mono);
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+
+/* Presentation mode: hide editing chrome, read-only feel */
+body.mdforge-presentation .cm-topbar {
+  display: none;
+}
+body.mdforge-presentation .cm-cursor {
+  display: none !important;
+}
+
 /* Rendered GFM table */
 .cm-md-table-wrap {
   overflow-x: auto;
