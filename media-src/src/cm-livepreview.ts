@@ -681,10 +681,25 @@ function buildDecorations(state: EditorState): DecorationSet {
             break
           }
         }
+        let url = ''
+        for (let c = node.node.firstChild; c; c = c.nextSibling) {
+          if (c.name === 'URL') {
+            url = doc.sliceString(c.from, c.to)
+            break
+          }
+        }
         if (open && open.name === 'LinkMark') deco.push(Decoration.replace({}).range(open.from, open.to))
         if (close) {
           const textFrom = open ? open.to : from
-          if (close.from > textFrom) deco.push(Decoration.mark({ class: 'cm-md-link' }).range(textFrom, close.from))
+          if (close.from > textFrom) {
+            // Tag the visible text with the URL so Ctrl/⌘-click can open it.
+            deco.push(
+              Decoration.mark({
+                class: 'cm-md-link',
+                attributes: { 'data-href': url, title: `${url}  (Ctrl/⌘+clic pour ouvrir)` }
+              }).range(textFrom, close.from)
+            )
+          }
           deco.push(Decoration.replace({}).range(close.from, to))
         }
         return

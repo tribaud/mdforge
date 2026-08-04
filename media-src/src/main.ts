@@ -291,9 +291,20 @@ try {
     })
   })
 
-  // Clicks on rendered wikilinks / footnote refs.
+  // Clicks on rendered wikilinks / footnote refs / links.
   view.dom.addEventListener('click', (event) => {
-    const el = (event.target as HTMLElement)?.closest?.('[data-wikilink],[data-footnote]') as HTMLElement | null
+    const target = event.target as HTMLElement
+    // Ctrl/⌘-click a rendered link → open it externally (plain click edits).
+    const linkEl = target?.closest?.('[data-href]') as HTMLElement | null
+    if (linkEl && (event.metaKey || event.ctrlKey)) {
+      const href = linkEl.getAttribute('data-href')
+      if (href) {
+        event.preventDefault()
+        vscode.postMessage({ type: 'openExternal', url: href })
+        return
+      }
+    }
+    const el = target?.closest?.('[data-wikilink],[data-footnote]') as HTMLElement | null
     if (!el) return
     const wl = el.getAttribute('data-wikilink')
     if (wl) {

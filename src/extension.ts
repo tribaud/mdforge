@@ -338,6 +338,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         type: string
         text?: string
         target?: string
+        url?: string
         id?: number
         data?: string
         mime?: string
@@ -358,6 +359,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           case 'openWikilink':
             if (message.target) await this.openWikilink(document, message.target)
+            break
+          case 'openExternal':
+            if (message.url) await vscode.env.openExternal(vscode.Uri.parse(message.url))
             break
           case 'insertImage':
             await this.insertImage(document, webview, message)

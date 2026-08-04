@@ -65,11 +65,14 @@ function preprocessMath(doc: Document): void {
     doc.createTextNode(display ? `\n\n$$${latex}$$\n\n` : `$${latex}$`)
 
   // 1) The visual `.MathJax` span with its source MathML in `data-mathml`.
+  //    Replace the whole `.MathJax_Display` wrapper when present, otherwise the
+  //    span — so the emitted `$$…$$` isn't nuked with the wrapper in step 4.
   doc.querySelectorAll('[data-mathml]').forEach((el) => {
     const mml = el.getAttribute('data-mathml') || ''
     const latex = mml ? mathToLatex(mml) : ''
     if (!latex) return
-    el.replaceWith(emit(latex, /display\s*=\s*["']?block/i.test(mml)))
+    const target = el.closest('.MathJax_Display') ?? el
+    target.replaceWith(emit(latex, /display\s*=\s*["']?block/i.test(mml)))
   })
 
   // 2) Original TeX in a math/tex script (some copies keep it).
@@ -113,6 +116,26 @@ function rewriteFootnotes(md: string): string {
   )
 }
 
+/** Renumber footnotes 1, 2, 3… in order of first reference (both refs and defs),
+ * so the labels read cleanly instead of the source's scattered anchor numbers. */
+function renumberFootnotes(md: string): string {
+  const order: string[] = []
+  const seen = new Set<string>()
+  const note = (n: string): void => {
+    if (!seen.has(n)) {
+      seen.add(n)
+      order.push(n)
+    }
+  }
+  for (const m of md.matchAll(/\[\^(\d+)\](?!:)/g)) note(m[1]) // references, in reading order
+  for (const m of md.matchAll(/^\[\^(\d+)\]:/gm)) note(m[1]) // then any unreferenced defs
+  if (!order.length) return md
+  const map = new Map(order.map((n, i) => [n, String(i + 1)]))
+  return md.replace(/\[\^(\d+)\](:?)/g, (whole, n: string, colon: string) =>
+    map.has(n) ? `[^${map.get(n)}]${colon}` : whole
+  )
+}
+
 export function htmlToMarkdown(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   preprocessMath(doc)
@@ -120,7 +143,7 @@ export function htmlToMarkdown(html: string): string {
   // note definition and, with parentheses inside, breaks the `[n](url)` output.
   doc.querySelectorAll('a[href*="#footnote"]').forEach((a) => a.removeAttribute('title'))
   let md = getService().turndown(doc.body)
-  md = rewriteFootnotes(md)
+  md = renumberFootnotes(rewriteFootnotes(md))
   return md
     .replace(/\n{3,}/g, '\n\n')
     // Turndown pads list markers (`-   x`); collapse to single-space `- x`.
