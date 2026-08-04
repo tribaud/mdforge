@@ -13,14 +13,15 @@
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view'
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
-import { markdown, markdownKeymap } from '@codemirror/lang-markdown'
+import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language'
+import { markdown, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
 import { livePreview, setAssetsBase, setMermaidTheme, setWikilinkHandler, openWikilink } from './cm-livepreview'
-import { createTopbar, createBubble } from './cm-toolbar'
+import { createTopbar, createBubble, wrap, insertLink } from './cm-toolbar'
 import { createSlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
+import { htmlToMarkdown, isRichHtml } from './cm-paste-html'
 import './cm-theme.css'
 import 'katex/dist/katex.min.css'
 
@@ -158,15 +159,43 @@ function sendImageFile(file: File, pos: number): void {
   )
 }
 
+/** True when the caret sits inside a fenced or inline code span. */
+function inCodeContext(view: EditorView): boolean {
+  const tree = syntaxTree(view.state)
+  for (
+    let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(view.state.selection.main.head, 0);
+    n;
+    n = n.parent
+  ) {
+    if (n.name === 'FencedCode' || n.name === 'InlineCode' || n.name === 'CodeBlock') return true
+  }
+  return false
+}
+
 const domEvents = EditorView.domEventHandlers({
   paste: (event, view) => {
-    const items = event.clipboardData?.files
-    if (!items || items.length === 0) return false
-    const image = Array.from(items).find((f) => f.type.startsWith('image/'))
-    if (!image) return false
-    event.preventDefault()
-    sendImageFile(image, view.state.selection.main.head)
-    return true
+    const cd = event.clipboardData
+    if (!cd) return false
+    // 1) An image on the clipboard → save it next to the note (existing flow).
+    const image = cd.files && Array.from(cd.files).find((f) => f.type.startsWith('image/'))
+    if (image) {
+      event.preventDefault()
+      sendImageFile(image, view.state.selection.main.head)
+      return true
+    }
+    // 2) Rich HTML (web page, doc) → convert to Markdown. Skipped inside a code
+    //    block, where the raw text should paste verbatim.
+    const html = cd.getData('text/html')
+    if (html && isRichHtml(html) && !inCodeContext(view)) {
+      const md = htmlToMarkdown(html)
+      if (md) {
+        event.preventDefault()
+        view.dispatch(view.state.replaceSelection(md))
+        view.focus()
+        return true
+      }
+    }
+    return false
   },
   drop: (event, view) => {
     const dt = event.dataTransfer
@@ -193,6 +222,26 @@ const domEvents = EditorView.domEventHandlers({
   }
 })
 
+/** Host-integration buttons (note/asset operations) appended to the top bar. */
+function addHostButtons(bar: HTMLElement): void {
+  const sep = document.createElement('span')
+  sep.className = 'cm-tb-sep'
+  bar.appendChild(sep)
+  const mk = (label: string, title: string, type: string, danger = false): void => {
+    const b = document.createElement('button')
+    b.className = danger ? 'cm-tb-btn cm-tb-danger' : 'cm-tb-btn'
+    b.textContent = label
+    b.title = title
+    b.addEventListener('mousedown', (e) => e.preventDefault())
+    b.addEventListener('click', () => vscode.postMessage({ type }))
+    bar.appendChild(b)
+  }
+  mk('⬇', 'Télécharger les images distantes en local', 'localizeAssets')
+  mk('📁', 'Déplacer la note et ses assets', 'moveNote')
+  mk('✏️', 'Renommer la note', 'renameNote')
+  mk('🗑', 'Supprimer la note et ses assets', 'deleteNote', true)
+}
+
 let view!: EditorView
 try {
   view = new EditorView({
@@ -202,6 +251,11 @@ try {
       extensions: [
         history(),
         keymap.of([
+          // Formatting shortcuts (toggle, same logic as the toolbar).
+          { key: 'Mod-b', run: (v) => (wrap(v, '**'), true) },
+          { key: 'Mod-i', run: (v) => (wrap(v, '*'), true) },
+          { key: 'Mod-e', run: (v) => (wrap(v, '`'), true) },
+          { key: 'Mod-k', run: (v) => (insertLink(v), true) },
           // Tab indents lists; Enter continues list/quote markup; Backspace
           // removes an empty marker — all before the generic bindings so they win.
           { key: 'Tab', run: indentList },
@@ -216,6 +270,7 @@ try {
         highlightActiveLine(),
         markdown({ extensions: GFM, codeLanguages: languages }),
         syntaxHighlighting(defaultHighlightStyle),
+        pasteURLAsLink,
         livePreview,
         editorTheme,
         domEvents,
@@ -254,7 +309,9 @@ try {
   })
 
   // Formatting toolbar: a persistent top bar + a selection bubble.
-  document.body.insertBefore(createTopbar(view), root)
+  const topbar = createTopbar(view)
+  addHostButtons(topbar)
+  document.body.insertBefore(topbar, root)
   const bubble = createBubble(view)
   bubbleUpdate = bubble.update
   slashUpdate = createSlashMenu(view).update

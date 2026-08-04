@@ -60,6 +60,10 @@ body {
 .cm-tb-btn:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
 }
+.cm-tb-danger:hover {
+  background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.2));
+  color: var(--vscode-errorForeground, #f85149);
+}
 .cm-tb-sep {
   width: 1px;
   height: 16px;

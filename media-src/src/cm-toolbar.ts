@@ -26,7 +26,7 @@ const WORD_CHAR = /[\p{L}\p{N}_]/u
  * matching kind (even a whole italic paragraph), its markers are removed. With
  * no selection, the word under the caret is used as the target to wrap.
  */
-function wrap(view: EditorView, marker: string): void {
+export function wrap(view: EditorView, marker: string): void {
   const { state } = view
   const sel = state.selection.main
   const kind = MARKER_NODE[marker]
@@ -102,7 +102,7 @@ function toggleLinePrefix(view: EditorView, prefix: string, re: RegExp): void {
   view.focus()
 }
 
-function insertLink(view: EditorView): void {
+export function insertLink(view: EditorView): void {
   const { from, to } = view.state.selection.main
   const text = view.state.doc.sliceString(from, to) || 'texte'
   const md = `[${text}](url)`
@@ -123,10 +123,10 @@ interface Action {
 type Entry = Action | 'sep'
 
 const ENTRIES: Entry[] = [
-  { label: 'B', title: 'Bold', run: (v) => wrap(v, '**') },
-  { label: 'I', title: 'Italic', run: (v) => wrap(v, '*') },
-  { label: 'S', title: 'Strikethrough', run: (v) => wrap(v, '~~') },
-  { label: '</>', title: 'Inline code', run: (v) => wrap(v, '`') },
+  { label: 'B', title: 'Gras (Ctrl/⌘B)', run: (v) => wrap(v, '**') },
+  { label: 'I', title: 'Italique (Ctrl/⌘I)', run: (v) => wrap(v, '*') },
+  { label: 'S', title: 'Barré', run: (v) => wrap(v, '~~') },
+  { label: '</>', title: 'Code (Ctrl/⌘E)', run: (v) => wrap(v, '`') },
   'sep',
   { label: 'H1', title: 'Heading 1', run: (v) => toggleLinePrefix(v, '# ', /^#{1,6}\s+/) },
   { label: 'H2', title: 'Heading 2', run: (v) => toggleLinePrefix(v, '## ', /^#{1,6}\s+/) },
