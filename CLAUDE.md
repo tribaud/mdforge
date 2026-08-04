@@ -247,6 +247,33 @@ protected, so releases still push tags directly.
   in `shiki-highlight.ts` if the `.vsix` gets too heavy.
 - Toolbar can flicker as the selection changes (provider show/hide).
 
+### Native diff editor — blocked on proposed API (watch actively)
+
+MDForge **cannot** render inside VS Code's native diff editor (two arbitrary
+files, or two commits of the same file). A `CustomTextEditorProvider` webview
+only ever receives its own side, never the counterpart or the computed diff — so
+red/green is impossible. This is confirmed by auditing VS Code's own
+experimental **"Markdown Editor (Experimental)"** (`vscode.markdown.editor`,
+same `CustomTextEditorProvider` family): it gets native diffs **only** via
+**proposed APIs** — `customEditorDiffs` (a new
+`resolveCustomTextEditorInlineDiff(documents:{original,modified}, singleWebview)`
+entry point that hands ONE webview BOTH documents) and `customEditorPriority`
+(`priority: { diffEditor: "explicit" }`). Proposed APIs are stripped for
+Marketplace extensions → **we cannot copy this today**.
+
+**Action: watch actively for these to graduate to stable** — track
+microsoft/vscode#292379 and the `customEditorDiffs` proposal. When stable,
+implement `resolveCustomTextEditorInlineDiff` and drop the opt-in-only stance.
+**Achievable now (stable API)**: quick-diff gutter markers inside the WYSIWYG
+view for the single-file case — read git HEAD (`vscode.git` API / `git show`),
+diff host-side, post markers the webview paints itself (not the split diff
+editor). Full audit in the repo memory (`mdforge-vscode-diff-audit`).
+
+Interim: the diff editor's shared title bar carries two hammer buttons
+(`mdforge.openDiffOriginal` / `openDiffModified`, `TabInputTextDiff`) to open
+either side in MDForge as a normal editor (original side may be a read-only
+`git:` resource).
+
 ## 10. Publishing (later)
 
 VS Code Marketplace: create a `tribaud` publisher at

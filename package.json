@@ -72,6 +72,18 @@
         "command": "mdforge.togglePresentation",
         "title": "MDForge: Toggle Presentation Mode",
         "category": "MDForge"
+      },
+      {
+        "command": "mdforge.openDiffOriginal",
+        "title": "MDForge: Open Original Side in MDForge",
+        "category": "MDForge",
+        "icon": "mdforge-editor.svg"
+      },
+      {
+        "command": "mdforge.openDiffModified",
+        "title": "MDForge: Open Modified Side in MDForge",
+        "category": "MDForge",
+        "icon": "mdforge-editor.svg"
       }
     ],
     "views": {
@@ -108,6 +120,16 @@
           "when": "activeCustomEditorId == 'mdforge.editor'",
           "command": "mdforge.openWithTextEditor",
           "group": "navigation"
+        },
+        {
+          "when": "isInDiffEditor && resourceLangId == markdown",
+          "command": "mdforge.openDiffOriginal",
+          "group": "navigation@1"
+        },
+        {
+          "when": "isInDiffEditor && resourceLangId == markdown",
+          "command": "mdforge.openDiffModified",
+          "group": "navigation@2"
         }
       ]
     },

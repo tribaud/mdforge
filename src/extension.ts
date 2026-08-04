@@ -48,8 +48,26 @@ export function activate(context: vscode.ExtensionContext): void {
         return
       }
       await vscode.commands.executeCommand('vscode.openWith', target, 'default')
+    }),
+    // Diff editor has a single shared title bar (no per-pane menu), so we expose
+    // one button per side that reads the active tab's diff input and opens the
+    // chosen side in MDForge. The original side is often a read-only `git:`
+    // resource (view-only); the modified side is the working file.
+    vscode.commands.registerCommand('mdforge.openDiffOriginal', async () => {
+      const input = activeDiffInput()
+      if (input) await vscode.commands.executeCommand('vscode.openWith', input.original, VIEW_TYPE)
+    }),
+    vscode.commands.registerCommand('mdforge.openDiffModified', async () => {
+      const input = activeDiffInput()
+      if (input) await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
     })
   )
+}
+
+/** The active tab's diff input (original/modified URIs), if it is a text diff. */
+function activeDiffInput(): vscode.TabInputTextDiff | undefined {
+  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
+  return input instanceof vscode.TabInputTextDiff ? input : undefined
 }
 
 interface Heading {
