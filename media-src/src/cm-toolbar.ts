@@ -102,6 +102,16 @@ function toggleLinePrefix(view: EditorView, prefix: string, re: RegExp): void {
   view.focus()
 }
 
+export /** Insert a thematic break (`---`) on its own line below the caret. */
+function insertHr(view: EditorView): void {
+  const pos = view.state.selection.main.head
+  const line = view.state.doc.lineAt(pos)
+  const at = line.to
+  const insert = (line.text.trim() ? '\n\n' : '') + '---\n'
+  view.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length } })
+  view.focus()
+}
+
 export function insertLink(view: EditorView): void {
   const { from, to } = view.state.selection.main
   const text = view.state.doc.sliceString(from, to) || 'texte'
@@ -135,7 +145,8 @@ const ENTRIES: Entry[] = [
   { label: '❝', title: 'Quote', run: (v) => toggleLinePrefix(v, '> ', /^>\s?/) },
   { label: '•', title: 'Bullet list', run: (v) => toggleLinePrefix(v, '- ', /^[-*+]\s+/) },
   { label: '☑', title: 'Task', run: (v) => toggleLinePrefix(v, '- [ ] ', /^[-*+]\s+(\[[ xX~]\]\s+)?/) },
-  { label: '🔗', title: 'Link', run: (v) => insertLink(v) }
+  { label: '🔗', title: 'Lien (Ctrl/⌘K)', run: (v) => insertLink(v) },
+  { label: '—', title: 'Ligne horizontale', run: (v) => insertHr(v) }
 ]
 
 function buildButtons(view: EditorView, container: HTMLElement): void {

@@ -196,6 +196,82 @@ function addCloseButton(host: HTMLElement, view: EditorView): void {
   host.appendChild(btn)
 }
 
+/* ---------- image URL/caption popup editor ---------- */
+let imagePopup: HTMLElement | null = null
+function closeImagePopup(): void {
+  imagePopup?.remove()
+  imagePopup = null
+}
+/** Floating editor for an image's URL and caption — keeps the image on screen
+ * (unlike revealing the raw text, which made it vanish and jumped the scroll). */
+function openImagePopup(view: EditorView, anchor: HTMLElement): void {
+  closeImagePopup()
+  const from = view.posAtDOM(anchor)
+  const parse = (): { to: number; alt: string; url: string } | null => {
+    const text = view.state.doc.sliceString(from, from + 4000)
+    const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)[^)]*\)/.exec(text)
+    return m ? { to: from + m[0].length, alt: m[1], url: m[2] } : null
+  }
+  const cur = parse()
+  if (!cur) return
+
+  const pop = document.createElement('div')
+  pop.className = 'cm-image-popup'
+  pop.addEventListener('mousedown', (e) => e.stopPropagation())
+  const field = (label: string, value: string): HTMLInputElement => {
+    const wrap = document.createElement('label')
+    wrap.className = 'cm-image-field'
+    wrap.textContent = label
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.value = value
+    wrap.appendChild(input)
+    pop.appendChild(wrap)
+    return input
+  }
+  const urlInput = field('URL', cur.url)
+  const capInput = field('Légende', cur.alt)
+  const apply = (): void => {
+    const c = parse()
+    if (!c) return
+    view.dispatch({ changes: { from, to: c.to, insert: `![${capInput.value}](${urlInput.value})` } })
+  }
+  urlInput.addEventListener('input', apply)
+  capInput.addEventListener('input', apply)
+  const close = document.createElement('button')
+  close.className = 'cm-image-close'
+  close.textContent = 'Fermer'
+  close.addEventListener('click', () => {
+    closeImagePopup()
+    view.focus()
+  })
+  pop.appendChild(close)
+
+  const rect = anchor.getBoundingClientRect()
+  pop.style.top = `${rect.bottom + window.scrollY + 6}px`
+  pop.style.left = `${rect.left + window.scrollX}px`
+  document.body.appendChild(pop)
+  imagePopup = pop
+  urlInput.focus()
+  urlInput.select()
+  // Dismiss on outside click / Escape.
+  setTimeout(() => {
+    const onDown = (e: MouseEvent): void => {
+      if (imagePopup && !imagePopup.contains(e.target as Node)) {
+        closeImagePopup()
+        document.removeEventListener('mousedown', onDown)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+  }, 0)
+  pop.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeImagePopup()
+      view.focus()
+    }
+  })
+}
+
 type TaskState = ' ' | '~' | 'x'
 const NEXT_STATE: Record<TaskState, TaskState> = { ' ': '~', '~': 'x', x: ' ' }
 
@@ -244,6 +320,8 @@ class ImageWidget extends WidgetType {
     return 180
   }
   toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('span')
+    wrap.className = 'cm-image-wrap'
     const img = document.createElement('img')
     img.src = resolveSrc(this.src)
     img.alt = this.alt
@@ -252,15 +330,19 @@ class ImageWidget extends WidgetType {
     img.className = 'cm-inline-image'
     // Image loads async and changes height → re-measure so caret mapping holds.
     img.addEventListener('load', () => view.requestMeasure())
-    // Click to edit: reveal the raw `![caption](url)` so URL + caption are
-    // editable inline (the atomic widget otherwise swallows the caret).
-    img.addEventListener('mousedown', (e) => e.preventDefault())
-    img.addEventListener('click', () => {
-      const pos = view.posAtDOM(img)
-      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
-      view.focus()
+    wrap.appendChild(img)
+    // Hover "✎" opens a popup to edit URL + caption while the image stays shown.
+    const btn = document.createElement('button')
+    btn.className = 'cm-block-edit cm-image-edit'
+    btn.textContent = '✎ URL'
+    btn.title = "Modifier l'URL et la légende"
+    btn.addEventListener('mousedown', (e) => e.preventDefault())
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      openImagePopup(view, wrap)
     })
-    return img
+    wrap.appendChild(btn)
+    return wrap
   }
 }
 
@@ -604,6 +686,16 @@ function buildDecorations(state: EditorState): DecorationSet {
           taskRanges.push([markFrom, markFrom + 3])
         }
         return
+      }
+
+      // Thematic break (`---` / `***` / `___`) → a rendered horizontal rule.
+      if (name === 'HorizontalRule') {
+        const line = doc.lineAt(from)
+        deco.push(Decoration.line({ class: 'cm-md-hr' }).range(line.from))
+        if (!editing(state, line.from, line.to) && line.to > line.from) {
+          deco.push(Decoration.replace({}).range(line.from, line.to))
+        }
+        return false
       }
 
       // Headings: enlarge the line, hide the leading "### ".
