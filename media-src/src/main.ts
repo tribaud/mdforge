@@ -12,9 +12,9 @@
  */
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view'
-import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
+import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
-import { markdown } from '@codemirror/lang-markdown'
+import { markdown, markdownKeymap } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
 import { livePreview, setAssetsBase, setMermaidTheme, setWikilinkHandler, openWikilink } from './cm-livepreview'
@@ -89,6 +89,46 @@ const editable = new Compartment()
 
 let bubbleUpdate: () => void = () => {}
 
+/* ---------- list indent / outdent on Tab ---------- */
+const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s)/
+
+/** Indent every list line the selection touches by two spaces. Returns false
+ * when no list line is involved, so Tab falls through to its default. */
+function indentList(view: EditorView): boolean {
+  const { state } = view
+  const changes: Array<{ from: number; insert: string }> = []
+  for (const range of state.selection.ranges) {
+    const first = state.doc.lineAt(range.from).number
+    const last = state.doc.lineAt(range.to).number
+    for (let n = first; n <= last; n++) {
+      const line = state.doc.line(n)
+      if (LIST_LINE.test(line.text)) changes.push({ from: line.from, insert: '  ' })
+    }
+  }
+  if (!changes.length) return false
+  view.dispatch({ changes })
+  return true
+}
+
+/** Outdent every list line the selection touches by up to two spaces. */
+function outdentList(view: EditorView): boolean {
+  const { state } = view
+  const changes: Array<{ from: number; to: number }> = []
+  for (const range of state.selection.ranges) {
+    const first = state.doc.lineAt(range.from).number
+    const last = state.doc.lineAt(range.to).number
+    for (let n = first; n <= last; n++) {
+      const line = state.doc.line(n)
+      if (!LIST_LINE.test(line.text)) continue
+      const spaces = /^ {1,2}/.exec(line.text)
+      if (spaces) changes.push({ from: line.from, to: line.from + spaces[0].length })
+    }
+  }
+  if (!changes.length) return false
+  view.dispatch({ changes })
+  return true
+}
+
 /* ---------- image paste / drop → host save → insert link ---------- */
 let imageSeq = 0
 /** id → document position where the inserted link should land. */
@@ -157,7 +197,16 @@ try {
       doc: '',
       extensions: [
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([
+          // Tab indents lists; Enter continues list/quote markup; Backspace
+          // removes an empty marker — all before the generic bindings so they win.
+          { key: 'Tab', run: indentList },
+          { key: 'Shift-Tab', run: outdentList },
+          ...markdownKeymap,
+          indentWithTab,
+          ...defaultKeymap,
+          ...historyKeymap
+        ]),
         EditorView.lineWrapping,
         drawSelection(),
         highlightActiveLine(),
