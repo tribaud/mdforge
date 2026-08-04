@@ -75,6 +75,18 @@ export function setMermaidTheme(theme: string): void {
 }
 
 let mermaidCounter = 0
+/**
+ * On a parse error, Mermaid injects a temporary/error element into
+ * `document.body` and does not remove it. Because the preview re-renders on
+ * every keystroke, these orphans pile up outside the editor (off-scroll,
+ * covering the screen). Remove any Mermaid element not mounted in one of our
+ * widgets after each render.
+ */
+function sweepMermaidOrphans(): void {
+  document.querySelectorAll('[id^="mdforge-mermaid-"], [id^="dmdforge-mermaid-"]').forEach((n) => {
+    if (!n.closest('.cm-mermaid')) n.remove()
+  })
+}
 function renderMermaid(view: EditorView, el: HTMLElement, code: string): void {
   const id = `mdforge-mermaid-${mermaidCounter++}`
   getMermaid()
@@ -90,6 +102,7 @@ function renderMermaid(view: EditorView, el: HTMLElement, code: string): void {
       el.textContent = `Mermaid error: ${error instanceof Error ? error.message : String(error)}`
       view.requestMeasure()
     })
+    .finally(sweepMermaidOrphans)
 }
 
 /* ---------- KaTeX (lazy-loaded, same reasoning as Mermaid) ---------- */
