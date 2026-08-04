@@ -293,11 +293,12 @@ body.mdforge-width-full .cm-content {
   color: var(--vscode-descriptionForeground, inherit);
 }
 
-/* GitHub alerts (blockquote starting with [!TYPE]) — boxed callout. */
+/* GitHub alerts (blockquote starting with [!TYPE]) — boxed callout.
+   `!important` so the tint wins over CodeMirror's active-line highlight. */
 .cm-line.cm-alert {
   border-left: 4px solid var(--alert-color, #58a6ff);
   padding: 2px 14px;
-  background: var(--alert-bg, rgba(88, 166, 255, 0.14));
+  background: var(--alert-bg, rgba(88, 166, 255, 0.14)) !important;
 }
 .cm-line.cm-alert-first {
   padding-top: 8px;
@@ -327,25 +328,56 @@ body.mdforge-width-full .cm-content {
   --alert-color: #f85149;
   --alert-bg: rgba(248, 81, 73, 0.15);
 }
-.cm-alert-icon {
-  display: inline-block;
-  font-weight: 700;
-  font-size: 0.95em;
-  color: var(--alert-color, #58a6ff);
+/* Alert type dropdown (Milkdown-style) shown on a blockquote's first line. */
+.cm-alert-select {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 1px 18px 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: 700 0.9em/1.4 var(--mdforge-font);
+  color: var(--alert-color, var(--vscode-descriptionForeground, inherit));
+  background: transparent;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 8px center,
+    right 4px center;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
 }
-.cm-alert-icon-note {
+.cm-alert-select:hover {
+  border-color: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+}
+.cm-alert-select option {
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+.cm-alert-select-none {
+  --alert-color: var(--vscode-descriptionForeground, #888);
+  font-weight: 400;
+  opacity: 0.55;
+}
+.cm-alert-select:hover.cm-alert-select-none {
+  opacity: 1;
+}
+.cm-alert-select-note {
   --alert-color: #4493f8;
 }
-.cm-alert-icon-tip {
+.cm-alert-select-tip {
   --alert-color: #3fb950;
 }
-.cm-alert-icon-important {
+.cm-alert-select-important {
   --alert-color: #ab7df8;
 }
-.cm-alert-icon-warning {
+.cm-alert-select-warning {
   --alert-color: #d29922;
 }
-.cm-alert-icon-caution {
+.cm-alert-select-caution {
   --alert-color: #f85149;
 }
 

@@ -321,28 +321,67 @@ class TableWidget extends WidgetType {
   }
 }
 
-/** Small leading icon shown before a GitHub alert's content. */
-class AlertIconWidget extends WidgetType {
-  constructor(readonly kind: string) {
-    super()
-  }
-  eq(other: AlertIconWidget): boolean {
-    return other.kind === this.kind
-  }
-  toDOM(): HTMLElement {
-    const span = document.createElement('span')
-    span.className = `cm-alert-icon cm-alert-icon-${this.kind}`
-    span.textContent = ALERT_LABELS[this.kind] ?? this.kind
-    return span
-  }
-}
-
 const ALERT_LABELS: Record<string, string> = {
   note: 'ⓘ Note',
   tip: '💡 Tip',
   important: '❗ Important',
   warning: '⚠ Warning',
   caution: '🛑 Caution'
+}
+const ALERT_TYPES = ['note', 'tip', 'important', 'warning', 'caution'] as const
+
+/**
+ * Dropdown shown at the start of a blockquote's first line (Milkdown-style): it
+ * reflects the current alert type and lets you change it, promote a plain quote,
+ * or downgrade back to a plain quote — all as plain text edits.
+ */
+class AlertSelectWidget extends WidgetType {
+  constructor(
+    readonly kind: string,
+    readonly lineFrom: number
+  ) {
+    super()
+  }
+  eq(other: AlertSelectWidget): boolean {
+    return other.kind === this.kind && other.lineFrom === this.lineFrom
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const sel = document.createElement('select')
+    sel.className = 'cm-alert-select ' + (this.kind ? `cm-alert-select-${this.kind}` : 'cm-alert-select-none')
+    const mk = (value: string, text: string): void => {
+      const o = document.createElement('option')
+      o.value = value
+      o.textContent = text
+      sel.appendChild(o)
+    }
+    mk('', '❝ Citation')
+    for (const t of ALERT_TYPES) mk(t, ALERT_LABELS[t])
+    sel.value = this.kind
+    sel.addEventListener('mousedown', (e) => e.stopPropagation())
+    sel.addEventListener('change', () => this.apply(view, sel.value))
+    return sel
+  }
+  private apply(view: EditorView, type: string): void {
+    const doc = view.state.doc
+    const line = doc.lineAt(this.lineFrom)
+    const text = line.text
+    const isAlert = /^\s*>\s*\\?\[!(note|tip|important|warning|caution)\]\s*$/i.test(text)
+    const prefixM = /^(\s*>\s?)/.exec(text)
+    const prefix = prefixM ? prefixM[1] : '> '
+    if (type) {
+      if (isAlert) {
+        const markerStart = line.from + /^(\s*>\s*)/.exec(text)![1].length
+        view.dispatch({ changes: { from: markerStart, to: line.to, insert: `[!${type.toUpperCase()}]` } })
+      } else {
+        const at = line.from + prefix.length
+        view.dispatch({ changes: { from: at, insert: `[!${type.toUpperCase()}]\n${prefix}` } })
+      }
+    } else if (isAlert) {
+      // Downgrade to a plain quote: drop the marker-only first line entirely.
+      view.dispatch({ changes: { from: line.from, to: Math.min(line.to + 1, doc.length) } })
+    }
+    view.focus()
+  }
 }
 
 /* ---------- helpers for the regex post-pass ---------- */
@@ -444,23 +483,34 @@ function buildDecorations(state: EditorState): DecorationSet {
         return false
       }
 
-      // Blockquote: plain quote, or a GitHub alert when the first line is `[!TYPE]`.
+      // Blockquote: plain quote, or a GitHub alert when the first line is
+      // `[!TYPE]` (an optional leading backslash from an over-escaping serializer
+      // is tolerated). Every blockquote gets a type dropdown on its first line.
       if (name === 'Blockquote') {
         const firstLine = doc.lineAt(from)
-        const am = /^>\s*\[!(note|tip|important|warning|caution)\]\s*$/i.exec(firstLine.text)
+        const am = /^\s*>\s*\\?\[!(note|tip|important|warning|caution)\]\s*$/i.exec(firstLine.text)
         const kind = am ? am[1].toLowerCase() : ''
         const first = firstLine.number
         const last = doc.lineAt(to).number
+        const editingFirst = editing(state, firstLine.from, firstLine.to)
         for (let n = first; n <= last; n++) {
           const line = doc.line(n)
           const pos = (n === first ? ' cm-alert-first' : '') + (n === last ? ' cm-alert-last' : '')
           deco.push(
             Decoration.line({ class: kind ? `cm-alert cm-alert-${kind}${pos}` : 'cm-md-quote' }).range(line.from)
           )
-          if (n === first && kind) {
-            // Replace the whole `> [!TYPE]` marker line with a labelled icon.
-            if (!editing(state, line.from, line.to)) {
-              deco.push(Decoration.replace({ widget: new AlertIconWidget(kind) }).range(line.from, line.to))
+          if (n === first) {
+            if (!editingFirst) {
+              deco.push(
+                Decoration.widget({ widget: new AlertSelectWidget(kind, line.from), side: -1 }).range(line.from)
+              )
+              if (kind) {
+                // Hide the whole `> [!TYPE]` marker line (the dropdown shows it).
+                deco.push(Decoration.replace({}).range(line.from, line.to))
+              } else {
+                const qm = /^\s*>\s?/.exec(line.text)
+                if (qm && qm[0].length) deco.push(Decoration.replace({}).range(line.from, line.from + qm[0].length))
+              }
             }
             continue
           }
