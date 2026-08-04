@@ -291,20 +291,27 @@ try {
     })
   })
 
-  // Clicks on rendered wikilinks / footnote refs / links.
-  view.dom.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement
-    // Ctrl/⌘-click a rendered link → open it externally (plain click edits).
-    const linkEl = target?.closest?.('[data-href]') as HTMLElement | null
-    if (linkEl && (event.metaKey || event.ctrlKey)) {
-      const href = linkEl.getAttribute('data-href')
+  // Ctrl/⌘-click a rendered link → open it externally. Handled on *mousedown*
+  // (capture) so it fires before CodeMirror moves the caret — which would turn
+  // the link back into raw text and drop the `data-href` before a click lands.
+  view.dom.addEventListener(
+    'mousedown',
+    (event) => {
+      if (!(event.metaKey || event.ctrlKey)) return
+      const linkEl = (event.target as HTMLElement)?.closest?.('[data-href]') as HTMLElement | null
+      const href = linkEl?.getAttribute('data-href')
       if (href) {
         event.preventDefault()
+        event.stopPropagation()
         vscode.postMessage({ type: 'openExternal', url: href })
-        return
       }
-    }
-    const el = target?.closest?.('[data-wikilink],[data-footnote]') as HTMLElement | null
+    },
+    true
+  )
+
+  // Clicks on rendered wikilinks / footnote refs.
+  view.dom.addEventListener('click', (event) => {
+    const el = (event.target as HTMLElement)?.closest?.('[data-wikilink],[data-footnote]') as HTMLElement | null
     if (!el) return
     const wl = el.getAttribute('data-wikilink')
     if (wl) {
