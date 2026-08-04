@@ -130,12 +130,21 @@ function editing(state: EditorState, from: number, to: number): boolean {
 /* ---------- widgets ---------- */
 type BlockMode = 'render' | 'preview'
 
+/** Drop the caret into a block's source at `pos`, which — via the reveal-on-edit
+ * rule — shows the editable source with a live preview underneath. */
+function enterEdit(view: EditorView, pos: number): void {
+  view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+  view.focus()
+}
+
 /**
- * Add an "✎ Éditer" affordance to a rendered block widget. Clicking it drops
- * the caret into the block's source (`pos`), which — via the reveal-on-edit
- * rule — shows the editable source with a live preview underneath.
+ * Add an "✎ Éditer" affordance to a rendered block widget, and make clicking
+ * anywhere on the widget enter edit mode too (clicking an atomic block widget
+ * otherwise just drops the caret below it — a confusing dead click).
  */
 function addEditButton(host: HTMLElement, view: EditorView, pos: number): void {
+  host.addEventListener('mousedown', (e) => e.preventDefault())
+  host.addEventListener('click', () => enterEdit(view, pos))
   const btn = document.createElement('button')
   btn.className = 'cm-block-edit'
   btn.textContent = '✎ Éditer'
@@ -143,8 +152,7 @@ function addEditButton(host: HTMLElement, view: EditorView, pos: number): void {
   btn.addEventListener('mousedown', (e) => e.preventDefault())
   btn.addEventListener('click', (e) => {
     e.stopPropagation()
-    view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
-    view.focus()
+    enterEdit(view, pos)
   })
   host.appendChild(btn)
 }
@@ -492,7 +500,9 @@ function buildDecorations(state: EditorState): DecorationSet {
         const kind = am ? am[1].toLowerCase() : ''
         const first = firstLine.number
         const last = doc.lineAt(to).number
-        const editingFirst = editing(state, firstLine.from, firstLine.to)
+        // The dropdown + marker-hiding are ALWAYS applied (not gated on editing):
+        // otherwise the caret landing on the first line would make the control
+        // vanish and reveal the raw `[!TYPE]` marker — reported as flickering.
         for (let n = first; n <= last; n++) {
           const line = doc.line(n)
           const pos = (n === first ? ' cm-alert-first' : '') + (n === last ? ' cm-alert-last' : '')
@@ -500,25 +510,19 @@ function buildDecorations(state: EditorState): DecorationSet {
             Decoration.line({ class: kind ? `cm-alert cm-alert-${kind}${pos}` : 'cm-md-quote' }).range(line.from)
           )
           if (n === first) {
-            if (!editingFirst) {
-              deco.push(
-                Decoration.widget({ widget: new AlertSelectWidget(kind, line.from), side: -1 }).range(line.from)
-              )
-              if (kind) {
-                // Hide the whole `> [!TYPE]` marker line (the dropdown shows it).
-                deco.push(Decoration.replace({}).range(line.from, line.to))
-              } else {
-                const qm = /^\s*>\s?/.exec(line.text)
-                if (qm && qm[0].length) deco.push(Decoration.replace({}).range(line.from, line.from + qm[0].length))
-              }
+            deco.push(Decoration.widget({ widget: new AlertSelectWidget(kind, line.from), side: -1 }).range(line.from))
+            if (kind) {
+              // Hide the whole `> [!TYPE]` marker line (the dropdown shows it).
+              deco.push(Decoration.replace({}).range(line.from, line.to))
+            } else {
+              const qm = /^\s*>\s?/.exec(line.text)
+              if (qm && qm[0].length) deco.push(Decoration.replace({}).range(line.from, line.from + qm[0].length))
             }
             continue
           }
-          // Hide the leading `> ` quote marker on body lines (revealed on edit).
+          // Hide the leading `> ` quote marker on body lines.
           const qm = /^\s*>\s?/.exec(line.text)
-          if (qm && qm[0].length && !editing(state, line.from, line.to)) {
-            deco.push(Decoration.replace({}).range(line.from, line.from + qm[0].length))
-          }
+          if (qm && qm[0].length) deco.push(Decoration.replace({}).range(line.from, line.from + qm[0].length))
         }
         return
       }
