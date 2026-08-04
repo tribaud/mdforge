@@ -305,6 +305,7 @@
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.25.0",
     "katex": "^0.16.11",
+    "mathml-to-latex": "^1.8.0",
     "mermaid": "^11.16.0",
     "playwright-core": "^1.62.1",
     "prosemirror-highlight": "^0.15.3",
