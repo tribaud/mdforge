@@ -116,22 +116,65 @@ function rewriteFootnotes(md: string): string {
   )
 }
 
-/** Renumber footnotes 1, 2, 3… in order of first reference (both refs and defs),
- * so the labels read cleanly instead of the source's scattered anchor numbers. */
+/**
+ * Renumber footnotes independently per definition section (Notes 1…, then a
+ * second section — e.g. Bibliographie — as b1…, a third as c1…), and remap the
+ * body references to match. Web pages share one global numbering across Notes
+ * and Bibliography, which reads as scattered numbers; this gives each section
+ * its own clean sequence without collisions (distinct label prefixes).
+ */
 function renumberFootnotes(md: string): string {
-  const order: string[] = []
-  const seen = new Set<string>()
-  const note = (n: string): void => {
-    if (!seen.has(n)) {
-      seen.add(n)
-      order.push(n)
+  const lines = md.split('\n')
+  const headingOf = (line: string): string | null => {
+    const h = /^#{1,6}\s+(.*)$/.exec(line)
+    return h ? h[1].trim() : null
+  }
+  const defOf = (line: string): string | null => {
+    const d = /^\[\^([^\]\s]+)\]:/.exec(line)
+    return d ? d[1] : null
+  }
+  // 1) Group each definition by the heading it sits under, in document order.
+  const sections: string[] = []
+  const sectionOf = new Map<string, string>()
+  let heading = ''
+  for (const line of lines) {
+    const h = headingOf(line)
+    if (h !== null) {
+      heading = h
+      continue
+    }
+    const n = defOf(line)
+    if (n && !sectionOf.has(n)) {
+      sectionOf.set(n, heading)
+      if (!sections.includes(heading)) sections.push(heading)
     }
   }
-  for (const m of md.matchAll(/\[\^(\d+)\](?!:)/g)) note(m[1]) // references, in reading order
-  for (const m of md.matchAll(/^\[\^(\d+)\]:/gm)) note(m[1]) // then any unreferenced defs
-  if (!order.length) return md
-  const map = new Map(order.map((n, i) => [n, String(i + 1)]))
-  return md.replace(/\[\^(\d+)\](:?)/g, (whole, n: string, colon: string) =>
+  if (!sectionOf.size) return md
+
+  // 2) One label prefix per section: first plain, then b, c, d…
+  const prefixes = ['', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+  const prefixOf = new Map(sections.map((s, i) => [s, prefixes[i] ?? `s${i + 1}`]))
+
+  // 3) Number definitions within each section, in document order.
+  const counter = new Map<string, number>()
+  const map = new Map<string, string>()
+  heading = ''
+  for (const line of lines) {
+    const h = headingOf(line)
+    if (h !== null) {
+      heading = h
+      continue
+    }
+    const n = defOf(line)
+    if (n && !map.has(n)) {
+      const idx = (counter.get(heading) ?? 0) + 1
+      counter.set(heading, idx)
+      map.set(n, `${prefixOf.get(heading)}${idx}`)
+    }
+  }
+
+  // 4) Rewrite every reference and definition to its new label.
+  return md.replace(/\[\^([^\]\s]+)\](:?)/g, (whole, n: string, colon: string) =>
     map.has(n) ? `[^${map.get(n)}]${colon}` : whole
   )
 }
