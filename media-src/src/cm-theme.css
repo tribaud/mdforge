@@ -198,12 +198,17 @@ body.mdforge-width-full .cm-content {
   opacity: 0.8;
 }
 
-/* Thematic break (`---`) rendered as a horizontal rule */
-.cm-line.cm-md-hr::after {
-  content: '';
-  display: block;
-  border-top: 2px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
-  margin: 0.4em 0;
+/* Thematic break (`---`) rendered as a compact horizontal rule */
+.cm-hr-widget {
+  padding: 8px 0;
+}
+.cm-hr-widget hr {
+  margin: 0;
+  border: none;
+  border-top: 2px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.5));
+}
+.cm-line.cm-md-hr-editing {
+  color: var(--vscode-descriptionForeground, inherit);
 }
 
 .cm-task-checkbox {
@@ -235,50 +240,6 @@ body.mdforge-width-full .cm-content {
   padding: 6px 0;
   border-radius: 4px;
 }
-.cm-image-edit {
-  opacity: 0;
-}
-.cm-image-wrap:hover .cm-image-edit {
-  opacity: 1;
-}
-.cm-image-popup {
-  position: absolute;
-  z-index: 45;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 320px;
-  padding: 10px;
-  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
-  border-radius: 8px;
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-.cm-image-field {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font: 11px/1.4 var(--mdforge-font);
-  color: var(--vscode-descriptionForeground, inherit);
-}
-.cm-image-field input {
-  padding: 4px 6px;
-  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4)));
-  border-radius: 4px;
-  background: var(--vscode-input-background, var(--vscode-editor-background));
-  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
-  font: 12px/1.4 var(--mdforge-mono);
-}
-.cm-image-close {
-  align-self: flex-end;
-  padding: 3px 10px;
-  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
-  border-radius: 5px;
-  background: var(--vscode-button-secondaryBackground, transparent);
-  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
-  font: 11px/1.4 var(--mdforge-font);
-  cursor: pointer;
-}
 
 /* Fenced code blocks (non-mermaid) */
 .cm-line.cm-md-codeblock {
@@ -305,7 +266,8 @@ body.mdforge-width-full .cm-content {
 }
 .cm-mermaid:hover .cm-block-edit,
 .cm-md-table-wrap:hover .cm-block-edit,
-.cm-math-block:hover .cm-block-edit {
+.cm-math-block:hover .cm-block-edit,
+.cm-image-wrap:hover .cm-block-edit {
   opacity: 1;
 }
 .cm-block-edit:hover {

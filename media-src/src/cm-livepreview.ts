@@ -196,82 +196,6 @@ function addCloseButton(host: HTMLElement, view: EditorView): void {
   host.appendChild(btn)
 }
 
-/* ---------- image URL/caption popup editor ---------- */
-let imagePopup: HTMLElement | null = null
-function closeImagePopup(): void {
-  imagePopup?.remove()
-  imagePopup = null
-}
-/** Floating editor for an image's URL and caption — keeps the image on screen
- * (unlike revealing the raw text, which made it vanish and jumped the scroll). */
-function openImagePopup(view: EditorView, anchor: HTMLElement): void {
-  closeImagePopup()
-  const from = view.posAtDOM(anchor)
-  const parse = (): { to: number; alt: string; url: string } | null => {
-    const text = view.state.doc.sliceString(from, from + 4000)
-    const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)[^)]*\)/.exec(text)
-    return m ? { to: from + m[0].length, alt: m[1], url: m[2] } : null
-  }
-  const cur = parse()
-  if (!cur) return
-
-  const pop = document.createElement('div')
-  pop.className = 'cm-image-popup'
-  pop.addEventListener('mousedown', (e) => e.stopPropagation())
-  const field = (label: string, value: string): HTMLInputElement => {
-    const wrap = document.createElement('label')
-    wrap.className = 'cm-image-field'
-    wrap.textContent = label
-    const input = document.createElement('input')
-    input.type = 'text'
-    input.value = value
-    wrap.appendChild(input)
-    pop.appendChild(wrap)
-    return input
-  }
-  const urlInput = field('URL', cur.url)
-  const capInput = field('Légende', cur.alt)
-  const apply = (): void => {
-    const c = parse()
-    if (!c) return
-    view.dispatch({ changes: { from, to: c.to, insert: `![${capInput.value}](${urlInput.value})` } })
-  }
-  urlInput.addEventListener('input', apply)
-  capInput.addEventListener('input', apply)
-  const close = document.createElement('button')
-  close.className = 'cm-image-close'
-  close.textContent = 'Fermer'
-  close.addEventListener('click', () => {
-    closeImagePopup()
-    view.focus()
-  })
-  pop.appendChild(close)
-
-  const rect = anchor.getBoundingClientRect()
-  pop.style.top = `${rect.bottom + window.scrollY + 6}px`
-  pop.style.left = `${rect.left + window.scrollX}px`
-  document.body.appendChild(pop)
-  imagePopup = pop
-  urlInput.focus()
-  urlInput.select()
-  // Dismiss on outside click / Escape.
-  setTimeout(() => {
-    const onDown = (e: MouseEvent): void => {
-      if (imagePopup && !imagePopup.contains(e.target as Node)) {
-        closeImagePopup()
-        document.removeEventListener('mousedown', onDown)
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-  }, 0)
-  pop.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeImagePopup()
-      view.focus()
-    }
-  })
-}
-
 type TaskState = ' ' | '~' | 'x'
 const NEXT_STATE: Record<TaskState, TaskState> = { ' ': '~', '~': 'x', x: ' ' }
 
@@ -309,19 +233,21 @@ class TaskWidget extends WidgetType {
 class ImageWidget extends WidgetType {
   constructor(
     readonly src: string,
-    readonly alt: string
+    readonly alt: string,
+    readonly pos: number,
+    readonly mode: BlockMode
   ) {
     super()
   }
   eq(other: ImageWidget): boolean {
-    return other.src === this.src && other.alt === this.alt
+    return other.src === this.src && other.alt === this.alt && other.mode === this.mode
   }
   get estimatedHeight(): number {
     return 180
   }
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('span')
-    wrap.className = 'cm-image-wrap'
+    wrap.className = this.mode === 'preview' ? 'cm-image-wrap cm-block-preview' : 'cm-image-wrap'
     const img = document.createElement('img')
     img.src = resolveSrc(this.src)
     img.alt = this.alt
@@ -331,18 +257,25 @@ class ImageWidget extends WidgetType {
     // Image loads async and changes height → re-measure so caret mapping holds.
     img.addEventListener('load', () => view.requestMeasure())
     wrap.appendChild(img)
-    // Hover "✎" opens a popup to edit URL + caption while the image stays shown.
-    const btn = document.createElement('button')
-    btn.className = 'cm-block-edit cm-image-edit'
-    btn.textContent = '✎ URL'
-    btn.title = "Modifier l'URL et la légende"
-    btn.addEventListener('mousedown', (e) => e.preventDefault())
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      openImagePopup(view, wrap)
-    })
-    wrap.appendChild(btn)
+    // Same affordance as mermaid/table: ✎ to edit the source (URL + caption),
+    // ✓ Terminer to leave — the image stays visible the whole time.
+    if (this.mode === 'render') addEditButton(wrap, view, this.pos)
+    else addCloseButton(wrap, view)
     return wrap
+  }
+}
+
+/** Compact horizontal rule — a block widget so the `---` source line collapses
+ * to just the rule (no lingering empty-looking line) when the caret is away. */
+class HrWidget extends WidgetType {
+  eq(): boolean {
+    return true
+  }
+  toDOM(): HTMLElement {
+    const el = document.createElement('div')
+    el.className = 'cm-hr-widget'
+    el.appendChild(document.createElement('hr'))
+    return el
   }
 }
 
@@ -688,12 +621,14 @@ function buildDecorations(state: EditorState): DecorationSet {
         return
       }
 
-      // Thematic break (`---` / `***` / `___`) → a rendered horizontal rule.
+      // Thematic break (`---` / `***` / `___`) → a compact rendered rule; raw
+      // `---` is shown (editable) only when the caret is on the line.
       if (name === 'HorizontalRule') {
         const line = doc.lineAt(from)
-        deco.push(Decoration.line({ class: 'cm-md-hr' }).range(line.from))
         if (!editing(state, line.from, line.to) && line.to > line.from) {
-          deco.push(Decoration.replace({}).range(line.from, line.to))
+          deco.push(Decoration.replace({ widget: new HrWidget(), block: true }).range(line.from, line.to))
+        } else {
+          deco.push(Decoration.line({ class: 'cm-md-hr-editing' }).range(line.from))
         }
         return false
       }
@@ -755,11 +690,22 @@ function buildDecorations(state: EditorState): DecorationSet {
         return
       }
 
-      // Images: replace `![alt](src)` with an inline <img>.
-      if (name === 'Image' && !inFrontmatter(from) && !editing(state, from, to)) {
+      // Images: `![alt](src)` → rendered <img>. While editing, keep the image as
+      // a preview below the raw source (same pattern as mermaid/table/math).
+      if (name === 'Image' && !inFrontmatter(from)) {
         const t = doc.sliceString(from, to)
         const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)/.exec(t)
-        if (m) deco.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1]) }).range(from, to))
+        if (!m) return
+        if (!editing(state, from, to)) {
+          deco.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1], from, 'render') }).range(from, to))
+        } else {
+          const line = doc.lineAt(to)
+          deco.push(
+            Decoration.widget({ widget: new ImageWidget(m[2], m[1], from, 'preview'), side: 1, block: true }).range(
+              line.to
+            )
+          )
+        }
         return
       }
     }

@@ -302,9 +302,11 @@ try {
       return
     }
     const fn = el.getAttribute('data-footnote')
-    if (fn && !el.classList.contains('cm-md-footnote-def')) {
+    if (fn) {
       event.preventDefault()
-      jumpToFootnote(fn)
+      // Reference → definition; definition → back to (first) reference.
+      if (el.classList.contains('cm-md-footnote-def')) jumpToFootnoteRef(fn)
+      else jumpToFootnote(fn)
     }
   })
 
@@ -328,6 +330,20 @@ function jumpToFootnote(id: string): void {
     const line = view.state.doc.line(n)
     if (re.test(line.text)) {
       view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true })
+      return
+    }
+  }
+}
+
+/** Scroll to the first reference of a footnote (`[^id]` not the `[^id]:` def). */
+function jumpToFootnoteRef(id: string): void {
+  const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`\\[\\^${esc}\\](?!:)`)
+  for (let n = 1; n <= view.state.doc.lines; n++) {
+    const line = view.state.doc.line(n)
+    const m = re.exec(line.text)
+    if (m) {
+      view.dispatch({ selection: { anchor: line.from + m.index }, scrollIntoView: true })
       return
     }
   }
