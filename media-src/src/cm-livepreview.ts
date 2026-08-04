@@ -433,7 +433,9 @@ function buildDecorations(state: EditorState): DecorationSet {
       if (name === 'Table') {
         const src = doc.sliceString(from, to)
         if (!editing(state, from, to)) {
-          deco.push(Decoration.replace({ widget: new TableWidget(src, from, 'render'), block: true }).range(from, to))
+          // Edit button lands the caret inside the first header cell (from + 2),
+          // not on the table boundary, so the table toolbar resolves the node.
+          deco.push(Decoration.replace({ widget: new TableWidget(src, from + 2, 'render'), block: true }).range(from, to))
         } else {
           deco.push(
             Decoration.widget({ widget: new TableWidget(src, from, 'preview'), block: true, side: 1 }).range(to)
@@ -451,7 +453,10 @@ function buildDecorations(state: EditorState): DecorationSet {
         const last = doc.lineAt(to).number
         for (let n = first; n <= last; n++) {
           const line = doc.line(n)
-          deco.push(Decoration.line({ class: kind ? `cm-alert cm-alert-${kind}` : 'cm-md-quote' }).range(line.from))
+          const pos = (n === first ? ' cm-alert-first' : '') + (n === last ? ' cm-alert-last' : '')
+          deco.push(
+            Decoration.line({ class: kind ? `cm-alert cm-alert-${kind}${pos}` : 'cm-md-quote' }).range(line.from)
+          )
           if (n === first && kind) {
             // Replace the whole `> [!TYPE]` marker line with a labelled icon.
             if (!editing(state, line.from, line.to)) {

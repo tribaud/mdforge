@@ -49,19 +49,29 @@ const x = 1
 
 const MIME = { '.js': 'text/javascript', '.css': 'text/css', '.map': 'application/json' }
 
+const DARK = process.env.THEME === 'dark'
+const LIGHT_VARS = `
+  --vscode-editor-background:#ffffff; --vscode-editor-foreground:#1f2328;
+  --vscode-textLink-foreground:#0969da; --vscode-editorCursor-foreground:#1f2328;
+  --vscode-editor-selectionBackground:#cce5ff;
+  --vscode-editorWidget-border:#d0d7de; --vscode-editorWidget-background:#ffffff;
+  --vscode-textCodeBlock-background:#f6f8fa; --vscode-toolbar-hoverBackground:#eaeef2;
+  --vscode-descriptionForeground:#656d76;`
+const DARK_VARS = `
+  --vscode-editor-background:#1f1f1f; --vscode-editor-foreground:#cccccc;
+  --vscode-textLink-foreground:#4daafc; --vscode-editorCursor-foreground:#cccccc;
+  --vscode-editor-selectionBackground:#264f78;
+  --vscode-editorWidget-border:#454545; --vscode-editorWidget-background:#252526;
+  --vscode-textCodeBlock-background:#2a2a2a; --vscode-toolbar-hoverBackground:#3a3a3a;
+  --vscode-descriptionForeground:#9d9d9d;`
+
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
   if (url === '/' || url === '/index.html') {
     res.writeHead(200, { 'content-type': 'text/html' })
     res.end(`<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/main.css">
-<style>:root{
-  --vscode-editor-background:#ffffff; --vscode-editor-foreground:#1f2328;
-  --vscode-textLink-foreground:#0969da; --vscode-editorCursor-foreground:#1f2328;
-  --vscode-editor-selectionBackground:#cce5ff;
-  --vscode-editorWidget-border:#d0d7de; --vscode-editorWidget-background:#ffffff;
-  --vscode-textCodeBlock-background:#f6f8fa; --vscode-toolbar-hoverBackground:#eaeef2;
-}</style></head><body><div id="app"></div>
+<style>:root{${DARK ? DARK_VARS : LIGHT_VARS}}</style></head><body><div id="app"></div>
 <script type="module" src="/main.js"></script></body></html>`)
     return
   }

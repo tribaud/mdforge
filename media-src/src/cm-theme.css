@@ -67,6 +67,74 @@ body {
   background: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
 }
 
+/* --- Table structural toolbar --- */
+.cm-table-bar {
+  position: absolute;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+.cm-table-bar .cm-tb-btn {
+  position: relative;
+}
+/* CSS tooltip (native title is slow/suppressed in the webview) */
+.cm-table-bar .cm-tb-btn[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font: 11px/1.3 var(--mdforge-font);
+  color: var(--vscode-editorHoverWidget-foreground, #fff);
+  background: var(--vscode-editorHoverWidget-background, #333);
+  border: 1px solid var(--vscode-editorHoverWidget-border, rgba(127, 127, 127, 0.4));
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* --- Slash command menu --- */
+.cm-slash-menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.cm-slash-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.cm-slash-active {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.25)));
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+.cm-slash-label {
+  font: 13px/1.4 var(--mdforge-font);
+}
+.cm-slash-hint {
+  font: 11px/1.4 var(--mdforge-mono);
+  opacity: 0.6;
+}
+
 body {
   background: var(--vscode-editor-background);
   color: var(--vscode-editor-foreground);
@@ -220,50 +288,65 @@ body.mdforge-width-full .cm-content {
 
 /* Blockquotes */
 .cm-line.cm-md-quote {
-  border-left: 3px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
-  padding-left: 12px;
+  border-left: 3px solid var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.6));
+  padding-left: 14px;
   color: var(--vscode-descriptionForeground, inherit);
 }
 
-/* GitHub alerts (blockquote starting with [!TYPE]) */
+/* GitHub alerts (blockquote starting with [!TYPE]) — boxed callout. */
 .cm-line.cm-alert {
-  border-left: 3px solid var(--alert-color, #58a6ff);
-  padding-left: 12px;
-  background: color-mix(in srgb, var(--alert-color, #58a6ff) 8%, transparent);
+  border-left: 4px solid var(--alert-color, #58a6ff);
+  padding: 2px 14px;
+  background: var(--alert-bg, rgba(88, 166, 255, 0.14));
+}
+.cm-line.cm-alert-first {
+  padding-top: 8px;
+  border-top-right-radius: 6px;
+}
+.cm-line.cm-alert-last {
+  padding-bottom: 8px;
+  border-bottom-right-radius: 6px;
 }
 .cm-alert-note {
-  --alert-color: #58a6ff;
+  --alert-color: #4493f8;
+  --alert-bg: rgba(56, 139, 253, 0.15);
 }
 .cm-alert-tip {
   --alert-color: #3fb950;
+  --alert-bg: rgba(63, 185, 80, 0.15);
 }
 .cm-alert-important {
-  --alert-color: #a371f7;
+  --alert-color: #ab7df8;
+  --alert-bg: rgba(163, 113, 247, 0.15);
 }
 .cm-alert-warning {
   --alert-color: #d29922;
+  --alert-bg: rgba(210, 153, 34, 0.15);
 }
 .cm-alert-caution {
   --alert-color: #f85149;
+  --alert-bg: rgba(248, 81, 73, 0.15);
 }
 .cm-alert-icon {
+  display: inline-block;
   font-weight: 700;
+  font-size: 0.95em;
   color: var(--alert-color, #58a6ff);
 }
 .cm-alert-icon-note {
-  color: #58a6ff;
+  --alert-color: #4493f8;
 }
 .cm-alert-icon-tip {
-  color: #3fb950;
+  --alert-color: #3fb950;
 }
 .cm-alert-icon-important {
-  color: #a371f7;
+  --alert-color: #ab7df8;
 }
 .cm-alert-icon-warning {
-  color: #d29922;
+  --alert-color: #d29922;
 }
 .cm-alert-icon-caution {
-  color: #f85149;
+  --alert-color: #f85149;
 }
 
 /* Wikilinks [[target]] */

@@ -19,6 +19,8 @@ import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
 import { livePreview, setAssetsBase, setMermaidTheme, setWikilinkHandler, openWikilink } from './cm-livepreview'
 import { createTopbar, createBubble } from './cm-toolbar'
+import { createSlashMenu } from './cm-slash'
+import { createTableToolbar } from './cm-table'
 import './cm-theme.css'
 import 'katex/dist/katex.min.css'
 
@@ -88,6 +90,8 @@ const editorTheme = EditorView.theme({
 const editable = new Compartment()
 
 let bubbleUpdate: () => void = () => {}
+let slashUpdate: () => void = () => {}
+let tableUpdate: () => void = () => {}
 
 /* ---------- list indent / outdent on Tab ---------- */
 const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s)/
@@ -217,7 +221,11 @@ try {
         domEvents,
         editable.of(EditorView.editable.of(true)),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged || update.selectionSet || update.focusChanged) bubbleUpdate()
+          if (update.docChanged || update.selectionSet || update.focusChanged) {
+            bubbleUpdate()
+            slashUpdate()
+            tableUpdate()
+          }
           if (applyingRemote || !update.docChanged) return
           const text = update.state.doc.toString()
           if (text === currentText) return
@@ -249,6 +257,8 @@ try {
   document.body.insertBefore(createTopbar(view), root)
   const bubble = createBubble(view)
   bubbleUpdate = bubble.update
+  slashUpdate = createSlashMenu(view).update
+  tableUpdate = createTableToolbar(view).update
 } catch (error) {
   showError(error)
   throw error
