@@ -247,9 +247,19 @@ class ImageWidget extends WidgetType {
     const img = document.createElement('img')
     img.src = resolveSrc(this.src)
     img.alt = this.alt
+    // Hover shows the raw address (web vs local) without editing.
+    img.title = this.alt ? `${this.alt} — ${this.src}` : this.src
     img.className = 'cm-inline-image'
     // Image loads async and changes height → re-measure so caret mapping holds.
     img.addEventListener('load', () => view.requestMeasure())
+    // Click to edit: reveal the raw `![caption](url)` so URL + caption are
+    // editable inline (the atomic widget otherwise swallows the caret).
+    img.addEventListener('mousedown', (e) => e.preventDefault())
+    img.addEventListener('click', () => {
+      const pos = view.posAtDOM(img)
+      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+      view.focus()
+    })
     return img
   }
 }
