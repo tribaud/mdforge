@@ -251,6 +251,24 @@ body.mdforge-width-full .cm-content {
   background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
 }
 
+/* "✓ Terminer" — exit-edit button on a block's preview panel (always visible) */
+.cm-block-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 5px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-charts-green, #3fb950);
+  font: 600 11px/1.4 var(--mdforge-font);
+  cursor: pointer;
+}
+.cm-block-close:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+
 /* Live preview shown under the source while a block is being edited */
 .cm-block-preview {
   position: relative;

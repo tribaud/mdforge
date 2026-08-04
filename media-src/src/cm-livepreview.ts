@@ -161,6 +161,28 @@ function addEditButton(host: HTMLElement, view: EditorView, pos: number): void {
   host.appendChild(btn)
 }
 
+/**
+ * Add a "✓ Terminer" button to a block's edit-time preview panel that moves the
+ * caret out of the block (to the line after it) — so the source collapses back
+ * to the rendered view. Big blocks (mermaid/math) are otherwise hard to exit.
+ */
+function addCloseButton(host: HTMLElement, view: EditorView): void {
+  const btn = document.createElement('button')
+  btn.className = 'cm-block-close'
+  btn.textContent = '✓ Terminer'
+  btn.title = "Fermer l'éditeur (sortir du bloc)"
+  btn.addEventListener('mousedown', (e) => e.preventDefault())
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const doc = view.state.doc
+    const pos = Math.max(0, Math.min(view.posAtDOM(btn), doc.length))
+    const after = Math.min(doc.length, doc.lineAt(pos).to + 1)
+    view.dispatch({ selection: { anchor: after }, scrollIntoView: true })
+    view.focus()
+  })
+  host.appendChild(btn)
+}
+
 type TaskState = ' ' | '~' | 'x'
 const NEXT_STATE: Record<TaskState, TaskState> = { ' ': '~', '~': 'x', x: ' ' }
 
@@ -241,6 +263,7 @@ class MermaidWidget extends WidgetType {
     el.appendChild(target)
     renderMermaid(view, target, this.code)
     if (this.mode === 'render') addEditButton(el, view, this.pos)
+    else addCloseButton(el, view)
     return el
   }
 }
@@ -270,6 +293,7 @@ class MathWidget extends WidgetType {
       el.appendChild(target)
       renderMath(view, target, this.code, true)
       if (this.mode === 'render' && this.pos >= 0) addEditButton(el, view, this.pos)
+      else if (this.mode === 'preview') addCloseButton(el, view)
     } else {
       renderMath(view, el, this.code, false)
     }
@@ -306,6 +330,7 @@ class TableWidget extends WidgetType {
     const wrap = document.createElement('div')
     wrap.className = this.mode === 'preview' ? 'cm-md-table-wrap cm-block-preview' : 'cm-md-table-wrap'
     if (this.mode === 'render') addEditButton(wrap, view, this.pos)
+    else addCloseButton(wrap, view)
     const lines = this.source.split('\n').filter((l) => l.trim())
     if (lines.length < 2) {
       wrap.textContent = this.source
