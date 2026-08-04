@@ -75,16 +75,20 @@ export function setMermaidTheme(theme: string): void {
 }
 
 let mermaidCounter = 0
-function renderMermaid(el: HTMLElement, code: string): void {
+function renderMermaid(view: EditorView, el: HTMLElement, code: string): void {
   const id = `mdforge-mermaid-${mermaidCounter++}`
   getMermaid()
     .then((m) => (m as { render: (id: string, code: string) => Promise<{ svg: string }> }).render(id, code))
     .then(({ svg }) => {
       el.innerHTML = svg
+      // The SVG changes the widget height after CodeMirror measured the layout;
+      // re-measure so vertical click/caret mapping below stays accurate.
+      view.requestMeasure()
     })
     .catch((error: unknown) => {
       el.classList.add('cm-mermaid-error')
       el.textContent = `Mermaid error: ${error instanceof Error ? error.message : String(error)}`
+      view.requestMeasure()
     })
 }
 
@@ -103,18 +107,20 @@ async function getKatex(): Promise<unknown> {
   }
   return katexLoading
 }
-function renderMath(el: HTMLElement, code: string, display: boolean): void {
+function renderMath(view: EditorView, el: HTMLElement, code: string, display: boolean): void {
   getKatex()
-    .then((k) =>
-      (k as { render: (expr: string, el: HTMLElement, opts: object) => void }).render(code, el, {
+    .then((k) => {
+      ;(k as { render: (expr: string, el: HTMLElement, opts: object) => void }).render(code, el, {
         displayMode: display,
         throwOnError: false,
         output: 'html'
       })
-    )
+      view.requestMeasure()
+    })
     .catch((error: unknown) => {
       el.classList.add('cm-math-error')
       el.textContent = code
+      view.requestMeasure()
       void error
     })
 }
@@ -138,13 +144,11 @@ function enterEdit(view: EditorView, pos: number): void {
 }
 
 /**
- * Add an "✎ Éditer" affordance to a rendered block widget, and make clicking
- * anywhere on the widget enter edit mode too (clicking an atomic block widget
- * otherwise just drops the caret below it — a confusing dead click).
+ * Add an "✎ Éditer" affordance to a rendered block widget. Only the button
+ * enters edit mode — clicking the rendered body leaves the caret alone (so the
+ * diagram/table stays a stable, non-disruptive preview until you ask to edit).
  */
 function addEditButton(host: HTMLElement, view: EditorView, pos: number): void {
-  host.addEventListener('mousedown', (e) => e.preventDefault())
-  host.addEventListener('click', () => enterEdit(view, pos))
   const btn = document.createElement('button')
   btn.className = 'cm-block-edit'
   btn.textContent = '✎ Éditer'
@@ -201,11 +205,16 @@ class ImageWidget extends WidgetType {
   eq(other: ImageWidget): boolean {
     return other.src === this.src && other.alt === this.alt
   }
-  toDOM(): HTMLElement {
+  get estimatedHeight(): number {
+    return 180
+  }
+  toDOM(view: EditorView): HTMLElement {
     const img = document.createElement('img')
     img.src = resolveSrc(this.src)
     img.alt = this.alt
     img.className = 'cm-inline-image'
+    // Image loads async and changes height → re-measure so caret mapping holds.
+    img.addEventListener('load', () => view.requestMeasure())
     return img
   }
 }
@@ -221,13 +230,16 @@ class MermaidWidget extends WidgetType {
   eq(other: MermaidWidget): boolean {
     return other.code === this.code && other.mode === this.mode
   }
+  get estimatedHeight(): number {
+    return 200
+  }
   toDOM(view: EditorView): HTMLElement {
     const el = document.createElement('div')
     el.className = this.mode === 'preview' ? 'cm-mermaid cm-block-preview' : 'cm-mermaid'
     const target = document.createElement('div')
     target.className = 'cm-mermaid-target'
     el.appendChild(target)
-    renderMermaid(target, this.code)
+    renderMermaid(view, target, this.code)
     if (this.mode === 'render') addEditButton(el, view, this.pos)
     return el
   }
@@ -245,6 +257,9 @@ class MathWidget extends WidgetType {
   eq(other: MathWidget): boolean {
     return other.code === this.code && other.display === this.display && other.mode === this.mode
   }
+  get estimatedHeight(): number {
+    return this.display ? 44 : -1
+  }
   toDOM(view: EditorView): HTMLElement {
     const el = document.createElement(this.display ? 'div' : 'span')
     el.className =
@@ -253,10 +268,10 @@ class MathWidget extends WidgetType {
     if (this.display) {
       const target = document.createElement('div')
       el.appendChild(target)
-      renderMath(target, this.code, true)
+      renderMath(view, target, this.code, true)
       if (this.mode === 'render' && this.pos >= 0) addEditButton(el, view, this.pos)
     } else {
-      renderMath(el, this.code, false)
+      renderMath(view, el, this.code, false)
     }
     return el
   }
@@ -283,6 +298,9 @@ class TableWidget extends WidgetType {
   }
   eq(other: TableWidget): boolean {
     return other.source === this.source && other.mode === this.mode
+  }
+  get estimatedHeight(): number {
+    return this.source.split('\n').filter((l) => l.trim()).length * 34
   }
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div')
