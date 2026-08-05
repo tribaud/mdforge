@@ -1011,14 +1011,14 @@ function buildDecorations(state: EditorState): DecorationSet {
 
   // Compact the vertical rhythm: markdownlint wants blank lines around headings
   // and between paragraphs, so the source is full of them — but rendering each
-  // at full line-height wastes space. Shrink a blank line UNLESS the caret is on
-  // it (then it stays full height so editing feels natural), and never inside a
-  // code block or block math (their blank lines are significant).
+  // at full line-height wastes space. Shrink every blank line to a STABLE small
+  // height (never revealed on caret): a reveal would change the line height as
+  // the caret enters/leaves, reflowing everything below and making arrow-key
+  // navigation jump. Left untouched inside code/block-math (blanks matter there).
   for (let n = 1; n <= doc.lines; n++) {
     const line = doc.line(n)
     if (line.length !== 0) continue
     if (inFrontmatter(line.from)) continue
-    if (editing(state, line.from, line.to)) continue
     if (inAny(codeRanges, line.from, line.to) || inAny(mathRanges, line.from, line.to)) continue
     deco.push(Decoration.line({ class: 'cm-md-blank' }).range(line.from))
   }
