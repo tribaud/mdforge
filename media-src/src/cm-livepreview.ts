@@ -443,7 +443,7 @@ class AlertSelectWidget extends WidgetType {
       o.textContent = text
       sel.appendChild(o)
     }
-    mk('', '❝ Citation')
+    mk('', '— Citation (aucune alerte)')
     for (const t of ALERT_TYPES) mk(t, ALERT_LABELS[t])
     sel.value = this.kind
     sel.addEventListener('mousedown', (e) => e.stopPropagation())

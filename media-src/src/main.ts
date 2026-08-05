@@ -258,6 +258,7 @@ function addHostButtons(bar: HTMLElement): void {
     b.className = danger ? 'cm-tb-btn cm-tb-danger' : 'cm-tb-btn'
     b.textContent = label
     b.title = title
+    b.setAttribute('data-tip', title)
     b.addEventListener('mousedown', (e) => e.preventDefault())
     b.addEventListener('click', () => vscode.postMessage({ type }))
     bar.appendChild(b)

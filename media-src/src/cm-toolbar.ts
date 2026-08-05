@@ -162,6 +162,7 @@ function buildButtons(view: EditorView, container: HTMLElement): void {
     btn.className = 'cm-tb-btn'
     btn.textContent = entry.label
     btn.title = entry.title
+    btn.setAttribute('data-tip', entry.title) // CSS tooltip (native title is unreliable in the webview)
     btn.addEventListener('mousedown', (e) => e.preventDefault())
     btn.addEventListener('click', () => entry.run(view))
     container.appendChild(btn)
