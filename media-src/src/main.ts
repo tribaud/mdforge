@@ -303,6 +303,7 @@ function addHostButtons(bar: HTMLElement): void {
     b.addEventListener('click', () => vscode.postMessage({ type }))
     bar.appendChild(b)
   }
+  mk('¶', 'Normaliser les lignes vides (markdownlint)', 'normalizeBlankLines')
   mk('⬇', 'Télécharger les images distantes en local', 'localizeAssets')
   mk('📁', 'Déplacer la note et ses assets', 'moveNote')
   mk('✏️', 'Renommer la note', 'renameNote')

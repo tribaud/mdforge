@@ -84,6 +84,11 @@
         "title": "MDForge: Open Modified Side in MDForge",
         "category": "MDForge",
         "icon": "mdforge-editor.svg"
+      },
+      {
+        "command": "mdforge.normalizeBlankLines",
+        "title": "MDForge: Normalize blank lines (markdownlint)",
+        "category": "MDForge"
       }
     ],
     "views": {
@@ -167,6 +172,19 @@
           "type": "boolean",
           "default": true,
           "description": "Enable the custom [~] 'in progress' state in the checkbox click cycle (empty -> in progress -> done)."
+        },
+        "mdforge.format.blankLines": {
+          "type": "string",
+          "enum": [
+            "off",
+            "onSave"
+          ],
+          "enumDescriptions": [
+            "Never rewrite blank lines automatically (perfect source fidelity). Use the 'MDForge: Normalize blank lines' command when you want it.",
+            "Normalize blank lines on every save (markdownlint MD012/MD022/MD031/MD047): collapse duplicate blanks and surround headings and code blocks with a blank line."
+          ],
+          "default": "off",
+          "markdownDescription": "Blank-line normalization for the CodeMirror engine. `off` preserves the source exactly; `onSave` tidies blank lines when you save. The **MDForge: Normalize blank lines** command runs it on demand regardless."
         },
         "mdforge.fontSize": {
           "type": "number",

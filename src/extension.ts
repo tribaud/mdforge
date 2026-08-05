@@ -61,6 +61,38 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mdforge.openDiffModified', async () => {
       const input = activeDiffInput()
       if (input) await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
+    }),
+    // On-demand markdownlint blank-line normalization for the active note.
+    vscode.commands.registerCommand('mdforge.normalizeBlankLines', async () => {
+      const active = outline.active
+      if (!active) {
+        void vscode.window.showInformationMessage('Open a document with MDForge first.')
+        return
+      }
+      const doc = active.document
+      const norm = normalizeBlankLines(doc.getText())
+      if (norm === doc.getText()) return
+      const edit = new vscode.WorkspaceEdit()
+      edit.replace(
+        doc.uri,
+        new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)),
+        norm
+      )
+      await vscode.workspace.applyEdit(edit)
+    }),
+    // Opt-in format-on-save: normalize blank lines just before the file is
+    // written, only for notes open in an MDForge editor.
+    vscode.workspace.onWillSaveTextDocument((event) => {
+      const cfg = vscode.workspace.getConfiguration('mdforge', event.document.uri)
+      if (cfg.get<string>('format.blankLines', 'off') !== 'onSave') return
+      if (!provider.isOpen(event.document.uri)) return
+      const norm = normalizeBlankLines(event.document.getText())
+      if (norm === event.document.getText()) return
+      const range = new vscode.Range(
+        event.document.positionAt(0),
+        event.document.positionAt(event.document.getText().length)
+      )
+      event.waitUntil(Promise.resolve([vscode.TextEdit.replace(range, norm)]))
     })
   )
 }
@@ -69,6 +101,86 @@ export function activate(context: vscode.ExtensionContext): void {
 function activeDiffInput(): vscode.TabInputTextDiff | undefined {
   const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
   return input instanceof vscode.TabInputTextDiff ? input : undefined
+}
+
+/**
+ * Normalize blank lines to a markdownlint-friendly shape WITHOUT reflowing any
+ * content — the CodeMirror engine never rewrites prose, so this is opt-in (a
+ * command / format-on-save), not automatic. Rules applied:
+ *  - MD012: collapse runs of blank lines to a single one.
+ *  - MD022: a blank line before and after every ATX heading.
+ *  - MD031: a blank line around fenced code blocks.
+ *  - MD047: exactly one trailing newline.
+ * Blank lines inside fenced code and YAML frontmatter are left untouched (they
+ * are significant there).
+ */
+export function normalizeBlankLines(text: string): string {
+  const src = text.replace(/\r\n?/g, '\n').split('\n')
+  const out: string[] = []
+  const pushBlank = (): void => {
+    if (out.length && out[out.length - 1] !== '') out.push('')
+  }
+  const fenceOf = (s: string): RegExpExecArray | null => /^\s*(`{3,}|~{3,})/.exec(s)
+  const isHeading = (s: string): boolean => /^#{1,6}\s/.test(s)
+
+  let inFence = false
+  let fenceCh = ''
+  let inFrontmatter = false
+
+  for (let i = 0; i < src.length; i++) {
+    const line = src[i]
+
+    // YAML frontmatter at the very top: copy verbatim.
+    if (!inFence && !inFrontmatter && i === 0 && /^---\s*$/.test(line)) {
+      inFrontmatter = true
+      out.push(line)
+      continue
+    }
+    if (inFrontmatter) {
+      out.push(line)
+      if (/^---\s*$/.test(line)) inFrontmatter = false
+      continue
+    }
+
+    const fence = fenceOf(line)
+    if (fence) {
+      const ch = fence[1][0]
+      if (!inFence) {
+        pushBlank() // MD031: blank before an opening fence
+        inFence = true
+        fenceCh = ch
+      } else if (ch === fenceCh) {
+        inFence = false
+      }
+      out.push(line)
+      continue
+    }
+    if (inFence) {
+      out.push(line) // inside code: verbatim (blank lines matter)
+      continue
+    }
+
+    if (line.trim() === '') {
+      pushBlank() // MD012: collapse consecutive blanks
+      continue
+    }
+
+    // Content right after a closing fence → insert the MD031 blank.
+    if (out.length && fenceOf(out[out.length - 1])) pushBlank()
+
+    if (isHeading(line)) {
+      pushBlank() // MD022: blank before…
+      out.push(line)
+      if (i + 1 < src.length && src[i + 1].trim() !== '') out.push('') // …and after
+      continue
+    }
+
+    out.push(line)
+  }
+
+  while (out.length && out[0] === '') out.shift()
+  while (out.length && out[out.length - 1] === '') out.pop()
+  return out.length ? out.join('\n') + '\n' : ''
 }
 
 interface Heading {
@@ -250,6 +362,13 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
    *  the rename itself triggers (and to avoid double prompts). */
   private readonly rehashing = new Set<string>()
 
+  /** URIs currently open in an MDForge editor — gates format-on-save so it only
+   *  touches documents this editor owns, not every Markdown file. */
+  private readonly openDocs = new Set<string>()
+  public isOpen(uri: vscode.Uri): boolean {
+    return this.openDocs.has(uri.toString())
+  }
+
   public constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly outline: OutlineProvider
@@ -259,6 +378,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel
   ): Promise<void> {
+    this.openDocs.add(document.uri.toString())
     const webview = webviewPanel.webview
     webview.options = {
       enableScripts: true,
@@ -382,6 +502,11 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           case 'deleteNote':
             await this.deleteNote(document)
             break
+          case 'normalizeBlankLines': {
+            const norm = normalizeBlankLines(document.getText())
+            if (norm !== document.getText()) await this.writeDocument(document, norm)
+            break
+          }
           case 'openSettings':
             void vscode.commands.executeCommand(
               'workbench.action.openSettings',
@@ -402,6 +527,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     )
 
     webviewPanel.onDidDispose(() => {
+      this.openDocs.delete(document.uri.toString())
       changeSubscription.dispose()
       configSubscription.dispose()
       viewStateSubscription.dispose()

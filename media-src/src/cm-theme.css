@@ -275,6 +275,13 @@ body.mdforge-width-full .cm-content {
   color: var(--vscode-descriptionForeground, inherit);
 }
 
+/* Compact blank source lines (kept in the file for markdownlint, shown tight).
+   Full height returns when the caret is on the line (decoration removed). */
+.cm-line.cm-md-blank {
+  line-height: 0.55em;
+  min-height: 0;
+}
+
 .cm-task-checkbox {
   width: 1em;
   height: 1em;
