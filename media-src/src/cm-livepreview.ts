@@ -342,6 +342,50 @@ class MathWidget extends WidgetType {
   }
 }
 
+/** Render the common inline Markdown (code, math, bold, italic, strike, link)
+ * of a table cell into `container` — table cells are plain text otherwise. */
+function renderInline(view: EditorView, container: HTMLElement, text: string): void {
+  const RE = /(`[^`]+`)|(\$[^$\n]+?\$)|(\*\*[\s\S]+?\*\*)|(~~[\s\S]+?~~)|(\*[\s\S]+?\*)|(\[[^\]]+\]\([^)]+\))/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = RE.exec(text))) {
+    if (m.index > last) container.appendChild(document.createTextNode(text.slice(last, m.index)))
+    const tok = m[0]
+    if (tok.startsWith('`')) {
+      const c = document.createElement('code')
+      c.className = 'cm-md-code'
+      c.textContent = tok.slice(1, -1)
+      container.appendChild(c)
+    } else if (tok.startsWith('$')) {
+      const s = document.createElement('span')
+      renderMath(view, s, tok.slice(1, -1), false)
+      container.appendChild(s)
+    } else if (tok.startsWith('**')) {
+      const b = document.createElement('strong')
+      b.textContent = tok.slice(2, -2)
+      container.appendChild(b)
+    } else if (tok.startsWith('~~')) {
+      const s = document.createElement('span')
+      s.className = 'cm-md-strike'
+      s.textContent = tok.slice(2, -2)
+      container.appendChild(s)
+    } else if (tok.startsWith('*')) {
+      const i = document.createElement('em')
+      i.textContent = tok.slice(1, -1)
+      container.appendChild(i)
+    } else {
+      const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok)
+      const a = document.createElement('a')
+      a.className = 'cm-md-link'
+      a.textContent = mm ? mm[1] : tok
+      if (mm) a.title = mm[2]
+      container.appendChild(a)
+    }
+    last = m.index + tok.length
+  }
+  if (last < text.length) container.appendChild(document.createTextNode(text.slice(last)))
+}
+
 function parseRow(line: string): string[] {
   return line
     .replace(/^\s*\|/, '')
@@ -386,7 +430,7 @@ class TableWidget extends WidgetType {
     const htr = document.createElement('tr')
     header.forEach((h, i) => {
       const th = document.createElement('th')
-      th.textContent = h
+      renderInline(view, th, h)
       if (aligns[i]) th.style.textAlign = aligns[i]
       htr.appendChild(th)
     })
@@ -398,7 +442,7 @@ class TableWidget extends WidgetType {
       const tr = document.createElement('tr')
       cells.forEach((c, j) => {
         const td = document.createElement('td')
-        td.textContent = c
+        renderInline(view, td, c)
         if (aligns[j]) td.style.textAlign = aligns[j]
         tr.appendChild(td)
       })
