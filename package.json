@@ -150,6 +150,19 @@
     "configuration": {
       "title": "MDForge",
       "properties": {
+        "mdforge.engine": {
+          "type": "string",
+          "enum": [
+            "milkdown",
+            "codemirror"
+          ],
+          "enumDescriptions": [
+            "Milkdown/ProseMirror WYSIWYG engine (the editor may reformat the Markdown source on save).",
+            "CodeMirror 6 live-preview engine (the Markdown source is never reformatted; supports Cmd+F search, code folding and block drag)."
+          ],
+          "default": "codemirror",
+          "description": "Editor engine. Reopen the note (or run 'Developer: Reload Window') after changing this."
+        },
         "mdforge.checkbox.enableInProgress": {
           "type": "boolean",
           "default": true,

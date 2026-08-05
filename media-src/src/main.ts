@@ -26,10 +26,18 @@ import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/sea
 import { markdown, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
-import { livePreview, setAssetsBase, setMermaidTheme, setWikilinkHandler, openWikilink } from './cm-livepreview'
+import {
+  livePreview,
+  setAssetsBase,
+  setMermaidTheme,
+  setWikilinkHandler,
+  setEnableInProgress,
+  openWikilink
+} from './cm-livepreview'
 import { createTopbar, createBubble, wrap, insertLink } from './cm-toolbar'
 import { createSlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
+import { blockDrag } from './cm-block-drag'
 import { htmlToMarkdown, isRichHtml } from './cm-paste-html'
 import './cm-theme.css'
 import 'katex/dist/katex.min.css'
@@ -45,6 +53,9 @@ interface MdForgeConfig {
   pageWidth?: 'comfortable' | 'full'
   assetsBaseUri?: string
   mermaidTheme?: string
+  enableInProgress?: boolean
+  appendSource?: boolean
+  sourceLabel?: string
 }
 
 const vscode = acquireVsCodeApi()
@@ -198,6 +209,33 @@ function inCodeContext(view: EditorView): boolean {
   return false
 }
 
+/* ---------- paste.appendSource: "À partir de l'adresse <url>" footer ---------- */
+let appendSource = false
+let sourceLabel = "À partir de l'adresse"
+
+/** Best-effort source URL for a paste: the clipboard uri-list, or a bare URL in
+ * the plain-text payload. */
+function detectSourceUrl(cd: DataTransfer): string {
+  const uri = (cd.getData('text/uri-list') || '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .find((s) => s && !s.startsWith('#') && /^https?:\/\//i.test(s))
+  if (uri) return uri
+  const text = (cd.getData('text/plain') || '').trim()
+  return /^https?:\/\/\S+$/i.test(text) ? text : ''
+}
+
+/** Append a `> label :` / `> url` blockquote below the caret's line and place
+ * the caret on the URL (ready to fill in when none was detectable). */
+function appendSourceLine(view: EditorView, url: string): void {
+  const head = sourceLabel.replace(/\s*:\s*$/, '')
+  const at = view.state.doc.lineAt(view.state.selection.main.head).to
+  const block = `\n\n> ${head} :\n> ${url}`
+  const caret = at + block.length - url.length
+  view.dispatch({ changes: { from: at, insert: block }, selection: { anchor: caret, head: at + block.length } })
+  view.focus()
+}
+
 const domEvents = EditorView.domEventHandlers({
   paste: (event, view) => {
     const cd = event.clipboardData
@@ -217,6 +255,8 @@ const domEvents = EditorView.domEventHandlers({
       if (md) {
         event.preventDefault()
         view.dispatch(view.state.replaceSelection(md))
+        // Optional "From <url>" footer for external web content.
+        if (appendSource) appendSourceLine(view, detectSourceUrl(cd))
         view.focus()
         return true
       }
@@ -305,6 +345,7 @@ try {
         markdownFold,
         search({ top: true }),
         highlightSelectionMatches(),
+        blockDrag,
         livePreview,
         editorTheme,
         domEvents,
@@ -449,10 +490,25 @@ function insertImageLink(id: number, src: string, alt: string, linkStyle: string
   view.focus()
 }
 
+/** Start of the body (first char after a leading `---` frontmatter block), or 0. */
+function bodyStart(text: string): number {
+  if (!text.startsWith('---\n')) return 0
+  const end = text.indexOf('\n---', 3)
+  if (end === -1) return 0
+  const nl = text.indexOf('\n', end + 1)
+  return nl === -1 ? text.length : nl + 1
+}
+
 function setContent(text: string): void {
   if (text === currentText) return
   applyingRemote = true
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } })
+  // On the first load, drop the caret past any frontmatter so it renders as its
+  // collapsed card (a caret at 0 sits inside the block and reveals the raw YAML).
+  const anchor = currentText === '' ? bodyStart(text) : undefined
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text },
+    ...(anchor ? { selection: { anchor } } : {})
+  })
   currentText = text
   applyingRemote = false
 }
@@ -464,6 +520,9 @@ function applyConfig(config: MdForgeConfig): void {
   document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
   if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
   if (config.mermaidTheme) setMermaidTheme(config.mermaidTheme)
+  if (typeof config.enableInProgress === 'boolean') setEnableInProgress(config.enableInProgress)
+  if (typeof config.appendSource === 'boolean') appendSource = config.appendSource
+  if (typeof config.sourceLabel === 'string' && config.sourceLabel) sourceLabel = config.sourceLabel
 }
 
 window.addEventListener('message', (event) => {

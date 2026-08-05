@@ -307,9 +307,39 @@ body.mdforge-width-full .cm-content {
 
 /* Fenced code blocks (non-mermaid) */
 .cm-line.cm-md-codeblock {
+  position: relative; /* anchor for the floated language picker */
   font-family: var(--mdforge-mono);
   font-size: 0.9em;
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+}
+
+/* Language picker floated at a code block's top-right */
+.cm-code-lang {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  z-index: 3;
+  width: 8.5em;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, inherit);
+  font: 11px/1.4 var(--mdforge-font);
+  text-align: right;
+  opacity: 0.5;
+  cursor: text;
+}
+.cm-line.cm-md-codeblock:hover .cm-code-lang,
+.cm-code-lang:focus {
+  opacity: 1;
+  text-align: left;
+  border-color: var(--vscode-input-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4)));
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+}
+.cm-code-lang:focus {
+  outline: none;
 }
 
 /* Edit affordance on rendered blocks (mermaid / table / block math) */
@@ -331,6 +361,7 @@ body.mdforge-width-full .cm-content {
 .cm-mermaid:hover .cm-block-edit,
 .cm-md-table-wrap:hover .cm-block-edit,
 .cm-math-block:hover .cm-block-edit,
+.cm-frontmatter-card:hover .cm-block-edit,
 .cm-image-wrap:hover .cm-block-edit {
   opacity: 1;
 }
@@ -502,13 +533,53 @@ body.mdforge-width-full .cm-content {
   color: var(--vscode-textLink-foreground);
 }
 
-/* YAML frontmatter */
+/* YAML frontmatter — raw (while editing) */
 .cm-line.cm-md-frontmatter {
   font-family: var(--mdforge-mono);
   font-size: 0.88em;
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
   border-left: 3px solid var(--vscode-charts-purple, #a371f7);
   color: var(--vscode-descriptionForeground, inherit);
+}
+/* YAML frontmatter — collapsed card (title → H1, keys → chips) */
+.cm-frontmatter-card {
+  position: relative;
+  padding: 6px 8px 10px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.25));
+}
+.cm-fm-title {
+  font-weight: 700;
+  font-size: 1.9em;
+  line-height: 1.3;
+}
+.cm-fm-props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cm-fm-gear {
+  opacity: 0.6;
+  font-size: 0.9em;
+}
+.cm-fm-chip {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font: 11px/1.5 var(--mdforge-mono);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.16));
+  color: var(--vscode-descriptionForeground, inherit);
+}
+.cm-fm-empty {
+  font: 11px/1.5 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+  opacity: 0.7;
+}
+
+/* Standalone "✓ Terminer" bar (raw frontmatter editor) */
+.cm-block-close-bar {
+  position: relative;
+  height: 30px;
 }
 
 /* Footnotes */
@@ -544,6 +615,43 @@ body.mdforge-presentation .cm-topbar {
   display: none;
 }
 body.mdforge-presentation .cm-cursor {
+  display: none !important;
+}
+
+/* Draggable block handle (⠿) + drop indicator */
+.cm-block-handle {
+  position: absolute;
+  z-index: 20;
+  width: 18px;
+  height: 1.7em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 13px;
+  opacity: 0.55;
+  cursor: grab;
+  user-select: none;
+}
+.cm-block-handle:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+.cm-block-handle:active {
+  cursor: grabbing;
+}
+.cm-block-drop-indicator {
+  position: absolute;
+  left: 44px;
+  right: 44px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--vscode-textLink-foreground, #58a6ff);
+  z-index: 19;
+  pointer-events: none;
+}
+body.mdforge-presentation .cm-block-handle {
   display: none !important;
 }
 

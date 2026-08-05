@@ -14,6 +14,7 @@
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
+import { languages } from '@codemirror/language-data'
 import { StateField } from '@codemirror/state'
 import type { EditorState, Range } from '@codemirror/state'
 
@@ -25,6 +26,14 @@ export function setWikilinkHandler(fn: (target: string) => void): void {
 /** Called by the DOM handler wired in main.ts. */
 export function openWikilink(target: string): void {
   onWikilink(target)
+}
+
+/* ---------- config: MDForge `[~]` in-progress checkbox state ---------- */
+// GFM only knows `[ ]`/`[x]`; `[~]` is an MDForge convention. When the setting
+// `mdforge.checkbox.enableInProgress` is off, the click cycle skips `~`.
+let enableInProgress = true
+export function setEnableInProgress(on: boolean): void {
+  enableInProgress = on
 }
 
 /* ---------- assets (images) ---------- */
@@ -198,6 +207,13 @@ function addCloseButton(host: HTMLElement, view: EditorView): void {
 
 type TaskState = ' ' | '~' | 'x'
 const NEXT_STATE: Record<TaskState, TaskState> = { ' ': '~', '~': 'x', x: ' ' }
+/** Next checkbox state on click. With the in-progress state disabled, cycle
+ * unchecked ⇄ checked directly (a `~` already in the file still resolves to
+ * checked, so the marker is never orphaned). */
+function nextTaskState(s: TaskState): TaskState {
+  if (enableInProgress) return NEXT_STATE[s]
+  return s === 'x' ? ' ' : 'x'
+}
 
 class TaskWidget extends WidgetType {
   constructor(readonly state: TaskState) {
@@ -221,7 +237,7 @@ class TaskWidget extends WidgetType {
       if (!m) return
       const from = line.from + m.index
       const current = (m[1].toLowerCase() === 'x' ? 'x' : m[1]) as TaskState
-      view.dispatch({ changes: { from: from + 1, to: from + 2, insert: NEXT_STATE[current] } })
+      view.dispatch({ changes: { from: from + 1, to: from + 2, insert: nextTaskState(current) } })
     })
     return box
   }
@@ -517,6 +533,139 @@ class AlertSelectWidget extends WidgetType {
   }
 }
 
+/**
+ * YAML frontmatter rendered as a discreet card (Milkdown-style): the `title:`
+ * field shows as an H1, the other keys as small chips. `✎` reveals the raw YAML
+ * (with a live editable block + `✓ Terminer` to leave). Replaces the whole
+ * fenced block so the `---` fences don't sit as visible noise when not editing.
+ */
+class FrontmatterWidget extends WidgetType {
+  constructor(
+    readonly raw: string,
+    readonly pos: number
+  ) {
+    super()
+  }
+  eq(other: FrontmatterWidget): boolean {
+    return other.raw === this.raw
+  }
+  get estimatedHeight(): number {
+    return 70
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-frontmatter-card'
+    const pairs: Array<[string, string]> = []
+    for (const line of this.raw.split('\n')) {
+      const m = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line)
+      if (m) pairs.push([m[1], m[2].trim()])
+    }
+    const title = pairs.find(([k]) => k.toLowerCase() === 'title')
+    if (title && title[1]) {
+      const h = document.createElement('div')
+      h.className = 'cm-fm-title'
+      h.textContent = title[1].replace(/^["']|["']$/g, '')
+      wrap.appendChild(h)
+    }
+    const bar = document.createElement('div')
+    bar.className = 'cm-fm-props'
+    const gear = document.createElement('span')
+    gear.className = 'cm-fm-gear'
+    gear.textContent = '⚙'
+    bar.appendChild(gear)
+    const rest = pairs.filter(([k]) => k.toLowerCase() !== 'title')
+    if (rest.length) {
+      for (const [k, v] of rest) {
+        const chip = document.createElement('span')
+        chip.className = 'cm-fm-chip'
+        chip.textContent = v ? `${k}: ${v}` : k
+        bar.appendChild(chip)
+      }
+    } else {
+      const empty = document.createElement('span')
+      empty.className = 'cm-fm-empty'
+      empty.textContent = title ? 'Propriétés' : 'Frontmatter'
+      bar.appendChild(empty)
+    }
+    wrap.appendChild(bar)
+    addEditButton(wrap, view, this.pos)
+    return wrap
+  }
+}
+
+/** A standalone "✓ Terminer" bar (block widget) — used to leave a source region
+ * that has no rendered preview of its own (e.g. the raw frontmatter editor). */
+class BlockCloseWidget extends WidgetType {
+  eq(): boolean {
+    return true
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const bar = document.createElement('div')
+    bar.className = 'cm-block-close-bar'
+    addCloseButton(bar, view)
+    return bar
+  }
+}
+
+/* ---------- code-block language picker ---------- */
+let langListEl: HTMLDataListElement | null = null
+/** A shared <datalist> of the known languages (from @codemirror/language-data),
+ * so the picker offers autocompletion while still allowing free text. */
+function ensureLangDatalist(): string {
+  if (!langListEl) {
+    langListEl = document.createElement('datalist')
+    langListEl.id = 'cm-lang-list'
+    const names = Array.from(new Set(languages.map((l) => l.name))).sort((a, b) => a.localeCompare(b))
+    for (const n of names) {
+      const o = document.createElement('option')
+      o.value = n
+      langListEl.appendChild(o)
+    }
+    document.body.appendChild(langListEl)
+  }
+  return langListEl.id
+}
+
+/** Language field floated at the top-right of a fenced code block. Editing it
+ * rewrites the info string on the opening fence line (a plain text edit). */
+class LangWidget extends WidgetType {
+  constructor(readonly lang: string) {
+    super()
+  }
+  eq(other: LangWidget): boolean {
+    return other.lang === this.lang
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const input = document.createElement('input')
+    input.className = 'cm-code-lang'
+    input.setAttribute('list', ensureLangDatalist())
+    input.value = this.lang
+    input.placeholder = 'langage'
+    input.spellcheck = false
+    input.title = 'Langage du bloc de code'
+    input.addEventListener('mousedown', (e) => e.stopPropagation())
+    const commit = (): void => {
+      const line = view.state.doc.lineAt(view.posAtDOM(input))
+      const m = /^(\s*)(`{3,}|~{3,})/.exec(line.text)
+      if (!m) return
+      const infoFrom = line.from + m[0].length
+      view.dispatch({ changes: { from: infoFrom, to: line.to, insert: input.value.trim() } })
+      view.focus()
+    }
+    input.addEventListener('change', commit)
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        commit()
+      }
+    })
+    return input
+  }
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+
 /* ---------- helpers for the regex post-pass ---------- */
 type Span = [number, number]
 function inAny(spans: Span[], from: number, to: number): boolean {
@@ -550,8 +699,20 @@ function buildDecorations(state: EditorState): DecorationSet {
     if (end !== -1) {
       const closeLine = doc.lineAt(end + 1)
       frontmatterEnd = closeLine.to
-      for (let n = 1; n <= closeLine.number; n++) {
-        deco.push(Decoration.line({ class: 'cm-md-frontmatter' }).range(doc.line(n).from))
+      if (!editing(state, 0, frontmatterEnd)) {
+        // Collapsed: a discreet card (title → H1, other keys → chips).
+        const rawFrom = doc.line(2).from
+        const rawTo = closeLine.number > 2 ? doc.line(closeLine.number - 1).to : rawFrom
+        const raw = doc.sliceString(rawFrom, rawTo)
+        deco.push(
+          Decoration.replace({ widget: new FrontmatterWidget(raw, rawFrom), block: true }).range(0, frontmatterEnd)
+        )
+      } else {
+        // Editing: styled raw YAML + a "✓ Terminer" bar to leave the block.
+        for (let n = 1; n <= closeLine.number; n++) {
+          deco.push(Decoration.line({ class: 'cm-md-frontmatter' }).range(doc.line(n).from))
+        }
+        deco.push(Decoration.widget({ widget: new BlockCloseWidget(), block: true, side: 1 }).range(frontmatterEnd))
       }
     }
   }
@@ -594,6 +755,9 @@ function buildDecorations(state: EditorState): DecorationSet {
         for (let n = first; n <= last; n++) {
           deco.push(Decoration.line({ class: 'cm-md-codeblock' }).range(doc.line(n).from))
         }
+        // Language picker floated at the block's top-right (free text + known-lang
+        // autocompletion). Placed on the opening fence line.
+        deco.push(Decoration.widget({ widget: new LangWidget(lang), side: 1 }).range(doc.line(first).from))
         // Return true: descend so the nested language tree (from codeLanguages)
         // is still highlighted by syntaxHighlighting().
         return true

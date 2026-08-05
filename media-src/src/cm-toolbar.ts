@@ -7,6 +7,7 @@
  */
 import { EditorView } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
+import { openSearchPanel } from '@codemirror/search'
 
 /** Lezer node the marker produces, and the child node that IS the marker. */
 const MARKER_NODE: Record<string, { node: string; mark: string }> = {
@@ -146,7 +147,9 @@ const ENTRIES: Entry[] = [
   { label: '•', title: 'Bullet list', run: (v) => toggleLinePrefix(v, '- ', /^[-*+]\s+/) },
   { label: '☑', title: 'Task', run: (v) => toggleLinePrefix(v, '- [ ] ', /^[-*+]\s+(\[[ xX~]\]\s+)?/) },
   { label: '🔗', title: 'Lien (Ctrl/⌘K)', run: (v) => insertLink(v) },
-  { label: '—', title: 'Ligne horizontale', run: (v) => insertHr(v) }
+  { label: '—', title: 'Ligne horizontale', run: (v) => insertHr(v) },
+  'sep',
+  { label: '🔍', title: 'Rechercher (Ctrl/⌘F)', run: (v) => void openSearchPanel(v) }
 ]
 
 function buildButtons(view: EditorView, container: HTMLElement): void {
