@@ -149,6 +149,68 @@ body.mdforge-width-full .cm-content {
   max-width: none !important;
 }
 
+/* --- Fold gutter (collapse heading sections) --- */
+.cm-gutters {
+  background: transparent;
+  border: none;
+  color: var(--vscode-editorLineNumber-foreground, rgba(127, 127, 127, 0.6));
+}
+.cm-foldGutter .cm-gutterElement {
+  cursor: pointer;
+  padding: 0 4px;
+}
+.cm-foldPlaceholder {
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-descriptionForeground, inherit);
+}
+
+/* --- Search panel (Cmd/Ctrl+F) --- */
+.cm-panels {
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+}
+.cm-panels.cm-panels-top {
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+}
+.cm-panel.cm-search {
+  padding: 6px 8px;
+  font: 12px/1.5 var(--mdforge-font);
+}
+.cm-panel.cm-search label {
+  font-size: 12px;
+}
+.cm-panel.cm-search input[type='text'] {
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4)));
+  border-radius: 4px;
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+}
+.cm-panel.cm-search button {
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+  cursor: pointer;
+}
+.cm-panel.cm-search button:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+.cm-searchMatch {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+}
+.cm-searchMatch-selected {
+  background: var(--vscode-editor-findMatchBackground, rgba(234, 92, 0, 0.5));
+}
+.cm-selectionMatch {
+  background: var(--vscode-editor-selectionHighlightBackground, rgba(173, 214, 255, 0.15));
+}
+
 /* --- Live-preview inline rendering --- */
 .cm-md-strong {
   font-weight: 700;

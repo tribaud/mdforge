@@ -13,7 +13,16 @@
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view'
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language'
+import {
+  syntaxHighlighting,
+  defaultHighlightStyle,
+  syntaxTree,
+  foldGutter,
+  codeFolding,
+  foldKeymap,
+  foldService
+} from '@codemirror/language'
+import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { markdown, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
@@ -159,6 +168,23 @@ function sendImageFile(file: File, pos: number): void {
   )
 }
 
+/** Fold a heading down to the end of its section (up to the next heading of the
+ * same or higher level) — click the gutter arrow to collapse/expand. */
+const markdownFold = foldService.of((state, lineStart) => {
+  const line = state.doc.lineAt(lineStart)
+  const m = /^(#{1,6})\s/.exec(line.text)
+  if (!m) return null
+  const level = m[1].length
+  let end = line.to
+  for (let n = line.number + 1; n <= state.doc.lines; n++) {
+    const l = state.doc.line(n)
+    const hm = /^(#{1,6})\s/.exec(l.text)
+    if (hm && hm[1].length <= level) break
+    end = l.to
+  }
+  return end > line.to ? { from: line.to, to: end } : null
+})
+
 /** True when the caret sits inside a fenced or inline code span. */
 function inCodeContext(view: EditorView): boolean {
   const tree = syntaxTree(view.state)
@@ -261,6 +287,8 @@ try {
           { key: 'Tab', run: indentList },
           { key: 'Shift-Tab', run: outdentList },
           ...markdownKeymap,
+          ...searchKeymap,
+          ...foldKeymap,
           indentWithTab,
           ...defaultKeymap,
           ...historyKeymap
@@ -271,6 +299,11 @@ try {
         markdown({ extensions: GFM, codeLanguages: languages }),
         syntaxHighlighting(defaultHighlightStyle),
         pasteURLAsLink,
+        codeFolding(),
+        foldGutter(),
+        markdownFold,
+        search({ top: true }),
+        highlightSelectionMatches(),
         livePreview,
         editorTheme,
         domEvents,
