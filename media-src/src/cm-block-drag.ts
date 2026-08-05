@@ -23,7 +23,9 @@ interface Span {
 }
 
 /** The top-level block at `pos`, expanded to whole lines. A blank line (no
- * enclosing node) falls back to that single line. */
+ * enclosing node) falls back to that single line. A heading expands to its whole
+ * section — everything down to the next heading of the same or a higher level —
+ * so dragging a title carries its content (same rule as the fold service). */
 function topBlockAt(state: EditorState, pos: number): Span {
   const tree = syntaxTree(state)
   let node: ReturnType<typeof tree.resolve> = tree.resolve(pos, 1)
@@ -32,8 +34,21 @@ function topBlockAt(state: EditorState, pos: number): Span {
     return { from: line.from, to: line.to }
   }
   while (node.parent && node.parent.parent) node = node.parent
-  const from = state.doc.lineAt(node.from).from
-  const to = state.doc.lineAt(Math.min(node.to, state.doc.length)).to
+  const doc = state.doc
+  const from = doc.lineAt(node.from).from
+  let to = doc.lineAt(Math.min(node.to, doc.length)).to
+
+  const hm = /^ATXHeading([1-6])$/.exec(node.name)
+  if (hm) {
+    const level = Number(hm[1])
+    const startLine = doc.lineAt(node.from).number
+    for (let n = startLine + 1; n <= doc.lines; n++) {
+      const l = doc.line(n)
+      const h = /^(#{1,6})\s/.exec(l.text)
+      if (h && h[1].length <= level) break
+      to = l.to
+    }
+  }
   return { from, to }
 }
 

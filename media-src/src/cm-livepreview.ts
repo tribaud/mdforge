@@ -817,9 +817,10 @@ function buildDecorations(state: EditorState): DecorationSet {
       }
 
       // Task list items (incl. the MDForge `[~]` state): three-state checkbox.
+      // Both bullet (`-`/`*`/`+`) and ordered (`1.`/`1)`) markers are supported.
       if (name === 'ListItem') {
         const line = doc.lineAt(from)
-        const m = /^(\s*[-*+]\s+)\[([ xX~])\]/.exec(line.text)
+        const m = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX~])\]/.exec(line.text)
         if (m) {
           const markFrom = line.from + m[1].length
           const st = (m[2].toLowerCase() === 'x' ? 'x' : m[2]) as TaskState

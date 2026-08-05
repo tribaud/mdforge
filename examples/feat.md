@@ -21,6 +21,13 @@ Du texte **gras**, *italique*, `code inline`, ~~barré~~, et un
 - [~] en cours
 - [x] fait
 
+Les cases marchent aussi sur des listes **numérotées**, et le marqueur (tiret ou
+numéro, avec renumérotation) s'enchaîne quand on appuie sur `Entrée` :
+
+1. [x] **étape faite**
+2. [~] étape en cours
+3. [ ] étape à venir
+
 > Le cycle de clic saute l'état orange si `mdforge.checkbox.enableInProgress`
 > vaut `false`.
 
