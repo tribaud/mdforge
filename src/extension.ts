@@ -1,5 +1,4 @@
 import * as crypto from 'crypto'
-import * as fs from 'fs'
 import * as path from 'path'
 import * as vscode from 'vscode'
 
@@ -1258,17 +1257,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
 
   private getHtml(webview: vscode.Webview): string {
     const nonce = getNonce()
-    // Pick the webview bundle from the configured engine. `main.js` is the
-    // CodeMirror live-preview engine; `milkdown.js` (when built) is the
-    // ProseMirror engine. Fall back to `main.js` if the requested bundle is not
-    // present in this build, so the setting can never leave a blank editor.
-    const engine = vscode.workspace.getConfiguration('mdforge').get<string>('engine', 'codemirror')
-    let bundle = engine === 'milkdown' ? 'milkdown.js' : 'main.js'
-    if (!fs.existsSync(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'dist', bundle).fsPath)) {
-      bundle = 'main.js'
-    }
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'dist', bundle)
+      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'dist', 'main.js')
     )
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'dist', 'main.css')
