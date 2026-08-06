@@ -344,7 +344,7 @@ function addHostButtons(bar: HTMLElement): void {
 
   sourceButton = mk('🗎', 'Afficher la source Markdown', () => toggleSource())
   mk('↻', 'Rafraîchir les images', () => refreshImages())
-  readOnlyButton = mk('🔒', "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
+  readOnlyButton = mk('🔓', "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
   mk('▶', 'Mode présentation', () => togglePresentation())
   mk('⚙', 'Réglages MDForge', post('openSettings'))
 }
@@ -367,7 +367,10 @@ let readOnlyButton: HTMLElement | null = null
 function toggleReadOnly(): void {
   readOnly = !readOnly
   document.body.classList.toggle('mdforge-readonly', readOnly)
-  readOnlyButton?.classList.toggle('cm-tb-btn-active', readOnly)
+  if (readOnlyButton) {
+    readOnlyButton.textContent = readOnly ? '🔒' : '🔓' // closed when locked, open when editable
+    readOnlyButton.classList.toggle('cm-tb-btn-active', readOnly)
+  }
   applyEditable()
 }
 

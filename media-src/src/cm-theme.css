@@ -48,15 +48,18 @@ body {
 }
 .cm-tb-btn {
   position: relative;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 6px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
   border: none;
   border-radius: 5px;
   background: transparent;
   color: var(--vscode-editor-foreground);
-  font: 13px/1 var(--mdforge-font);
+  font: 15px/1 var(--mdforge-font);
   cursor: pointer;
+  /* Flat, monochrome look: strip the color from emoji glyphs so the whole bar
+     reads as a single-tone icon set (text labels like B/I/S are unaffected). */
+  filter: grayscale(1);
 }
 /* CSS tooltip for every toolbar button (native title is unreliable in webview) */
 .cm-tb-btn[data-tip]:hover::after {
