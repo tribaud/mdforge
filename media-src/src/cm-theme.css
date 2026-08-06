@@ -94,6 +94,56 @@ body {
   background: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
 }
 
+/* --- Footnote popup --- */
+.cm-footnote-popup {
+  position: absolute;
+  z-index: 45;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 10px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.cm-fn-title {
+  margin-bottom: 6px;
+  font: 600 12px/1.4 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+}
+.cm-fn-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4)));
+  border-radius: 5px;
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+  font: 13px/1.5 var(--mdforge-font);
+}
+.cm-fn-input:focus {
+  outline: 1px solid var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+}
+.cm-fn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.cm-fn-row .cm-tb-btn {
+  width: auto;
+  padding: 3px 12px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+}
+.cm-fn-ok {
+  background: var(--vscode-button-background, var(--vscode-textLink-foreground, #0969da)) !important;
+  color: var(--vscode-button-foreground, #fff) !important;
+  border-color: transparent !important;
+}
+.cm-fn-ok:hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-textLink-foreground, #0b6fe0)) !important;
+}
+
 /* --- Table structural toolbar --- */
 .cm-table-bar {
   position: absolute;

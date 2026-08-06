@@ -7,7 +7,7 @@
  */
 import { EditorView } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { openSearchPanel } from '@codemirror/search'
+import { openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search'
 
 /** Lezer node the marker produces, and the child node that IS the marker. */
 const MARKER_NODE: Record<string, { node: string; mark: string }> = {
@@ -125,6 +125,100 @@ export function insertLink(view: EditorView): void {
   view.focus()
 }
 
+/** Open (or toggle) the CodeMirror search panel. */
+function toggleSearch(view: EditorView): void {
+  if (searchPanelOpen(view.state)) closeSearchPanel(view)
+  else openSearchPanel(view)
+}
+
+/** Next free numeric footnote id (`[^N]`) in the document. */
+function nextFootnoteId(view: EditorView): number {
+  let max = 0
+  for (const m of view.state.doc.toString().matchAll(/\[\^(\d+)\]/g)) max = Math.max(max, Number(m[1]))
+  return max + 1
+}
+
+/**
+ * Footnote helper: a small popup asks for the note text, then inserts a `[^N]`
+ * reference at the caret and appends its `[^N]: text` definition at the end of
+ * the document (both in one edit).
+ */
+export function insertFootnote(view: EditorView): void {
+  if (document.querySelector('.cm-footnote-popup')) return
+  const pop = document.createElement('div')
+  pop.className = 'cm-footnote-popup'
+  const title = document.createElement('div')
+  title.className = 'cm-fn-title'
+  title.textContent = 'Note de bas de page'
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'cm-fn-input'
+  input.placeholder = 'Texte de la note…'
+  const row = document.createElement('div')
+  row.className = 'cm-fn-row'
+  const cancel = document.createElement('button')
+  cancel.type = 'button'
+  cancel.className = 'cm-tb-btn'
+  cancel.textContent = 'Annuler'
+  const ok = document.createElement('button')
+  ok.type = 'button'
+  ok.className = 'cm-tb-btn cm-fn-ok'
+  ok.textContent = 'Ajouter'
+  row.append(cancel, ok)
+  pop.append(title, input, row)
+  document.body.appendChild(pop)
+
+  const coords = view.coordsAtPos(view.state.selection.main.head)
+  if (coords) {
+    pop.style.top = `${coords.bottom + window.scrollY + 6}px`
+    pop.style.left = `${Math.max(4, Math.min(coords.left + window.scrollX, window.innerWidth - 320))}px`
+  }
+  input.focus()
+
+  const close = (): void => {
+    document.removeEventListener('mousedown', onOutside, true)
+    pop.remove()
+  }
+  const onOutside = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) close()
+  }
+  const submit = (): void => {
+    const content = input.value.trim() || '…'
+    const id = nextFootnoteId(view)
+    const caret = view.state.selection.main.head
+    const ref = `[^${id}]`
+    const docLen = view.state.doc.length
+    const endsNl = docLen === 0 || view.state.doc.sliceString(docLen - 1) === '\n'
+    const def = `${endsNl ? '' : '\n'}\n[^${id}]: ${content}\n`
+    view.dispatch({
+      changes: [
+        { from: caret, insert: ref },
+        { from: docLen, insert: def }
+      ],
+      selection: { anchor: caret + ref.length }
+    })
+    close()
+    view.focus()
+  }
+  ok.addEventListener('click', submit)
+  cancel.addEventListener('click', () => {
+    close()
+    view.focus()
+  })
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      close()
+      view.focus()
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      submit()
+    }
+  })
+  // Defer so the click that opened the popup doesn't immediately close it.
+  setTimeout(() => document.addEventListener('mousedown', onOutside, true), 0)
+}
+
 interface Action {
   label: string
   title: string
@@ -147,9 +241,10 @@ const ENTRIES: Entry[] = [
   { label: '•', title: 'Bullet list', run: (v) => toggleLinePrefix(v, '- ', /^[-*+]\s+/) },
   { label: '☑', title: 'Task', run: (v) => toggleLinePrefix(v, '- [ ] ', /^[-*+]\s+(\[[ xX~]\]\s+)?/) },
   { label: '🔗', title: 'Lien (Ctrl/⌘K)', run: (v) => insertLink(v) },
+  { label: '†', title: 'Note de bas de page', run: (v) => insertFootnote(v) },
   { label: '—', title: 'Ligne horizontale', run: (v) => insertHr(v) },
   'sep',
-  { label: '🔍', title: 'Rechercher (Ctrl/⌘F)', run: (v) => void openSearchPanel(v) }
+  { label: '🔍', title: 'Rechercher (Ctrl/⌘F)', run: (v) => toggleSearch(v) }
 ]
 
 function buildButtons(view: EditorView, container: HTMLElement): void {
