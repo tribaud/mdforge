@@ -344,6 +344,7 @@ function addHostButtons(bar: HTMLElement): void {
 
   sourceButton = mk('🗎', 'Afficher la source Markdown', () => toggleSource())
   mk('↻', 'Rafraîchir les images', () => refreshImages())
+  readOnlyButton = mk('🔒', "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
   mk('▶', 'Mode présentation', () => togglePresentation())
   mk('⚙', 'Réglages MDForge', post('openSettings'))
 }
@@ -357,6 +358,17 @@ function toggleSource(): void {
   document.body.classList.toggle('mdforge-source-mode', sourceMode)
   sourceButton?.classList.toggle('cm-tb-btn-active', sourceMode)
   view.focus()
+}
+
+/** Read-only lock (keeps the chrome, blocks editing). Paired with presentation
+ * via the shared `applyEditable()`. */
+let readOnly = false
+let readOnlyButton: HTMLElement | null = null
+function toggleReadOnly(): void {
+  readOnly = !readOnly
+  document.body.classList.toggle('mdforge-readonly', readOnly)
+  readOnlyButton?.classList.toggle('cm-tb-btn-active', readOnly)
+  applyEditable()
 }
 
 let view!: EditorView
@@ -462,6 +474,22 @@ try {
   bubbleUpdate = bubble.update
   slashUpdate = createSlashMenu(view).update
   tableUpdate = createTableToolbar(view).update
+
+  // Presentation mode hides the toolbar, so its own toggle button vanishes — a
+  // floating "exit" button (shown only in presentation) + Escape are the way out.
+  const presentExit = document.createElement('button')
+  presentExit.type = 'button'
+  presentExit.className = 'cm-present-exit'
+  presentExit.textContent = '✕ Quitter la présentation'
+  presentExit.title = 'Quitter le mode présentation (Échap)'
+  presentExit.addEventListener('click', () => togglePresentation())
+  document.body.appendChild(presentExit)
+  document.addEventListener('keydown', (event) => {
+    if (presentation && event.key === 'Escape') {
+      event.preventDefault()
+      togglePresentation()
+    }
+  })
 } catch (error) {
   showError(error)
   throw error
@@ -515,10 +543,14 @@ function revealHeading(index: number): void {
 }
 
 let presentation = false
+/** Editor is editable unless presentation OR read-only is active. */
+function applyEditable(): void {
+  view.dispatch({ effects: editable.reconfigure(EditorView.editable.of(!presentation && !readOnly)) })
+}
 function togglePresentation(): void {
   presentation = !presentation
   document.body.classList.toggle('mdforge-presentation', presentation)
-  view.dispatch({ effects: editable.reconfigure(EditorView.editable.of(!presentation)) })
+  applyEditable()
 }
 
 /** Bust the browser cache for rendered <img> so a changed asset repaints. */

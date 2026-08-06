@@ -785,6 +785,30 @@ body.mdforge-presentation .cm-topbar {
 body.mdforge-presentation .cm-cursor {
   display: none !important;
 }
+/* Floating "exit presentation" button (only way out once the toolbar is hidden) */
+.cm-present-exit {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 100;
+  display: none;
+  padding: 5px 12px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  font: 12px/1.4 var(--mdforge-font);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  opacity: 0.85;
+}
+.cm-present-exit:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+body.mdforge-presentation .cm-present-exit {
+  display: block;
+}
 
 /* Draggable block handle (⠿) + drop indicator */
 .cm-block-handle {
