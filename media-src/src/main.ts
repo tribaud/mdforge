@@ -111,6 +111,9 @@ const editorTheme = EditorView.theme({
 
 /** Editability is toggled for presentation mode (read-only preview). */
 const editable = new Compartment()
+/** Wraps the live-preview extension so "source view" can switch it off, showing
+ * the raw Markdown (only syntax highlighting remains). */
+const preview = new Compartment()
 
 let bubbleUpdate: () => void = () => {}
 let slashUpdate: () => void = () => {}
@@ -312,7 +315,7 @@ function addHostButtons(bar: HTMLElement): void {
     s.className = 'cm-tb-sep'
     bar.appendChild(s)
   }
-  const mk = (label: string, title: string, onClick: () => void, danger = false): void => {
+  const mk = (label: string, title: string, onClick: () => void, danger = false): HTMLElement => {
     const b = document.createElement('button')
     b.type = 'button'
     b.className = danger ? 'cm-tb-btn cm-tb-danger' : 'cm-tb-btn'
@@ -322,6 +325,7 @@ function addHostButtons(bar: HTMLElement): void {
     b.addEventListener('mousedown', (e) => e.preventDefault())
     b.addEventListener('click', onClick)
     bar.appendChild(b)
+    return b
   }
   const post = (type: string) => (): void => vscode.postMessage({ type })
 
@@ -338,9 +342,21 @@ function addHostButtons(bar: HTMLElement): void {
   spacer.className = 'cm-tb-spacer'
   bar.appendChild(spacer)
 
+  sourceButton = mk('🗎', 'Afficher la source Markdown', () => toggleSource())
   mk('↻', 'Rafraîchir les images', () => refreshImages())
   mk('▶', 'Mode présentation', () => togglePresentation())
   mk('⚙', 'Réglages MDForge', post('openSettings'))
+}
+
+/** Toggle the raw-Markdown source view (live preview off). */
+let sourceMode = false
+let sourceButton: HTMLElement | null = null
+function toggleSource(): void {
+  sourceMode = !sourceMode
+  view.dispatch({ effects: preview.reconfigure(sourceMode ? [] : livePreview) })
+  document.body.classList.toggle('mdforge-source-mode', sourceMode)
+  sourceButton?.classList.toggle('cm-tb-btn-active', sourceMode)
+  view.focus()
 }
 
 let view!: EditorView
@@ -381,7 +397,7 @@ try {
         highlightSelectionMatches(),
         blockDrag,
         lintGutter(),
-        livePreview,
+        preview.of(livePreview),
         editorTheme,
         domEvents,
         editable.of(EditorView.editable.of(true)),

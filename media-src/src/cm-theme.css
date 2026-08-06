@@ -87,6 +87,16 @@ body {
   background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.2));
   color: var(--vscode-errorForeground, #f85149);
 }
+/* Active/toggled toolbar button (e.g. source-view on). */
+.cm-tb-btn-active,
+.cm-tb-btn-active:hover {
+  background: var(--vscode-toolbar-activeBackground, var(--vscode-inputOption-activeBackground, rgba(64, 124, 200, 0.4)));
+  color: var(--vscode-inputOption-activeForeground, inherit);
+}
+/* Source view: raw Markdown in a monospace column. */
+body.mdforge-source-mode .cm-content {
+  font-family: var(--mdforge-mono);
+}
 .cm-tb-sep {
   width: 1px;
   height: 16px;
