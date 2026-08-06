@@ -131,29 +131,144 @@ function toggleSearch(view: EditorView): void {
   else openSearchPanel(view)
 }
 
-/** Next free numeric footnote id (`[^N]`) in the document. */
-function nextFootnoteId(view: EditorView): number {
+/** Headings under which footnote definitions (`[^id]:`) already live, in order
+ * — the existing "note sections" of the document. */
+function footnoteSections(view: EditorView): string[] {
+  const doc = view.state.doc
+  const sections: string[] = []
+  let heading = ''
+  for (let n = 1; n <= doc.lines; n++) {
+    const t = doc.line(n).text
+    const h = /^#{1,6}\s+(.*)$/.exec(t)
+    if (h) {
+      heading = h[1].trim()
+      continue
+    }
+    if (heading && /^\[\^[^\]\s]+\]:/.test(t) && !sections.includes(heading)) sections.push(heading)
+  }
+  return sections
+}
+
+/** Bookmark prefix for a section: Bibliographie → `B`, Notes/(none) → none,
+ * anything else → its first letter (uppercased). */
+function sectionPrefix(name: string): string {
+  if (/biblio/i.test(name)) return 'B'
+  if (!name || /notes?/i.test(name)) return ''
+  const c = name.replace(/[^\p{L}\p{N}]/gu, '').charAt(0)
+  return c ? c.toUpperCase() : 'N'
+}
+
+/** Next free bookmark for a prefix: the max existing `[^<prefix><n>]` + 1. */
+function suggestLabel(view: EditorView, prefix: string): string {
+  const re = prefix
+    ? new RegExp(`\\[\\^${prefix}(\\d+)\\]`, 'g')
+    : /\[\^(\d+)\]/g
   let max = 0
-  for (const m of view.state.doc.toString().matchAll(/\[\^(\d+)\]/g)) max = Math.max(max, Number(m[1]))
-  return max + 1
+  for (const m of view.state.doc.toString().matchAll(re)) max = Math.max(max, Number(m[1]))
+  return `${prefix}${max + 1}`
+}
+
+/** Where (and what) to insert a footnote definition for `section`: at the end
+ * of that section if its heading exists, otherwise as a new section at the end
+ * of the document. */
+function definitionInsertion(
+  view: EditorView,
+  section: string,
+  defLine: string
+): { from: number; insert: string } {
+  const doc = view.state.doc
+  let headingLine = -1
+  let headingLevel = 0
+  for (let n = 1; n <= doc.lines; n++) {
+    const h = /^(#{1,6})\s+(.*)$/.exec(doc.line(n).text)
+    if (h && h[2].trim().toLowerCase() === section.toLowerCase()) {
+      headingLine = n
+      headingLevel = h[1].length
+      break
+    }
+  }
+  if (headingLine === -1) {
+    const len = doc.length
+    const endsNl = len === 0 || doc.sliceString(len - 1) === '\n'
+    return { from: len, insert: `${endsNl ? '' : '\n'}\n## ${section}\n\n${defLine}\n` }
+  }
+  // End of the section = the last line before the next same/higher heading.
+  let sectionEndLine = doc.lines
+  for (let n = headingLine + 1; n <= doc.lines; n++) {
+    const h = /^(#{1,6})\s/.exec(doc.line(n).text)
+    if (h && h[1].length <= headingLevel) {
+      sectionEndLine = n - 1
+      break
+    }
+  }
+  let lastContent = headingLine
+  for (let n = headingLine + 1; n <= sectionEndLine; n++) {
+    if (doc.line(n).text.trim() !== '') lastContent = n
+  }
+  const pos = doc.line(lastContent).to
+  // Blank line after a bare heading, single newline after an existing def.
+  return { from: pos, insert: lastContent === headingLine ? `\n\n${defLine}` : `\n${defLine}` }
 }
 
 /**
- * Footnote helper: a small popup asks for the note text, then inserts a `[^N]`
- * reference at the caret and appends its `[^N]: text` definition at the end of
- * the document (both in one edit).
+ * Footnote helper popup. Fields:
+ *  - Section: existing note sections + the standard Notes / Bibliographie.
+ *  - Signet (bookmark): pre-computed from the section (editable).
+ *  - Texte: the note content.
+ * On submit it inserts a `[^signet]` reference at the caret and the matching
+ * `[^signet]: texte` definition at the end of the chosen section (one edit).
  */
 export function insertFootnote(view: EditorView): void {
   if (document.querySelector('.cm-footnote-popup')) return
+
+  const sections = footnoteSections(view)
+  for (const s of ['Notes', 'Bibliographie']) {
+    if (!sections.some((x) => x.toLowerCase() === s.toLowerCase())) sections.push(s)
+  }
+
   const pop = document.createElement('div')
   pop.className = 'cm-footnote-popup'
   const title = document.createElement('div')
   title.className = 'cm-fn-title'
   title.textContent = 'Note de bas de page'
-  const input = document.createElement('input')
-  input.type = 'text'
-  input.className = 'cm-fn-input'
-  input.placeholder = 'Texte de la note…'
+
+  const field = (label: string, control: HTMLElement): HTMLElement => {
+    const wrap = document.createElement('label')
+    wrap.className = 'cm-fn-field'
+    const span = document.createElement('span')
+    span.className = 'cm-fn-label'
+    span.textContent = label
+    wrap.append(span, control)
+    return wrap
+  }
+
+  const sectionSel = document.createElement('select')
+  sectionSel.className = 'cm-fn-input cm-fn-select'
+  for (const s of sections) {
+    const o = document.createElement('option')
+    o.value = s
+    o.textContent = s
+    sectionSel.appendChild(o)
+  }
+
+  const labelInput = document.createElement('input')
+  labelInput.type = 'text'
+  labelInput.className = 'cm-fn-input cm-fn-signet'
+
+  const textInput = document.createElement('input')
+  textInput.type = 'text'
+  textInput.className = 'cm-fn-input'
+  textInput.placeholder = 'Texte de la note…'
+
+  let labelEdited = false
+  const refreshLabel = (): void => {
+    if (!labelEdited) labelInput.value = suggestLabel(view, sectionPrefix(sectionSel.value))
+  }
+  sectionSel.value = sections[0]
+  refreshLabel()
+  sectionSel.addEventListener('change', refreshLabel)
+  labelInput.addEventListener('input', () => (labelEdited = true))
+
   const row = document.createElement('div')
   row.className = 'cm-fn-row'
   const cancel = document.createElement('button')
@@ -165,7 +280,14 @@ export function insertFootnote(view: EditorView): void {
   ok.className = 'cm-tb-btn cm-fn-ok'
   ok.textContent = 'Ajouter'
   row.append(cancel, ok)
-  pop.append(title, input, row)
+
+  pop.append(
+    title,
+    field('Section', sectionSel),
+    field('Signet', labelInput),
+    field('Texte', textInput),
+    row
+  )
   document.body.appendChild(pop)
 
   const coords = view.coordsAtPos(view.state.selection.main.head)
@@ -173,7 +295,7 @@ export function insertFootnote(view: EditorView): void {
     pop.style.top = `${coords.bottom + window.scrollY + 6}px`
     pop.style.left = `${Math.max(4, Math.min(coords.left + window.scrollX, window.innerWidth - 320))}px`
   }
-  input.focus()
+  textInput.focus()
 
   const close = (): void => {
     document.removeEventListener('mousedown', onOutside, true)
@@ -183,17 +305,18 @@ export function insertFootnote(view: EditorView): void {
     if (!pop.contains(e.target as Node)) close()
   }
   const submit = (): void => {
-    const content = input.value.trim() || '…'
-    const id = nextFootnoteId(view)
+    const label = (labelInput.value.trim() || suggestLabel(view, sectionPrefix(sectionSel.value))).replace(
+      /\s+/g,
+      ''
+    )
+    const content = textInput.value.trim() || '…'
     const caret = view.state.selection.main.head
-    const ref = `[^${id}]`
-    const docLen = view.state.doc.length
-    const endsNl = docLen === 0 || view.state.doc.sliceString(docLen - 1) === '\n'
-    const def = `${endsNl ? '' : '\n'}\n[^${id}]: ${content}\n`
+    const ref = `[^${label}]`
+    const def = definitionInsertion(view, sectionSel.value, `[^${label}]: ${content}`)
     view.dispatch({
       changes: [
         { from: caret, insert: ref },
-        { from: docLen, insert: def }
+        { from: def.from, insert: def.insert }
       ],
       selection: { anchor: caret + ref.length }
     })
@@ -205,7 +328,7 @@ export function insertFootnote(view: EditorView): void {
     close()
     view.focus()
   })
-  input.addEventListener('keydown', (e) => {
+  pop.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       close()

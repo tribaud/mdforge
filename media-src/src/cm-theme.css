@@ -124,6 +124,28 @@ body {
 .cm-fn-input:focus {
   outline: 1px solid var(--vscode-focusBorder, var(--vscode-textLink-foreground));
 }
+.cm-fn-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cm-fn-label {
+  flex: 0 0 52px;
+  font: 12px/1.4 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+}
+.cm-fn-field .cm-fn-input {
+  flex: 1 1 auto;
+  width: auto;
+}
+.cm-fn-signet {
+  flex: 0 0 96px !important;
+  font-family: var(--mdforge-mono);
+}
+.cm-fn-select {
+  cursor: pointer;
+}
 .cm-fn-row {
   display: flex;
   justify-content: flex-end;
