@@ -93,6 +93,10 @@ body {
   margin: 0 3px;
   background: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
 }
+/* Pushes the following buttons (refresh / presentation / settings) to the right. */
+.cm-tb-spacer {
+  flex: 1 1 auto;
+}
 
 /* --- Footnote popup --- */
 .cm-footnote-popup {

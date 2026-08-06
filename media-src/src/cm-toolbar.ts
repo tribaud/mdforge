@@ -113,6 +113,20 @@ function insertHr(view: EditorView): void {
   view.focus()
 }
 
+/** Insert a starter GFM table below the caret and land in the first cell. */
+export function insertTable(view: EditorView): void {
+  const line = view.state.doc.lineAt(view.state.selection.main.head)
+  const at = line.to
+  const body = '| Colonne 1 | Colonne 2 |\n| --- | --- |\n|  |  |\n'
+  const insert = (line.text.trim() ? '\n\n' : '\n') + body
+  const caret = at + insert.indexOf('Colonne 1')
+  view.dispatch({
+    changes: { from: at, insert },
+    selection: { anchor: caret, head: caret + 'Colonne 1'.length }
+  })
+  view.focus()
+}
+
 export function insertLink(view: EditorView): void {
   const { from, to } = view.state.selection.main
   const text = view.state.doc.sliceString(from, to) || 'texte'

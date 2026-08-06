@@ -34,7 +34,7 @@ import {
   setEnableInProgress,
   openWikilink
 } from './cm-livepreview'
-import { createTopbar, createBubble, wrap, insertLink } from './cm-toolbar'
+import { createTopbar, createBubble, wrap, insertLink, insertTable } from './cm-toolbar'
 import { createSlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
@@ -290,26 +290,57 @@ const domEvents = EditorView.domEventHandlers({
   }
 })
 
-/** Host-integration buttons (note/asset operations) appended to the top bar. */
+/** Open the OS file picker and insert the chosen image at the caret (reuses the
+ * paste/drop save flow). */
+function pickImage(): void {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'
+  input.addEventListener('change', () => {
+    const file = input.files?.[0]
+    if (file) sendImageFile(file, view.state.selection.main.head)
+  })
+  input.click()
+}
+
+/** Host-integration + document buttons appended to the top bar. Mirrors the
+ * Milkdown top toolbar: a left group (note/asset actions) and a right group
+ * (refresh, presentation, settings) separated by a flexible spacer. */
 function addHostButtons(bar: HTMLElement): void {
-  const sep = document.createElement('span')
-  sep.className = 'cm-tb-sep'
-  bar.appendChild(sep)
-  const mk = (label: string, title: string, type: string, danger = false): void => {
+  const sep = (): void => {
+    const s = document.createElement('span')
+    s.className = 'cm-tb-sep'
+    bar.appendChild(s)
+  }
+  const mk = (label: string, title: string, onClick: () => void, danger = false): void => {
     const b = document.createElement('button')
+    b.type = 'button'
     b.className = danger ? 'cm-tb-btn cm-tb-danger' : 'cm-tb-btn'
     b.textContent = label
     b.title = title
     b.setAttribute('data-tip', title)
     b.addEventListener('mousedown', (e) => e.preventDefault())
-    b.addEventListener('click', () => vscode.postMessage({ type }))
+    b.addEventListener('click', onClick)
     bar.appendChild(b)
   }
-  mk('¶', 'Normaliser les lignes vides (markdownlint)', 'normalizeBlankLines')
-  mk('⬇', 'Télécharger les images distantes en local', 'localizeAssets')
-  mk('📁', 'Déplacer la note et ses assets', 'moveNote')
-  mk('✏️', 'Renommer la note', 'renameNote')
-  mk('🗑', 'Supprimer la note et ses assets', 'deleteNote', true)
+  const post = (type: string) => (): void => vscode.postMessage({ type })
+
+  sep()
+  mk('¶', 'Normaliser les lignes vides (markdownlint)', post('normalizeBlankLines'))
+  mk('🖼', 'Insérer une image', pickImage)
+  mk('⊞', 'Insérer un tableau', () => insertTable(view))
+  mk('⬇', 'Télécharger les images distantes en local', post('localizeAssets'))
+  mk('📁', 'Déplacer la note et ses assets', post('moveNote'))
+  mk('✏️', 'Renommer la note', post('renameNote'))
+  mk('🗑', 'Supprimer la note et ses assets', post('deleteNote'), true)
+
+  const spacer = document.createElement('span')
+  spacer.className = 'cm-tb-spacer'
+  bar.appendChild(spacer)
+
+  mk('↻', 'Rafraîchir les images', () => refreshImages())
+  mk('▶', 'Mode présentation', () => togglePresentation())
+  mk('⚙', 'Réglages MDForge', post('openSettings'))
 }
 
 let view!: EditorView
