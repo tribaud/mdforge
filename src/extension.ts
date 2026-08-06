@@ -396,6 +396,23 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       void webview.postMessage({ type: 'setContent', text: document.getText() })
     }
 
+    // Forward VS Code diagnostics (markdownlint, spell checkers…) so the webview
+    // can paint them as underlines — a custom editor never shows the native ones.
+    const postDiagnostics = (): void => {
+      const items = vscode.languages.getDiagnostics(document.uri).map((d) => ({
+        from: { line: d.range.start.line, character: d.range.start.character },
+        to: { line: d.range.end.line, character: d.range.end.character },
+        severity: d.severity,
+        message: d.message,
+        code:
+          d.code != null
+            ? String(typeof d.code === 'object' ? d.code.value : d.code)
+            : undefined,
+        source: d.source
+      }))
+      void webview.postMessage({ type: 'diagnostics', items })
+    }
+
     const postConfig = (): void => {
       const config = vscode.workspace.getConfiguration('mdforge', document.uri)
       void webview.postMessage({
@@ -438,6 +455,10 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       if (event.affectsConfiguration('mdforge', document.uri)) postConfig()
     })
 
+    const diagnosticsSubscription = vscode.languages.onDidChangeDiagnostics((event) => {
+      if (event.uris.some((u) => u.toString() === document.uri.toString())) postDiagnostics()
+    })
+
     // Auto-refresh rendered images when a co-located asset file changes on disk
     // (the link is unchanged, so the webview would otherwise show a stale cache).
     const assetWatcher = vscode.workspace.createFileSystemWatcher(
@@ -471,6 +492,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           case 'ready':
             postConfig()
             postDocument()
+            postDiagnostics()
             break
           case 'edit':
             if (typeof message.text === 'string' && message.text !== document.getText()) {
@@ -531,6 +553,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       changeSubscription.dispose()
       configSubscription.dispose()
       viewStateSubscription.dispose()
+      diagnosticsSubscription.dispose()
       assetWatcher.dispose()
       this.outline.clear(document)
     })

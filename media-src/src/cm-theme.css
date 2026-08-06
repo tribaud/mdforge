@@ -285,6 +285,27 @@ body.mdforge-width-full .cm-content {
   background: var(--vscode-editor-selectionHighlightBackground, rgba(173, 214, 255, 0.15));
 }
 
+/* --- Linter diagnostics (markdownlint…) — wavy underline, message on hover --- */
+.cm-lint {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
+  text-decoration-thickness: 1px;
+}
+.cm-lint-warning {
+  text-decoration-color: var(--vscode-editorWarning-foreground, #cca700);
+}
+.cm-lint-error {
+  text-decoration-color: var(--vscode-editorError-foreground, #f14c4c);
+}
+.cm-lint-info {
+  text-decoration-color: var(--vscode-editorInfo-foreground, #3794ff);
+}
+.cm-lint-hint {
+  text-decoration-color: var(--vscode-editorHint-foreground, rgba(127, 127, 127, 0.7));
+}
+
 /* --- Live-preview inline rendering --- */
 .cm-md-strong {
   font-weight: 700;

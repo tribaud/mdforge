@@ -38,6 +38,8 @@ import { createTopbar, createBubble, wrap, insertLink } from './cm-toolbar'
 import { createSlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
+import { lintField, setDiagnostics } from './cm-lint'
+import type { LintItem } from './cm-lint'
 import { htmlToMarkdown, isRichHtml } from './cm-paste-html'
 import './cm-theme.css'
 import 'katex/dist/katex.min.css'
@@ -347,6 +349,7 @@ try {
         search({ top: true }),
         highlightSelectionMatches(),
         blockDrag,
+        lintField,
         livePreview,
         editorTheme,
         domEvents,
@@ -500,6 +503,45 @@ function bodyStart(text: string): number {
   return nl === -1 ? text.length : nl + 1
 }
 
+/** VS Code DiagnosticSeverity (0..3) → our severity string. */
+const SEVERITY: Record<number, LintItem['severity']> = { 0: 'error', 1: 'warning', 2: 'info', 3: 'hint' }
+
+interface RawDiagnostic {
+  from: { line: number; character: number }
+  to: { line: number; character: number }
+  severity: number
+  message: string
+  code?: string
+  source?: string
+}
+
+/** Convert host diagnostics (line/character) to offset decorations. A zero-width
+ * range (common for line-level markdownlint rules) underlines the whole line. */
+function applyDiagnostics(raw: RawDiagnostic[]): void {
+  const doc = view.state.doc
+  const off = (p: { line: number; character: number }): number => {
+    const line = doc.line(Math.max(1, Math.min(p.line + 1, doc.lines)))
+    return Math.max(line.from, Math.min(line.from + p.character, line.to))
+  }
+  const items: LintItem[] = raw.map((d) => {
+    let from = off(d.from)
+    let to = off(d.to)
+    if (to <= from) {
+      const line = doc.lineAt(from)
+      from = line.from
+      to = line.to
+    }
+    const label = [d.source, d.code].filter(Boolean).join(' ')
+    return {
+      from,
+      to,
+      severity: SEVERITY[d.severity] ?? 'warning',
+      message: label ? `${label}: ${d.message}` : d.message
+    }
+  })
+  view.dispatch({ effects: setDiagnostics.of(items) })
+}
+
 function setContent(text: string): void {
   if (text === currentText) return
   applyingRemote = true
@@ -537,6 +579,7 @@ window.addEventListener('message', (event) => {
     alt?: string
     linkStyle?: string
     error?: string
+    items?: RawDiagnostic[]
   }
   switch (msg.type) {
     case 'setContent':
@@ -553,6 +596,9 @@ window.addEventListener('message', (event) => {
       break
     case 'refreshImages':
       refreshImages()
+      break
+    case 'diagnostics':
+      if (Array.isArray(msg.items)) applyDiagnostics(msg.items)
       break
     case 'imageInserted':
       if (typeof msg.id === 'number') {
