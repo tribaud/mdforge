@@ -5,8 +5,10 @@
 
 MDForge opens `.md` / `.markdown` files in a clean visual editor where the
 Markdown renders in place as you type. It is built on
-[Milkdown](https://github.com/Milkdown/milkdown) (ProseMirror + remark) and is
-fully **open source (MIT)** — no paid tiers, no telemetry.
+[CodeMirror 6](https://codemirror.net/) in an Obsidian-style "live preview": the
+document **is** the Markdown text, so editing never re-serializes — a one-character
+change is a one-character diff. Fully **open source (MIT)** — no paid tiers, no
+telemetry.
 
 ## Status
 
@@ -48,13 +50,13 @@ npm run watch:webview  # webview bundle
 | Part | Path | Role |
 | --- | --- | --- |
 | Extension host | `src/extension.ts` | `CustomTextEditorProvider`, webview wiring, file ↔ webview sync |
-| Webview app | `media-src/src/main.ts` | Milkdown editor + plugins |
-| Theme | `media-src/src/github-theme.css` | GitHub-style CSS, VS Code theme-aware |
+| Webview app | `media-src/src/main.ts` + `cm-*.ts` | CodeMirror 6 live-preview editor |
+| Theme | `media-src/src/cm-theme.css` | GitHub-style CSS, VS Code theme-aware |
 | Build | `esbuild.mjs` | Bundles the webview to `media/dist/` |
 
 ## Acknowledgements
 
-- [Milkdown](https://github.com/Milkdown/milkdown) — WYSIWYG engine (MIT)
+- [CodeMirror 6](https://codemirror.net/) — editor engine (MIT)
 - [Mermaid](https://github.com/mermaid-js/mermaid) — diagrams (MIT)
 - [KaTeX](https://github.com/KaTeX/KaTeX) — math (MIT)
 
