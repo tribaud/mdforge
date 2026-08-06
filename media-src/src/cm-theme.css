@@ -285,25 +285,79 @@ body.mdforge-width-full .cm-content {
   background: var(--vscode-editor-selectionHighlightBackground, rgba(173, 214, 255, 0.15));
 }
 
-/* --- Linter diagnostics (markdownlint…) — wavy underline, message on hover --- */
-.cm-lint {
-  text-decoration-line: underline;
-  text-decoration-style: wavy;
+/* --- Linter diagnostics (markdownlint…) via @codemirror/lint --- */
+/* Recolor the wavy underlines to the VS Code diagnostic palette. */
+.cm-lintRange-warning {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorWarning-foreground, #cca700);
   text-decoration-skip-ink: none;
   text-underline-position: under;
-  text-decoration-thickness: 1px;
 }
-.cm-lint-warning {
-  text-decoration-color: var(--vscode-editorWarning-foreground, #cca700);
+.cm-lintRange-error {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
 }
-.cm-lint-error {
-  text-decoration-color: var(--vscode-editorError-foreground, #f14c4c);
+.cm-lintRange-info {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorInfo-foreground, #3794ff);
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
 }
-.cm-lint-info {
-  text-decoration-color: var(--vscode-editorInfo-foreground, #3794ff);
+.cm-lintRange-hint {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorHint-foreground, rgba(127, 127, 127, 0.7));
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
 }
-.cm-lint-hint {
-  text-decoration-color: var(--vscode-editorHint-foreground, rgba(127, 127, 127, 0.7));
+
+/* Hover bubble that shows the explanation + actions. */
+.cm-tooltip.cm-tooltip-lint {
+  border: 1px solid var(--vscode-editorHoverWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 6px;
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background, #252526));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-editor-foreground));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.cm-tooltip-lint .cm-diagnostic {
+  padding: 6px 10px 6px 12px;
+  font: 12px/1.5 var(--mdforge-font);
+}
+.cm-tooltip-lint .cm-diagnostic-warning {
+  border-left: 4px solid var(--vscode-editorWarning-foreground, #cca700);
+}
+.cm-tooltip-lint .cm-diagnostic-error {
+  border-left: 4px solid var(--vscode-editorError-foreground, #f14c4c);
+}
+.cm-tooltip-lint .cm-diagnostic-info {
+  border-left: 4px solid var(--vscode-editorInfo-foreground, #3794ff);
+}
+.cm-diagnosticAction {
+  margin: 6px 8px 2px 0;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 5px;
+  background: var(--vscode-button-background, var(--vscode-textLink-foreground, #0969da));
+  color: var(--vscode-button-foreground, #fff);
+  font: 11px/1.4 var(--mdforge-font);
+  cursor: pointer;
+}
+.cm-diagnosticAction:hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-textLink-foreground, #0b6fe0));
+}
+.cm-lint-msg-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.cm-lint-msg-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* --- Live-preview inline rendering --- */

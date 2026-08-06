@@ -38,8 +38,8 @@ import { createTopbar, createBubble, wrap, insertLink } from './cm-toolbar'
 import { createSlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
-import { lintField, setDiagnostics } from './cm-lint'
-import type { LintItem } from './cm-lint'
+import { setDiagnostics, lintGutter } from '@codemirror/lint'
+import type { Diagnostic } from '@codemirror/lint'
 import { htmlToMarkdown, isRichHtml } from './cm-paste-html'
 import './cm-theme.css'
 import 'katex/dist/katex.min.css'
@@ -349,7 +349,7 @@ try {
         search({ top: true }),
         highlightSelectionMatches(),
         blockDrag,
-        lintField,
+        lintGutter(),
         livePreview,
         editorTheme,
         domEvents,
@@ -503,27 +503,34 @@ function bodyStart(text: string): number {
   return nl === -1 ? text.length : nl + 1
 }
 
-/** VS Code DiagnosticSeverity (0..3) → our severity string. */
-const SEVERITY: Record<number, LintItem['severity']> = { 0: 'error', 1: 'warning', 2: 'info', 3: 'hint' }
+/** VS Code DiagnosticSeverity (0..3) → CodeMirror lint severity. */
+const SEVERITY: Record<number, Diagnostic['severity']> = { 0: 'error', 1: 'warning', 2: 'info', 3: 'hint' }
 
+interface LineCol {
+  line: number
+  character: number
+}
 interface RawDiagnostic {
-  from: { line: number; character: number }
-  to: { line: number; character: number }
+  from: LineCol
+  to: LineCol
   severity: number
   message: string
   code?: string
   source?: string
+  href?: string
 }
 
-/** Convert host diagnostics (line/character) to offset decorations. A zero-width
- * range (common for line-level markdownlint rules) underlines the whole line. */
+/** Convert host diagnostics (line/character) to CodeMirror lint diagnostics.
+ * A zero-width range (line-level markdownlint rules) underlines the whole line.
+ * Each carries a hover message with a rule-doc link and a "quick fix" action
+ * that asks the host to run VS Code's code-action provider for the range. */
 function applyDiagnostics(raw: RawDiagnostic[]): void {
   const doc = view.state.doc
-  const off = (p: { line: number; character: number }): number => {
+  const off = (p: LineCol): number => {
     const line = doc.line(Math.max(1, Math.min(p.line + 1, doc.lines)))
     return Math.max(line.from, Math.min(line.from + p.character, line.to))
   }
-  const items: LintItem[] = raw.map((d) => {
+  const items: Diagnostic[] = raw.map((d) => {
     let from = off(d.from)
     let to = off(d.to)
     if (to <= from) {
@@ -531,15 +538,59 @@ function applyDiagnostics(raw: RawDiagnostic[]): void {
       from = line.from
       to = line.to
     }
-    const label = [d.source, d.code].filter(Boolean).join(' ')
+    const source = [d.source, d.code].filter(Boolean).join(' ')
     return {
       from,
       to,
       severity: SEVERITY[d.severity] ?? 'warning',
-      message: label ? `${label}: ${d.message}` : d.message
+      message: d.message,
+      renderMessage: () => {
+        const box = document.createElement('div')
+        box.className = 'cm-lint-msg'
+        const text = document.createElement('div')
+        text.textContent = d.message
+        box.appendChild(text)
+        if (source || d.href) {
+          const foot = document.createElement('div')
+          foot.className = 'cm-lint-msg-foot'
+          if (source) {
+            const tag = document.createElement('span')
+            tag.textContent = source
+            foot.appendChild(tag)
+          }
+          if (d.href) {
+            const link = document.createElement('a')
+            link.className = 'cm-lint-msg-link'
+            link.textContent = 'Documentation ↗'
+            link.addEventListener('mousedown', (e) => {
+              e.preventDefault()
+              vscode.postMessage({ type: 'openExternal', url: d.href })
+            })
+            foot.appendChild(link)
+          }
+          box.appendChild(foot)
+        }
+        return box
+      },
+      actions: [
+        {
+          name: 'Corrections rapides…',
+          apply: (v, aFrom, aTo) => {
+            const a = v.state.doc.lineAt(aFrom)
+            const b = v.state.doc.lineAt(aTo)
+            vscode.postMessage({
+              type: 'requestQuickFix',
+              range: {
+                from: { line: a.number - 1, character: aFrom - a.from },
+                to: { line: b.number - 1, character: aTo - b.from }
+              }
+            })
+          }
+        }
+      ]
     }
   })
-  view.dispatch({ effects: setDiagnostics.of(items) })
+  view.dispatch(setDiagnostics(view.state, items))
 }
 
 function setContent(text: string): void {

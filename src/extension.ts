@@ -399,17 +399,18 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     // Forward VS Code diagnostics (markdownlint, spell checkers…) so the webview
     // can paint them as underlines — a custom editor never shows the native ones.
     const postDiagnostics = (): void => {
-      const items = vscode.languages.getDiagnostics(document.uri).map((d) => ({
-        from: { line: d.range.start.line, character: d.range.start.character },
-        to: { line: d.range.end.line, character: d.range.end.character },
-        severity: d.severity,
-        message: d.message,
-        code:
-          d.code != null
-            ? String(typeof d.code === 'object' ? d.code.value : d.code)
-            : undefined,
-        source: d.source
-      }))
+      const items = vscode.languages.getDiagnostics(document.uri).map((d) => {
+        const codeObj = typeof d.code === 'object' && d.code !== null ? d.code : undefined
+        return {
+          from: { line: d.range.start.line, character: d.range.start.character },
+          to: { line: d.range.end.line, character: d.range.end.character },
+          severity: d.severity,
+          message: d.message,
+          code: d.code != null ? String(codeObj ? codeObj.value : d.code) : undefined,
+          source: d.source,
+          href: codeObj?.target?.toString()
+        }
+      })
       void webview.postMessage({ type: 'diagnostics', items })
     }
 
@@ -487,6 +488,10 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         name?: string
         path?: string
         html?: string
+        range?: {
+          from: { line: number; character: number }
+          to: { line: number; character: number }
+        }
       }) => {
         switch (message.type) {
           case 'ready':
@@ -529,6 +534,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             if (norm !== document.getText()) await this.writeDocument(document, norm)
             break
           }
+          case 'requestQuickFix':
+            if (message.range) await this.runQuickFix(document, message.range)
+            break
           case 'openSettings':
             void vscode.commands.executeCommand(
               'workbench.action.openSettings',
@@ -568,6 +576,45 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     )
     edit.replace(document.uri, fullRange, text)
     await vscode.workspace.applyEdit(edit)
+  }
+
+  /**
+   * Run VS Code's code-action provider for a range (the diagnostic the user
+   * clicked) and let them pick a quick fix from a native menu — the webview has
+   * no lightbulb of its own. Applies the chosen action's edit and/or command.
+   */
+  private async runQuickFix(
+    document: vscode.TextDocument,
+    range: { from: { line: number; character: number }; to: { line: number; character: number } }
+  ): Promise<void> {
+    const target = new vscode.Range(
+      range.from.line,
+      range.from.character,
+      range.to.line,
+      range.to.character
+    )
+    const results = await vscode.commands.executeCommand<(vscode.CodeAction | vscode.Command)[]>(
+      'vscode.executeCodeActionProvider',
+      document.uri,
+      target
+    )
+    const actions = (results ?? []).filter(
+      (a): a is vscode.CodeAction => a instanceof vscode.CodeAction
+    )
+    if (!actions.length) {
+      void vscode.window.showInformationMessage('MDForge : aucune correction rapide disponible ici.')
+      return
+    }
+    const pick = await vscode.window.showQuickPick(
+      actions.map((a, index) => ({ label: a.title, index })),
+      { placeHolder: 'Corrections rapides' }
+    )
+    if (!pick) return
+    const chosen = actions[pick.index]
+    if (chosen.edit) await vscode.workspace.applyEdit(chosen.edit)
+    if (chosen.command) {
+      await vscode.commands.executeCommand(chosen.command.command, ...(chosen.command.arguments ?? []))
+    }
   }
 
   /**
