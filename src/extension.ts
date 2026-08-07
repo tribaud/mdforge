@@ -48,8 +48,138 @@ export function activate(context: vscode.ExtensionContext): void {
         return
       }
       await vscode.commands.executeCommand('vscode.openWith', target, 'default')
+    }),
+    // Diff editor has a single shared title bar (no per-pane menu), so we expose
+    // one button per side that reads the active tab's diff input and opens the
+    // chosen side in MDForge. The original side is often a read-only `git:`
+    // resource (view-only); the modified side is the working file.
+    vscode.commands.registerCommand('mdforge.openDiffOriginal', async () => {
+      const input = activeDiffInput()
+      if (input) await vscode.commands.executeCommand('vscode.openWith', input.original, VIEW_TYPE)
+    }),
+    vscode.commands.registerCommand('mdforge.openDiffModified', async () => {
+      const input = activeDiffInput()
+      if (input) await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
+    }),
+    // On-demand markdownlint blank-line normalization for the active note.
+    vscode.commands.registerCommand('mdforge.normalizeBlankLines', async () => {
+      const active = outline.active
+      if (!active) {
+        void vscode.window.showInformationMessage('Open a document with MDForge first.')
+        return
+      }
+      const doc = active.document
+      const norm = normalizeBlankLines(doc.getText())
+      if (norm === doc.getText()) return
+      const edit = new vscode.WorkspaceEdit()
+      edit.replace(
+        doc.uri,
+        new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)),
+        norm
+      )
+      await vscode.workspace.applyEdit(edit)
+    }),
+    // Opt-in format-on-save: normalize blank lines just before the file is
+    // written, only for notes open in an MDForge editor.
+    vscode.workspace.onWillSaveTextDocument((event) => {
+      const cfg = vscode.workspace.getConfiguration('mdforge', event.document.uri)
+      if (cfg.get<string>('format.blankLines', 'off') !== 'onSave') return
+      if (!provider.isOpen(event.document.uri)) return
+      const norm = normalizeBlankLines(event.document.getText())
+      if (norm === event.document.getText()) return
+      const range = new vscode.Range(
+        event.document.positionAt(0),
+        event.document.positionAt(event.document.getText().length)
+      )
+      event.waitUntil(Promise.resolve([vscode.TextEdit.replace(range, norm)]))
     })
   )
+}
+
+/** The active tab's diff input (original/modified URIs), if it is a text diff. */
+function activeDiffInput(): vscode.TabInputTextDiff | undefined {
+  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
+  return input instanceof vscode.TabInputTextDiff ? input : undefined
+}
+
+/**
+ * Normalize blank lines to a markdownlint-friendly shape WITHOUT reflowing any
+ * content — the CodeMirror engine never rewrites prose, so this is opt-in (a
+ * command / format-on-save), not automatic. Rules applied:
+ *  - MD012: collapse runs of blank lines to a single one.
+ *  - MD022: a blank line before and after every ATX heading.
+ *  - MD031: a blank line around fenced code blocks.
+ *  - MD047: exactly one trailing newline.
+ * Blank lines inside fenced code and YAML frontmatter are left untouched (they
+ * are significant there).
+ */
+export function normalizeBlankLines(text: string): string {
+  const src = text.replace(/\r\n?/g, '\n').split('\n')
+  const out: string[] = []
+  const pushBlank = (): void => {
+    if (out.length && out[out.length - 1] !== '') out.push('')
+  }
+  const fenceOf = (s: string): RegExpExecArray | null => /^\s*(`{3,}|~{3,})/.exec(s)
+  const isHeading = (s: string): boolean => /^#{1,6}\s/.test(s)
+
+  let inFence = false
+  let fenceCh = ''
+  let inFrontmatter = false
+
+  for (let i = 0; i < src.length; i++) {
+    const line = src[i]
+
+    // YAML frontmatter at the very top: copy verbatim.
+    if (!inFence && !inFrontmatter && i === 0 && /^---\s*$/.test(line)) {
+      inFrontmatter = true
+      out.push(line)
+      continue
+    }
+    if (inFrontmatter) {
+      out.push(line)
+      if (/^---\s*$/.test(line)) inFrontmatter = false
+      continue
+    }
+
+    const fence = fenceOf(line)
+    if (fence) {
+      const ch = fence[1][0]
+      if (!inFence) {
+        pushBlank() // MD031: blank before an opening fence
+        inFence = true
+        fenceCh = ch
+      } else if (ch === fenceCh) {
+        inFence = false
+      }
+      out.push(line)
+      continue
+    }
+    if (inFence) {
+      out.push(line) // inside code: verbatim (blank lines matter)
+      continue
+    }
+
+    if (line.trim() === '') {
+      pushBlank() // MD012: collapse consecutive blanks
+      continue
+    }
+
+    // Content right after a closing fence → insert the MD031 blank.
+    if (out.length && fenceOf(out[out.length - 1])) pushBlank()
+
+    if (isHeading(line)) {
+      pushBlank() // MD022: blank before…
+      out.push(line)
+      if (i + 1 < src.length && src[i + 1].trim() !== '') out.push('') // …and after
+      continue
+    }
+
+    out.push(line)
+  }
+
+  while (out.length && out[0] === '') out.shift()
+  while (out.length && out[out.length - 1] === '') out.pop()
+  return out.length ? out.join('\n') + '\n' : ''
 }
 
 interface Heading {
@@ -231,6 +361,13 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
    *  the rename itself triggers (and to avoid double prompts). */
   private readonly rehashing = new Set<string>()
 
+  /** URIs currently open in an MDForge editor — gates format-on-save so it only
+   *  touches documents this editor owns, not every Markdown file. */
+  private readonly openDocs = new Set<string>()
+  public isOpen(uri: vscode.Uri): boolean {
+    return this.openDocs.has(uri.toString())
+  }
+
   public constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly outline: OutlineProvider
@@ -240,6 +377,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel
   ): Promise<void> {
+    this.openDocs.add(document.uri.toString())
     const webview = webviewPanel.webview
     webview.options = {
       enableScripts: true,
@@ -255,6 +393,24 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
 
     const postDocument = (): void => {
       void webview.postMessage({ type: 'setContent', text: document.getText() })
+    }
+
+    // Forward VS Code diagnostics (markdownlint, spell checkers…) so the webview
+    // can paint them as underlines — a custom editor never shows the native ones.
+    const postDiagnostics = (): void => {
+      const items = vscode.languages.getDiagnostics(document.uri).map((d) => {
+        const codeObj = typeof d.code === 'object' && d.code !== null ? d.code : undefined
+        return {
+          from: { line: d.range.start.line, character: d.range.start.character },
+          to: { line: d.range.end.line, character: d.range.end.character },
+          severity: d.severity,
+          message: d.message,
+          code: d.code != null ? String(codeObj ? codeObj.value : d.code) : undefined,
+          source: d.source,
+          href: codeObj?.target?.toString()
+        }
+      })
+      void webview.postMessage({ type: 'diagnostics', items })
     }
 
     const postConfig = (): void => {
@@ -299,6 +455,10 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       if (event.affectsConfiguration('mdforge', document.uri)) postConfig()
     })
 
+    const diagnosticsSubscription = vscode.languages.onDidChangeDiagnostics((event) => {
+      if (event.uris.some((u) => u.toString() === document.uri.toString())) postDiagnostics()
+    })
+
     // Auto-refresh rendered images when a co-located asset file changes on disk
     // (the link is unchanged, so the webview would otherwise show a stale cache).
     const assetWatcher = vscode.workspace.createFileSystemWatcher(
@@ -320,17 +480,23 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         type: string
         text?: string
         target?: string
+        url?: string
         id?: number
         data?: string
         mime?: string
         name?: string
         path?: string
         html?: string
+        range?: {
+          from: { line: number; character: number }
+          to: { line: number; character: number }
+        }
       }) => {
         switch (message.type) {
           case 'ready':
             postConfig()
             postDocument()
+            postDiagnostics()
             break
           case 'edit':
             if (typeof message.text === 'string' && message.text !== document.getText()) {
@@ -340,6 +506,12 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           case 'openWikilink':
             if (message.target) await this.openWikilink(document, message.target)
+            break
+          case 'openExternal':
+            if (message.url) await vscode.env.openExternal(vscode.Uri.parse(message.url))
+            break
+          case 'openTextEditor':
+            await vscode.commands.executeCommand('vscode.openWith', document.uri, 'default')
             break
           case 'insertImage':
             await this.insertImage(document, webview, message)
@@ -358,6 +530,14 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           case 'deleteNote':
             await this.deleteNote(document)
+            break
+          case 'normalizeBlankLines': {
+            const norm = normalizeBlankLines(document.getText())
+            if (norm !== document.getText()) await this.writeDocument(document, norm)
+            break
+          }
+          case 'requestQuickFix':
+            if (message.range) await this.runQuickFix(document, message.range)
             break
           case 'openSettings':
             void vscode.commands.executeCommand(
@@ -379,9 +559,11 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     )
 
     webviewPanel.onDidDispose(() => {
+      this.openDocs.delete(document.uri.toString())
       changeSubscription.dispose()
       configSubscription.dispose()
       viewStateSubscription.dispose()
+      diagnosticsSubscription.dispose()
       assetWatcher.dispose()
       this.outline.clear(document)
     })
@@ -396,6 +578,45 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     )
     edit.replace(document.uri, fullRange, text)
     await vscode.workspace.applyEdit(edit)
+  }
+
+  /**
+   * Run VS Code's code-action provider for a range (the diagnostic the user
+   * clicked) and let them pick a quick fix from a native menu — the webview has
+   * no lightbulb of its own. Applies the chosen action's edit and/or command.
+   */
+  private async runQuickFix(
+    document: vscode.TextDocument,
+    range: { from: { line: number; character: number }; to: { line: number; character: number } }
+  ): Promise<void> {
+    const target = new vscode.Range(
+      range.from.line,
+      range.from.character,
+      range.to.line,
+      range.to.character
+    )
+    const results = await vscode.commands.executeCommand<(vscode.CodeAction | vscode.Command)[]>(
+      'vscode.executeCodeActionProvider',
+      document.uri,
+      target
+    )
+    const actions = (results ?? []).filter(
+      (a): a is vscode.CodeAction => a instanceof vscode.CodeAction
+    )
+    if (!actions.length) {
+      void vscode.window.showInformationMessage('MDForge : aucune correction rapide disponible ici.')
+      return
+    }
+    const pick = await vscode.window.showQuickPick(
+      actions.map((a, index) => ({ label: a.title, index })),
+      { placeHolder: 'Corrections rapides' }
+    )
+    if (!pick) return
+    const chosen = actions[pick.index]
+    if (chosen.edit) await vscode.workspace.applyEdit(chosen.edit)
+    if (chosen.command) {
+      await vscode.commands.executeCommand(chosen.command.command, ...(chosen.command.arguments ?? []))
+    }
   }
 
   /**

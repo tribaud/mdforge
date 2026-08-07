@@ -1,0 +1,877 @@
+/*
+ * MDForge CodeMirror experiment — theme.
+ * Uses VS Code's injected --vscode-* variables so it follows the editor theme.
+ */
+:root {
+  --mdforge-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  --mdforge-mono: 'SFMono-Regular', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  --mdforge-font-size: 15px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+body {
+  display: flex;
+  flex-direction: column;
+}
+#app {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* --- Formatting toolbar (top bar + selection bubble) --- */
+.cm-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3));
+  background: var(--vscode-editor-background);
+}
+.cm-bubble {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+.cm-tb-btn {
+  position: relative;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-editor-foreground);
+  font: 15px/1 var(--mdforge-font);
+  cursor: pointer;
+}
+/* Minimalist line icons: a single currentColor stroke, sized uniformly. */
+.cm-tb-btn .cm-ic {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+/* CSS tooltip for every toolbar button (native title is unreliable in webview) */
+.cm-tb-btn[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font: 11px/1.3 var(--mdforge-font);
+  color: var(--vscode-editorHoverWidget-foreground, #fff);
+  background: var(--vscode-editorHoverWidget-background, #333);
+  border: 1px solid var(--vscode-editorHoverWidget-border, rgba(127, 127, 127, 0.4));
+  pointer-events: none;
+  z-index: 50;
+}
+/* Top bar sits at the very top → show its tooltips below the button. */
+.cm-topbar .cm-tb-btn[data-tip]:hover::after {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+.cm-tb-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+.cm-tb-danger:hover {
+  background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.2));
+  color: var(--vscode-errorForeground, #f85149);
+}
+/* Active/toggled toolbar button (e.g. source-view on). */
+.cm-tb-btn-active,
+.cm-tb-btn-active:hover {
+  background: var(--vscode-toolbar-activeBackground, var(--vscode-inputOption-activeBackground, rgba(64, 124, 200, 0.4)));
+  color: var(--vscode-inputOption-activeForeground, inherit);
+}
+/* Source view: raw Markdown in a monospace column. */
+body.mdforge-source-mode .cm-content {
+  font-family: var(--mdforge-mono);
+}
+.cm-tb-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+}
+/* Pushes the following buttons (refresh / presentation / settings) to the right. */
+.cm-tb-spacer {
+  flex: 1 1 auto;
+}
+
+/* --- Footnote popup --- */
+.cm-footnote-popup {
+  position: absolute;
+  z-index: 45;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 10px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.cm-fn-title {
+  margin-bottom: 6px;
+  font: 600 12px/1.4 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+}
+.cm-fn-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4)));
+  border-radius: 5px;
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+  font: 13px/1.5 var(--mdforge-font);
+}
+.cm-fn-input:focus {
+  outline: 1px solid var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+}
+.cm-fn-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cm-fn-label {
+  flex: 0 0 52px;
+  font: 12px/1.4 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+}
+.cm-fn-field .cm-fn-input {
+  flex: 1 1 auto;
+  width: auto;
+}
+.cm-fn-signet {
+  flex: 0 0 96px !important;
+  font-family: var(--mdforge-mono);
+}
+.cm-fn-select {
+  cursor: pointer;
+}
+.cm-fn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.cm-fn-row .cm-tb-btn {
+  width: auto;
+  padding: 3px 12px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+}
+.cm-fn-ok {
+  background: var(--vscode-button-background, var(--vscode-textLink-foreground, #0969da)) !important;
+  color: var(--vscode-button-foreground, #fff) !important;
+  border-color: transparent !important;
+}
+.cm-fn-ok:hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-textLink-foreground, #0b6fe0)) !important;
+}
+
+/* --- Table structural toolbar --- */
+.cm-table-bar {
+  position: absolute;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+/* --- Slash command menu --- */
+.cm-slash-menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.cm-slash-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.cm-slash-active {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.25)));
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+.cm-slash-label {
+  font: 13px/1.4 var(--mdforge-font);
+}
+.cm-slash-hint {
+  font: 11px/1.4 var(--mdforge-mono);
+  opacity: 0.6;
+}
+
+body {
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+/* Full-width toggle (config.pageWidth === 'full') */
+body.mdforge-width-full .cm-content {
+  max-width: none !important;
+}
+
+/* --- Fold gutter (collapse heading sections) --- */
+.cm-gutters {
+  background: transparent;
+  border: none;
+  color: var(--vscode-editorLineNumber-foreground, rgba(127, 127, 127, 0.6));
+}
+.cm-foldGutter .cm-gutterElement {
+  cursor: pointer;
+  padding: 0 4px;
+}
+.cm-foldPlaceholder {
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-descriptionForeground, inherit);
+}
+
+/* --- Search panel (Cmd/Ctrl+F) --- */
+.cm-panels {
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+}
+.cm-panels.cm-panels-top {
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+}
+.cm-panel.cm-search {
+  padding: 6px 8px;
+  font: 12px/1.5 var(--mdforge-font);
+}
+.cm-panel.cm-search label {
+  font-size: 12px;
+}
+.cm-panel.cm-search input[type='text'] {
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4)));
+  border-radius: 4px;
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+}
+.cm-panel.cm-search button {
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+  cursor: pointer;
+}
+.cm-panel.cm-search button:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+.cm-searchMatch {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+}
+.cm-searchMatch-selected {
+  background: var(--vscode-editor-findMatchBackground, rgba(234, 92, 0, 0.5));
+}
+.cm-selectionMatch {
+  background: var(--vscode-editor-selectionHighlightBackground, rgba(173, 214, 255, 0.15));
+}
+
+/* --- Linter diagnostics (markdownlint…) via @codemirror/lint --- */
+/* Recolor the wavy underlines to the VS Code diagnostic palette. */
+.cm-lintRange-warning {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorWarning-foreground, #cca700);
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
+}
+.cm-lintRange-error {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
+}
+.cm-lintRange-info {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorInfo-foreground, #3794ff);
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
+}
+.cm-lintRange-hint {
+  background: none;
+  text-decoration: underline wavy var(--vscode-editorHint-foreground, rgba(127, 127, 127, 0.7));
+  text-decoration-skip-ink: none;
+  text-underline-position: under;
+}
+
+/* Hover bubble that shows the explanation + actions. */
+.cm-tooltip.cm-tooltip-lint {
+  border: 1px solid var(--vscode-editorHoverWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 6px;
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background, #252526));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-editor-foreground));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.cm-tooltip-lint .cm-diagnostic {
+  padding: 6px 10px 6px 12px;
+  font: 12px/1.5 var(--mdforge-font);
+}
+.cm-tooltip-lint .cm-diagnostic-warning {
+  border-left: 4px solid var(--vscode-editorWarning-foreground, #cca700);
+}
+.cm-tooltip-lint .cm-diagnostic-error {
+  border-left: 4px solid var(--vscode-editorError-foreground, #f14c4c);
+}
+.cm-tooltip-lint .cm-diagnostic-info {
+  border-left: 4px solid var(--vscode-editorInfo-foreground, #3794ff);
+}
+.cm-diagnosticAction {
+  margin: 6px 8px 2px 0;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 5px;
+  background: var(--vscode-button-background, var(--vscode-textLink-foreground, #0969da));
+  color: var(--vscode-button-foreground, #fff);
+  font: 11px/1.4 var(--mdforge-font);
+  cursor: pointer;
+}
+.cm-diagnosticAction:hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-textLink-foreground, #0b6fe0));
+}
+.cm-lint-msg-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.cm-lint-msg-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* --- Live-preview inline rendering --- */
+.cm-md-strong {
+  font-weight: 700;
+}
+.cm-md-em {
+  font-style: italic;
+}
+.cm-md-strike {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+.cm-md-code {
+  font-family: var(--mdforge-mono);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.18));
+}
+.cm-md-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Headings: enlarge the whole line. */
+.cm-md-h {
+  font-weight: 700;
+  line-height: 1.3;
+}
+.cm-md-h1 {
+  font-size: 1.9em;
+}
+.cm-md-h2 {
+  font-size: 1.55em;
+}
+.cm-md-h3 {
+  font-size: 1.3em;
+}
+.cm-md-h4 {
+  font-size: 1.1em;
+}
+.cm-md-h5 {
+  font-size: 1em;
+}
+.cm-md-h6 {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+/* Thematic break (`---`) rendered as a compact horizontal rule */
+.cm-hr-widget {
+  padding: 8px 0;
+}
+.cm-hr-widget hr {
+  margin: 0;
+  border: none;
+  border-top: 2px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.5));
+}
+.cm-line.cm-md-hr-editing {
+  color: var(--vscode-descriptionForeground, inherit);
+}
+
+/* Compact blank source lines (kept in the file for markdownlint, shown tight).
+   Full height returns when the caret is on the line (decoration removed). */
+.cm-line.cm-md-blank {
+  line-height: 0.55em;
+  min-height: 0;
+}
+
+.cm-task-checkbox {
+  width: 1em;
+  height: 1em;
+  margin: 0 0.35em 0 0;
+  vertical-align: -0.1em;
+  cursor: pointer;
+  accent-color: var(--vscode-textLink-foreground);
+}
+/* In-progress `[~]`: a half-filled look via the indeterminate state. */
+.cm-task-checkbox.cm-task-inprogress {
+  accent-color: var(--vscode-charts-yellow, #d4a72c);
+}
+
+/* Block widgets must use PADDING, not MARGIN, for vertical spacing: CodeMirror
+   measures the widget's border-box height for its layout model, and external
+   margins fall outside it — uncounted margins drift the vertical coordinate
+   mapping so clicks/arrows land on the wrong line. */
+.cm-image-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.cm-inline-image {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 0;
+  border-radius: 4px;
+}
+
+/* Fenced code blocks (non-mermaid) */
+.cm-line.cm-md-codeblock {
+  position: relative; /* anchor for the floated language picker */
+  font-family: var(--mdforge-mono);
+  font-size: 0.9em;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+}
+
+/* Language picker floated at a code block's top-right */
+.cm-code-lang {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  z-index: 3;
+  width: 8.5em;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, inherit);
+  font: 11px/1.4 var(--mdforge-font);
+  text-align: right;
+  opacity: 0.5;
+  cursor: text;
+}
+.cm-line.cm-md-codeblock:hover .cm-code-lang,
+.cm-code-lang:focus {
+  opacity: 1;
+  text-align: left;
+  border-color: var(--vscode-input-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4)));
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+}
+.cm-code-lang:focus {
+  outline: none;
+}
+
+/* Edit affordance on rendered blocks (mermaid / table / block math) */
+.cm-block-edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 5px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  font: 11px/1.4 var(--mdforge-font);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cm-mermaid:hover .cm-block-edit,
+.cm-md-table-wrap:hover .cm-block-edit,
+.cm-math-block:hover .cm-block-edit,
+.cm-frontmatter-card:hover .cm-block-edit,
+.cm-image-wrap:hover .cm-block-edit {
+  opacity: 1;
+}
+.cm-block-edit:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+
+/* "✓ Terminer" — exit-edit button on a block's preview panel (always visible) */
+.cm-block-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 5px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-charts-green, #3fb950);
+  font: 600 11px/1.4 var(--mdforge-font);
+  cursor: pointer;
+}
+.cm-block-close:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+
+/* Live preview shown under the source while a block is being edited */
+.cm-block-preview {
+  position: relative;
+  margin: 0;
+  padding: 12px 10px 10px;
+  border: 1px dashed var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.5));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-textLink-foreground, #58a6ff) 5%, transparent);
+}
+.cm-block-preview::before {
+  content: 'Aperçu';
+  position: absolute;
+  top: -8px;
+  left: 8px;
+  padding: 0 6px;
+  font: 10px/1 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+  background: var(--vscode-editor-background);
+}
+
+/* Mermaid diagram widget */
+.cm-mermaid {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 12px 8px;
+}
+.cm-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.cm-mermaid-error {
+  display: block;
+  font-family: var(--mdforge-mono);
+  font-size: 0.85em;
+  color: var(--vscode-errorForeground, #f14c4c);
+  white-space: pre-wrap;
+}
+
+/* Blockquotes */
+.cm-line.cm-md-quote {
+  border-left: 3px solid var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.6));
+  padding-left: 14px;
+  color: var(--vscode-descriptionForeground, inherit);
+}
+
+/* GitHub alerts (blockquote starting with [!TYPE]) — boxed callout.
+   `!important` so the tint wins over CodeMirror's active-line highlight. */
+.cm-line.cm-alert {
+  border-left: 4px solid var(--alert-color, #58a6ff);
+  padding: 2px 14px;
+  background: var(--alert-bg, rgba(88, 166, 255, 0.14)) !important;
+}
+.cm-line.cm-alert-first {
+  padding-top: 8px;
+  border-top-right-radius: 6px;
+}
+.cm-line.cm-alert-last {
+  padding-bottom: 8px;
+  border-bottom-right-radius: 6px;
+}
+.cm-alert-note {
+  --alert-color: #4493f8;
+  --alert-bg: rgba(56, 139, 253, 0.15);
+}
+.cm-alert-tip {
+  --alert-color: #3fb950;
+  --alert-bg: rgba(63, 185, 80, 0.15);
+}
+.cm-alert-important {
+  --alert-color: #ab7df8;
+  --alert-bg: rgba(163, 113, 247, 0.15);
+}
+.cm-alert-warning {
+  --alert-color: #d29922;
+  --alert-bg: rgba(210, 153, 34, 0.15);
+}
+.cm-alert-caution {
+  --alert-color: #f85149;
+  --alert-bg: rgba(248, 81, 73, 0.15);
+}
+/* Alert type dropdown (Milkdown-style) shown on a blockquote's first line. */
+.cm-alert-select {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 1px 18px 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: 700 0.9em/1.4 var(--mdforge-font);
+  color: var(--alert-color, var(--vscode-descriptionForeground, inherit));
+  background: transparent;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 8px center,
+    right 4px center;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.cm-alert-select:hover {
+  border-color: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+}
+.cm-alert-select option {
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+.cm-alert-select-none {
+  --alert-color: var(--vscode-descriptionForeground, #888);
+  font-weight: 400;
+  opacity: 0.55;
+}
+.cm-alert-select:hover.cm-alert-select-none {
+  opacity: 1;
+}
+.cm-alert-select-note {
+  --alert-color: #4493f8;
+}
+.cm-alert-select-tip {
+  --alert-color: #3fb950;
+}
+.cm-alert-select-important {
+  --alert-color: #ab7df8;
+}
+.cm-alert-select-warning {
+  --alert-color: #d29922;
+}
+.cm-alert-select-caution {
+  --alert-color: #f85149;
+}
+
+/* Wikilinks [[target]] */
+.cm-md-wikilink {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  cursor: pointer;
+}
+.cm-md-wikilink-raw {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* YAML frontmatter — raw (while editing) */
+.cm-line.cm-md-frontmatter {
+  font-family: var(--mdforge-mono);
+  font-size: 0.88em;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+  border-left: 3px solid var(--vscode-charts-purple, #a371f7);
+  color: var(--vscode-descriptionForeground, inherit);
+}
+/* YAML frontmatter — collapsed card (title → H1, keys → chips) */
+.cm-frontmatter-card {
+  position: relative;
+  padding: 6px 8px 10px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.25));
+}
+.cm-fm-title {
+  font-weight: 700;
+  font-size: 1.9em;
+  line-height: 1.3;
+}
+.cm-fm-props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cm-fm-gear {
+  opacity: 0.6;
+  font-size: 0.9em;
+}
+.cm-fm-chip {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font: 11px/1.5 var(--mdforge-mono);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.16));
+  color: var(--vscode-descriptionForeground, inherit);
+}
+.cm-fm-empty {
+  font: 11px/1.5 var(--mdforge-font);
+  color: var(--vscode-descriptionForeground, inherit);
+  opacity: 0.7;
+}
+
+/* Standalone "✓ Terminer" bar (raw frontmatter editor) */
+.cm-block-close-bar {
+  position: relative;
+  height: 30px;
+}
+
+/* Footnotes */
+.cm-md-footnote-ref {
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  font-size: 0.85em;
+  vertical-align: super;
+}
+.cm-md-footnote-def {
+  color: var(--vscode-descriptionForeground, inherit);
+  font-size: 0.9em;
+}
+
+/* KaTeX math */
+.cm-math-block {
+  position: relative;
+  display: block;
+  margin: 0;
+  padding: 10px 0;
+  text-align: center;
+}
+.cm-math-inline {
+  padding: 0 0.15em;
+}
+.cm-math-error {
+  font-family: var(--mdforge-mono);
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+
+/* Presentation mode: hide editing chrome, read-only feel */
+body.mdforge-presentation .cm-topbar {
+  display: none;
+}
+body.mdforge-presentation .cm-cursor {
+  display: none !important;
+}
+/* Floating "exit presentation" button (only way out once the toolbar is hidden) */
+.cm-present-exit {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 100;
+  display: none;
+  padding: 5px 12px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  font: 12px/1.4 var(--mdforge-font);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  opacity: 0.85;
+}
+.cm-present-exit:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+body.mdforge-presentation .cm-present-exit {
+  display: block;
+}
+
+/* Draggable block handle (⠿) + drop indicator */
+.cm-block-handle {
+  position: absolute;
+  z-index: 20;
+  width: 18px;
+  height: 1.7em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 13px;
+  opacity: 0.55;
+  cursor: grab;
+  user-select: none;
+}
+.cm-block-handle:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+.cm-block-handle:active {
+  cursor: grabbing;
+}
+.cm-block-drop-indicator {
+  position: absolute;
+  left: 44px;
+  right: 44px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--vscode-textLink-foreground, #58a6ff);
+  z-index: 19;
+  pointer-events: none;
+}
+body.mdforge-presentation .cm-block-handle {
+  display: none !important;
+}
+
+/* Rendered GFM table */
+.cm-md-table-wrap {
+  position: relative;
+  overflow-x: auto;
+  margin: 0;
+  padding: 8px 0;
+}
+.cm-md-table {
+  border-collapse: collapse;
+}
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  padding: 5px 12px;
+}
+.cm-md-table th {
+  font-weight: 700;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+}

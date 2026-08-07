@@ -1,188 +1,199 @@
 # MDForge — project guide for Claude
 
-MDForge is a VS Code extension that turns the editor into a **Typora-like
-WYSIWYG Markdown editor** with **GitHub-style rendering**. It is built on
-**Milkdown** (ProseMirror + remark) and is **MIT-licensed** — no paid tiers,
-no telemetry. The Markdown file always stays the source of truth.
+MDForge is a VS Code extension that turns the editor into a **Typora/Obsidian-like
+live-preview Markdown editor** with **GitHub-style rendering**. It is built on
+**CodeMirror 6** and is **MIT-licensed** — no paid tiers, no telemetry.
+
+The defining choice: **the CodeMirror document IS the Markdown text.** There is no
+semantic model and no re-serialization, so an edit only changes the characters
+typed — a one-character change is a one-character diff, identifiers stay
+grep-able, and git history stays clean. "Rendering" is done with **decorations**:
+syntax markers are hidden and content styled, and the raw syntax is revealed
+whenever the selection enters a node (Obsidian "live preview").
+
+> History: MDForge 0.2.x shipped a Milkdown/ProseMirror engine. It was replaced
+> by this CodeMirror engine (0.3.0) for perfect source fidelity; the Milkdown
+> code and its deps were removed. If you need the old engine, see the `v0.2.x`
+> tags. Repo memory: `mdforge-pending`, `mdforge-release-state`.
 
 This file is the shared memory of the project: architecture, how each feature
-works, the Milkdown gotchas we learned the hard way, and the working
-conventions. Read it fully before making changes.
+works, the CodeMirror gotchas we learned the hard way, and the conventions. Read
+it fully before making changes.
 
 ---
 
 ## 1. Tech stack
 
-- **Extension host** (Node/VS Code API): `src/extension.ts`.
-- **Webview app** (browser): `media-src/src/*.ts`, bundled by esbuild to
-  `media/dist/`.
-- **Editor engine**: Milkdown 7 (`@milkdown/core`, `preset-commonmark`,
-  `preset-gfm`) = ProseMirror + remark. Milkdown is **headless**: it gives the
-  schema/parsing but almost no UI — we build the UI (toolbar, menus, node
-  views, decorations).
-- **Plugins used**: `plugin-listener` (markdown out), `plugin-history`,
-  `plugin-clipboard`, `plugin-math` (KaTeX), `plugin-diagram` (Mermaid),
-  `plugin-slash` (slash menu), `plugin-tooltip` (selection toolbar),
-  `plugin-block` (drag handle).
-- **Rendering libs**: `shiki` (code highlighting, GitHub themes, JS engine),
-  `prosemirror-highlight` (decoration bridge for shiki), `mermaid`, `katex`,
-  `remark-frontmatter`.
+- **Extension host** (Node/VS Code API): `src/extension.ts`. Engine-agnostic:
+  custom text editor, webview wiring, file↔webview sync, CSP, outline tree,
+  presentation, wikilink open, asset ops, diagnostics forwarding, blank-line
+  normalization.
+- **Webview app** (browser): `media-src/src/main.ts` + `cm-*.ts`, bundled by
+  esbuild to `media/dist/main.js`.
+- **Editor engine**: CodeMirror 6 (`@codemirror/{view,state,commands,language,
+  search,lint}`, `@codemirror/lang-markdown`, `@codemirror/language-data`,
+  `@lezer/markdown` with the GFM extension). Headless-ish: CM gives the text
+  editor + Lezer Markdown parse tree; we build all the WYSIWYG rendering as
+  decorations and all the UI (toolbar, menus, popups, node widgets).
+- **Rendering libs**: `mermaid` (diagrams, lazy import), `katex` (math, lazy),
+  `@lezer/highlight` + `defaultHighlightStyle` (code highlighting inside fenced
+  blocks, via `codeLanguages`).
+- **Paste**: `turndown` + `turndown-plugin-gfm` (HTML→Markdown), `mathml-to-latex`
+  (web MathJax → `$…$`).
 
 ## 2. Repository layout
 
 | Path | Role |
 | --- | --- |
-| `src/extension.ts` | Custom text editor, webview wiring, file↔webview sync, CSP, **outline** tree, **presentation** command + status bar, **wikilink** open resolver. |
-| `media-src/src/main.ts` | Webview entry: assembles the Milkdown editor, message handling, error surfacing. |
-| `media-src/src/inprogress-task.ts` | Task checkboxes with the custom `[~]` in-progress state. |
-| `media-src/src/views.ts` | Node views: Mermaid diagram, code-block language field, block/inline math (click-to-edit). |
-| `media-src/src/mermaid-highlight.ts` | Heuristic Mermaid tokenizer for the diagram source editor. |
-| `media-src/src/shiki-highlight.ts` | Shiki code highlighting (non-blocking). |
-| `media-src/src/slash.ts` | `/` slash command menu. |
-| `media-src/src/toolbar.ts` | Selection toolbar (bubble menu), shortcuts in tooltips. |
-| `media-src/src/table-toolbar.ts` | Floating table toolbar (add/delete row & column, column align, delete table) shown when the caret is in a table. |
-| `media-src/src/github-alerts.ts` | GitHub alerts + per-blockquote type dropdown. |
-| `media-src/src/footnotes.ts` | Footnote reference → definition jump. |
-| `media-src/src/frontmatter.ts` | YAML frontmatter node + discreet editor + `title`→H1. |
-| `media-src/src/block.ts` | Draggable block handle. |
-| `media-src/src/wikilinks.ts` | `[[wikilink]]` decoration + click-to-open. |
-| `media-src/src/github-theme.css` | All styling, VS Code light/dark aware. |
+| `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
+| `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
+| `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines). |
+| `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble; `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
+| `media-src/src/cm-slash.ts` | `/` slash command menu (`createSlashMenu(view).update`). |
+| `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
+| `media-src/src/cm-block-drag.ts` | Draggable `⠿` block handle (reorders top-level blocks / heading sections). |
+| `media-src/src/cm-paste-html.ts` | Paste HTML→Markdown (turndown+GFM, escaping OFF, MathML→LaTeX, footnote rewrite + per-section renumber). |
+| `media-src/src/cm-theme.css` | All styling, VS Code light/dark aware. |
+| `media-src/src/turndown-plugin-gfm.d.ts` | Type shim for `turndown-plugin-gfm`. |
 | `esbuild.mjs` | Bundles the webview (ESM + code splitting) to `media/dist/`. |
-| `SPEC.md` | Feature roadmap and status (P0/P1/P2). |
+| `scripts/cm-preview.mjs` | Headless preview harness (`npm run preview`). |
+| `SPEC.md` | Feature roadmap. |
 
 ## 3. How it fits together
 
 - The extension registers a `CustomTextEditorProvider` for `*.md`/`*.markdown`
-  at `priority: "option"` (**opt-in**, not the default editor). For each
-  document it creates a webview whose HTML loads `media/dist/main.js` under a
-  strict CSP (nonce + `webview.cspSource`, plus `wasm-unsafe-eval`,
-  `worker-src blob:`, `connect-src` for Mermaid/Shiki).
+  at `priority: "option"` (**opt-in**, not the default editor). For each document
+  it creates a webview whose HTML loads `media/dist/main.js` under a strict CSP
+  (nonce + `webview.cspSource`, plus `wasm-unsafe-eval`, `worker-src blob:`,
+  `connect-src` for Mermaid/KaTeX).
 - **Why opt-in, not default (the diff constraint).** A custom editor (webview)
-  *cannot* render inside VS Code's diff editor: each side is handed to a
-  separate webview that only receives its own version — never the counterpart or
-  VS Code's computed diff — so red/green is impossible. Making MDForge the
-  default (via `priority: "default"` or `editorAssociations`) therefore breaks
-  **every** git comparison (commits, files, "Compare Selected", Source Control).
-  Keeping the native text editor as the default preserves all of those. Users
-  switch to MDForge per file via the **`editor/title` buttons** (book icon →
-  `mdforge.openEditor`; code icon → `mdforge.openWithTextEditor` while in
-  MDForge, gated on `activeCustomEditorId`) or `Ctrl/Cmd+Shift+Alt+M`. This is
-  the same reason VS Code's own Markdown preview is a side panel, not an
-  in-place editor swap.
-- **Sync**: host → webview posts `setContent` on external changes; webview →
-  host posts `edit` with the new Markdown (whole-document replace via
-  `WorkspaceEdit`). A `syncedText` guard avoids echo loops.
-- **Serialization fidelity** (`main.ts`): every edit rewrites the *whole* file
-  (ProseMirror has no source offsets, so targeted per-node rewrites aren't
-  possible). To keep a small edit → small diff, we tune `remarkStringifyOptionsCtx`
-  (`bullet: '-'`, `rule: '-'`, `ruleRepetition: 3`, `ruleSpaces: false`,
-  `emphasis/strong: '*'`, `listItemIndent: 'one'`) and post-process with
-  `normalizeMarkdown()` to strip escapes `mdast-util-to-markdown` adds but GFM
-  doesn't need (intra-word `_`, lone `\~`, the `\[~]` marker). Byte-perfect
-  round-trip is impossible (ProseMirror drops `_`vs`*`, tight/loose, mark
-  nesting) — we only get *close*. Known-open: nested marks reorder/split
-  (ProseMirror→mdast), tight→loose lists (Milkdown parser `spread`).
-- **External changes recreate the editor** (`setContent` destroys + rebuilds
-  the Milkdown editor). Milkdown has no cheap "set whole value"; external edits
-  are rare so a cursor reset is acceptable.
-- Messages: `ready`, `setContent`, `config`, `edit`, `error`, `revealHeading`,
-  `togglePresentation`, `openWikilink`.
+  *cannot* render inside VS Code's diff editor: each side is handed to a separate
+  webview that only receives its own version — never the counterpart or VS Code's
+  computed diff — so red/green is impossible. Making MDForge the default therefore
+  breaks **every** git comparison. Keeping the native text editor as the default
+  preserves all of those. Users switch per file via the **`editor/title` buttons**
+  (book icon → `mdforge.openEditor`; code icon → `mdforge.openWithTextEditor`) or
+  `Ctrl/Cmd+Shift+Alt+M`. (Same reason VS Code's own Markdown preview is a side
+  panel.)
+- **Sync**: host → webview posts `setContent` on external changes; webview → host
+  posts `edit` with the new Markdown (whole-document replace via `WorkspaceEdit`).
+  A `syncedText`/`applyingRemote` guard avoids echo loops. Because the CM document
+  is the text, `edit` carries exactly what the user typed — **no re-serialization,
+  perfect diffs.** On the first `setContent` the caret is placed past any
+  frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
+- **Messages** host→webview: `setContent`, `config`, `revealHeading`,
+  `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`.
+  webview→host: `ready`, `edit`, `openWikilink`, `openExternal`, `insertImage`,
+  `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
+  `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `debugPasteHtml`,
+  `error`.
 
 ## 4. How each feature works (and why)
 
-- **Task `[~]` state** (`inprogress-task.ts`): extends the GFM task list item
-  schema with an `inProgress` attr. remark-gfm only knows `[ ]`/`[x]`, so `[~]`
-  is left as text — we detect a leading `[~] ` marker on parse (strip it, set
-  the attr) and re-inject it on serialize. A clickable checkbox cycles
-  unchecked → in-progress → checked (in-progress gated by the
-  `mdforge.checkbox.enableInProgress` setting).
-- **Mermaid & math** (`views.ts`): the diagram/math plugins are headless — they
-  define the node but render only the source. We add `$view` node views that
-  render the SVG/KaTeX and offer click-to-edit. Mermaid is `mermaid.initialize`d
-  once with the current VS Code theme. The Mermaid source editor is a
-  highlighted overlay (see `mermaid-highlight.ts`): a transparent `<textarea>`
-  over a synced highlighted `<pre>`.
-- **Code highlighting** (`shiki-highlight.ts`): Shiki + `github-light`/
-  `github-dark`, via `prosemirror-highlight` (decoration-based, so it coexists
-  with the code-block language field). Loading is **non-blocking**: the plugin
-  is added synchronously and the parser returns a promise while grammars load,
-  so the editor paints immediately.
-- **Slash menu** (`slash.ts`) & **toolbar** (`toolbar.ts`): built on
-  `plugin-slash` / `plugin-tooltip` providers (floating-ui). We build the menu
-  DOM, filtering, keyboard nav, and run Milkdown commands. Mark/block toggles
-  use the commands' runtime `.run()`; quote and bullet-list buttons **toggle**
-  (they `lift` out when already applied). Keyboard shortcuts are Milkdown's
-  built-in keymaps — shown in the toolbar tooltips.
-- **GitHub alerts** (`github-alerts.ts`): decoration-based (no doc change →
-  round-trips). Every blockquote gets a type dropdown (empty by default);
-  picking a type inserts/replaces `[!TYPE]`, empty removes it. When set, the
-  `[!TYPE]` marker text is hidden (an inline decoration) since the dropdown
-  shows the type.
-- **Footnotes** (`footnotes.ts`): GFM already renders them; we add
-  click-reference-→-definition scrolling and styling.
-- **Frontmatter** (`frontmatter.ts`): registers `remark-frontmatter` (with the
-  `['yaml']` preset) + a node rendered as a discreet bar that expands to a YAML
-  editor; the `title:` field is shown as an H1.
-- **Outline** (`src/extension.ts`): parses ATX headings (ignoring fenced code),
-  builds a **collapsible tree** by level; clicking posts `revealHeading` to
-  scroll the webview. Shown in the Explorer when `mdforge.active`.
-- **Presentation mode**: `mdforge.togglePresentation` (command + status bar +
-  `Ctrl/Cmd+Shift+Alt+P`) posts to the webview, which flips a body class and
-  the `editable` prop (read-only + hides editing chrome).
-- **Wikilinks** (`wikilinks.ts`): decoration over `[[target]]`/`[[target|alias]]`;
-  click posts `openWikilink`; the host resolves it relative to the file (adds
-  `.md`/`.markdown`) and opens it.
-- **Draggable blocks** (`block.ts`): `plugin-block` drag handle.
-- **Tables** (`table-toolbar.ts`): GFM ships the schema + every command but no
-  UI, so a table was a trap (type in cells, but no way to add/drop rows or
-  delete it). A floating toolbar (same `TooltipProvider` pattern as the bubble)
-  appears when the caret is in a table — structural ops use the
-  `@milkdown/prose/tables` (prosemirror-tables) commands directly (they act on
-  the current selection, no index). It shows on a collapsed caret or a
-  `CellSelection`; a text selection in a cell is left to the format bubble so
-  the two never fight for the same spot. Buttons carry a `data-tip` CSS tooltip
-  (native `title` is slow/suppressed in the webview). The table can be inserted
-  from the **top toolbar** (grid icon → `insertTableCommand`) or the slash menu.
-  - **Alignment gotcha**: GFM's table content model is
-    `table_header_row table_row+`; a plugin **force-syncs every body cell's
-    `alignment` to its header cell** on each change. So `setAlignCommand`
-    (= `setCellAttr` on the caret's body cell) is instantly reverted and looks
-    like it does nothing. We instead write the whole column (header included)
-    via `selectedRect` + `setNodeMarkup`. Same reason "delete row" is a no-op in
-    the header row — the header is mandatory, it only deletes body rows.
-- **Delete note** (`src/extension.ts` `deleteNote`): top-toolbar trash button →
-  modal confirmation listing the assets that will be trashed vs. kept (assets
-  also referenced by another note are kept). Everything goes to the OS trash
-  (recoverable), not a hard delete. Shares the asset-scan logic with `moveNote`.
+Everything below is a **decoration** or a plain **text edit** on the CM document,
+so it round-trips for free unless noted.
 
-## 5. Milkdown gotchas we learned (read before debugging)
+- **Live-preview decorations** (`cm-livepreview.ts` `livePreview` StateField):
+  `buildDecorations(state)` walks the Lezer tree + a regex post-pass and emits
+  line/mark/replace/widget decorations. Rebuilt on every doc **and selection**
+  change (so `editing()` — "does a selection touch this range?" — can reveal raw
+  syntax under the caret). MUST be a `StateField` (not a ViewPlugin) to provide
+  **block** decorations. Wrapped in a `Compartment` (`preview`) so the source-view
+  toggle can switch it off.
+- **Headings / inline marks**: line class enlarges the heading; the `###`, `**`,
+  `` ` `` and `~~` markers are hidden with `Decoration.replace` unless the caret is
+  on them.
+- **Task `[~]` state**: bullet AND ordered list items with `[ ]`/`[x]`/`[~]` get a
+  three-state checkbox widget. Click cycles empty → in-progress → done; the
+  in-progress `~` step is skipped when `mdforge.checkbox.enableInProgress` is off
+  (`nextTaskState`). `[~]` is an MDForge convention (GFM only has `[ ]`/`[x]`).
+- **Mermaid & math** (`MermaidWidget`/`MathWidget`): rendered SVG/KaTeX as a block
+  widget; `✎ Éditer` drops the caret into the source (which, via reveal-on-edit,
+  shows the raw source with a live "Aperçu" preview + `✓ Terminer` to leave).
+  Mermaid parse-error orphan nodes are swept from `document.body` after each
+  render (`sweepMermaidOrphans`).
+- **Code blocks**: fenced code is shown as styled source (highlighted via
+  `codeLanguages`); a **language picker** (`LangWidget`, `<input list=datalist>`
+  of `@codemirror/language-data` names + free text) floats top-right and rewrites
+  the info string on change.
+- **Tables** (`TableWidget` + `cm-table.ts`): rendered HTML table; cells render
+  inline Markdown (`renderInline`). Caret inside → raw source + preview + a
+  floating structural toolbar (add/del row & col, align, delete) that rewrites the
+  table text.
+- **GitHub alerts**: a per-blockquote type dropdown (`AlertSelectWidget`, "—
+  Citation" = none) always shown on the first line; the `[!TYPE]` marker is hidden
+  and the block styled as a callout.
+- **Wikilinks / footnotes**: `[[target]]` decorated + click→host; `[^id]` refs and
+  `[^id]:` defs styled, click jumps ref↔def. The toolbar `†` inserts a footnote via
+  a popup: pick the target **section** (existing note-def sections + Notes/
+  Bibliographie), edit the auto-computed **bookmark** (`B1` for Bibliographie,
+  `1/2/3` for Notes), then it inserts `[^id]` at the caret and the def at the end
+  of that section.
+- **Frontmatter**: a leading `---` block renders as a discreet **card** (title →
+  H1, other keys → chips); `✎` reveals the raw YAML. Exempt from inline parsing.
+- **HR / blank lines**: `---` → a compact rule widget. Blank source lines are
+  shrunk to a **stable** small height (`cm-md-blank`) — never revealed on caret
+  (see gotchas).
+- **Draggable blocks** (`cm-block-drag.ts`): `⠿` on hover moves the top-level block
+  (a heading drags its whole section) via a whole-line, whole-doc text edit.
+- **Source view**: toolbar toggle reconfigures the `preview` compartment to `[]`,
+  showing raw Markdown (syntax highlighting only) in a monospace column.
+- **Search & folding**: `@codemirror/search` (`Cmd+F`, toolbar 🔍 toggles the
+  panel) + `foldGutter`/`codeFolding` with a `foldService` that folds heading
+  sections.
+- **Linter diagnostics** (`@codemirror/lint`): the host forwards
+  `vscode.languages.getDiagnostics(uri)` (markdownlint, spell checkers…) on
+  `onDidChangeDiagnostics`; `main.ts` builds `Diagnostic[]` (wavy underline,
+  hover bubble with message + rule-doc link + a **"Corrections rapides…"** action).
+  The action posts `requestQuickFix` → host `runQuickFix` runs
+  `executeCodeActionProvider` + a `showQuickPick` + applies the chosen edit/command
+  (no webview lightbulb).
+- **Blank-line normalization** (`normalizeBlankLines` in `extension.ts`,
+  host-side, pure): MD012 collapse dupes / MD022 around headings / MD031 around
+  fences / MD047 final newline; skips fence + frontmatter content. Runs **on
+  demand** (command `mdforge.normalizeBlankLines` + toolbar `¶`) or **opt-in on
+  save** (`mdforge.format.blankLines: onSave` via `onWillSaveTextDocument`, gated
+  on `provider.isOpen`). **Never per-keystroke** — that would resurrect the diff
+  noise the CM engine exists to avoid.
+- **Paste** (`cm-paste-html.ts`): rich HTML → Markdown via turndown+GFM with
+  escaping disabled; web math via `data-mathml` → `mathml-to-latex`; footnotes →
+  `[^n]` with per-section renumber; optional `> source` footer (`appendSource`).
+  Image on the clipboard / drop / the 🖼 picker → host saves it next to the note.
+- **Outline / presentation / wikilink open / asset ops / diff buttons**: host-side
+  in `extension.ts` (engine-agnostic, unchanged from 0.2.x).
 
-- **Custom node commands**: `$command` exports (e.g. `wrapInHeadingCommand`)
-  expose a runtime `.run(payload)` once the editor is loaded — call that from UI
-  code. There is no stable `.key` at import time.
-- **Node view content hole**: the ProseMirror content hole (`0`) must be the
-  ONLY child of its parent DOM node. Wrap extra chrome (checkbox, toolbar) as
-  siblings of a content wrapper, not siblings of the hole. (Symptom: `Content
-  hole must be the only child of its parent node` → blank editor.)
-- **`$remark` options**: Milkdown defaults a remark plugin's options to `{}`.
-  Pass real options as `$remark(id, () => plugin, options)` — e.g.
-  remark-frontmatter needs `['yaml']`, else it throws
-  `Missing \`type\` in matter \`{}\``.
-- **Headless = no UI**: `plugin-diagram`, `plugin-math`, `plugin-slash`,
-  `plugin-tooltip`, `plugin-block` render nothing on their own; you must supply
-  node views / providers.
-- **Providers** (`SlashProvider`, `TooltipProvider`, `BlockProvider`): they
-  append their `content` element themselves and toggle `data-show="true|false"`
-  — style visibility off that attribute; don't append the element yourself.
-- **Async highlighting**: `prosemirror-highlight` parsers may return a
-  `Promise<void>` to signal "not ready yet"; the plugin re-highlights when it
-  resolves — use this instead of blocking editor creation.
-- **Decoration-based features round-trip for free**: alerts, wikilinks, code
-  highlighting change no document nodes, so the Markdown is untouched. Prefer
-  decorations when you only need to change appearance/behavior.
-- **Editor is recreated on external `setContent`** — anything stateful in the
-  webview (e.g. `presentation`) must live in module scope and be re-applied in
-  `createEditor`.
+## 5. CodeMirror gotchas we learned (read before debugging)
+
+- **Block decorations MUST come from a `StateField`, not a `ViewPlugin`** — a
+  ViewPlugin providing block decorations blanks the editor.
+- **Block-widget & line MARGINS drift the caret.** CM measures the border-box
+  height of `.cm-line`/widgets for its vertical layout model; CSS `margin` falls
+  *outside* the border-box and is **not counted**, so clicks/arrows land on the
+  wrong line for everything below. **Use `padding`, never `margin`,** for spacing
+  on block widgets and line decorations. Symptom: "curseur saute de 3-4
+  paragraphes, inutilisable à la souris".
+- **Compact blank lines must have a STABLE height.** An earlier version revealed
+  blank lines to full height under the caret — that changed line heights as the
+  caret moved, reflowing everything below and making arrow-nav jump. Keep them a
+  fixed small height (no reveal).
+- **Re-measure after async widget content.** Mermaid SVG / KaTeX / `img.onload`
+  change a widget's height after CM measured layout → call `view.requestMeasure()`
+  and give widgets an `estimatedHeight`.
+- **Body-DOM menus: prefer explicit `create*(view).update` over a ViewPlugin.**
+  The slash menu as a ViewPlugin did NOT instantiate; it's built as
+  `createSlashMenu(view).update` called from the update listener (like the bubble
+  and table toolbar). The block-drag handle *is* a ViewPlugin, but it owns its own
+  DOM listeners on `view.dom` — that pattern is fine.
+- **Drag handle listeners go on `view.dom`, not `view.scrollDOM`.** The handle
+  sits in the left margin (outside the scroller); a `mouseleave` on the scroller
+  hid it the instant the pointer crossed the margin to grab it. Use `view.dom` +
+  a `relatedTarget` check.
+- **Open links on `mousedown` (capture), not click.** Ctrl/⌘-click first places
+  the caret, which reveals the raw `[text](url)` and drops the `data-href` before
+  a click lands — so intercept on mousedown.
+- **`setDiagnostics` from `@codemirror/lint` auto-enables the lint extension**; we
+  also add `lintGutter()`. Don't set the `Diagnostic.source` field if you already
+  render the source in `renderMessage` (it double-prints).
 
 ## 6. Build, run, verify
 
@@ -192,64 +203,75 @@ npm run build                 # tsc (extension) + esbuild (webview) → media/di
 npx tsc -p media-src --noEmit # webview type-check (also in CI)
 ```
 
-- Press **F5** (the launch config runs `install` then `build`) to open an
-  Extension Development Host, then right-click a `.md` → **Open with MDForge**
-  (or `Ctrl/Cmd+Shift+Alt+M`).
-- `examples/demo.md` exercises every feature.
-- Webview init errors are surfaced on-screen (and logged to the host as
-  `[MDForge webview]`) — turn a blank page into a readable stack.
-- Run `npm install` after any pull that changes `package.json`.
+- Press **F5** to open an Extension Development Host, then right-click a `.md` →
+  **Open with MDForge** (or `Ctrl/Cmd+Shift+Alt+M`).
+- The headless harness ships a built-in sample; feed your own document with
+  `node scripts/cm-preview.mjs <file.md>` to exercise a specific case.
+- **Headless preview** (stand-in for F5 when there's no GUI): `npm run preview`
+  or ad-hoc Playwright probes — run them **from the repo directory** (playwright-
+  core resolves from the repo `node_modules`), with a mocked `acquireVsCodeApi`;
+  `THEME=dark` supported. Webview init errors are surfaced on-screen and logged to
+  the host as `[MDForge webview]`.
 
 ## 7. Testing note
 
-Visual/interactive behavior (WYSIWYG, drag, click handlers) must be verified in
-a running Extension Development Host — a green build only proves it compiles and
-bundles. When working from an environment without a GUI, drive validation via
-F5 locally (or a local Claude Code instance) and report screenshots / the
-on-screen error text.
+Visual/interactive behavior (live preview, drag, click handlers, hover bubbles)
+must be verified in a running Extension Development Host or the headless harness —
+a green build only proves it compiles and bundles.
 
 ## 8. Branch & release workflow (required)
 
-`main` is **protected**: no direct pushes (even for admins), force-push and
-deletion disabled. Every change lands through a **pull request** (0 approvals
-required — you merge your own — but the CI check must pass). Tags are **not**
-protected, so releases still push tags directly.
+`main` is **protected**: no direct pushes, force-push and deletion disabled. Every
+change lands through a **pull request** (0 approvals required — you merge your own
+— but the CI check must pass). Tags are **not** protected, so releases push tags
+directly.
 
-**Feature flow**
+### Feature flow
 
 1. Branch off `main`: `git checkout -b feat/xyz`.
 2. Commit, then `git push -u origin feat/xyz`.
 3. Open a PR: `gh pr create --fill --base main`.
-4. **Code review** the diff (`/code-review`) and address findings; verify via F5.
+4. **Code review** the diff and address findings; verify via F5.
 5. The **CI check** (`.github/workflows/ci.yml`: build + webview type-check) must
    be green.
-6. Merge: `gh pr merge --merge --delete-branch` (a real merge commit; never
-   squash-to-linear if you want the bubble). Rebase onto `origin/main` first if
-   `main` moved, so the branch hangs off as one clean bubble.
+6. Merge: `gh pr merge --merge --delete-branch` (a real merge commit).
 
-**Release flow** (publishes to the VS Code Marketplace + Open VSX)
+### Release flow (publishes to the VS Code Marketplace + Open VSX)
 
 1. Make sure `main` has the code to release.
-2. Tag = the version: `git tag -a v0.2.0 -m "MDForge 0.2.0" && git push origin v0.2.0`.
-3. `.github/workflows/publish.yml` derives the version from the tag, packages,
-   and publishes. Each version must be unique per registry. Secrets: `VSCE_PAT`
-   (Azure PAT, Marketplace › Manage) and `OVSX_PAT` (Open VSX; step is skipped
-   when unset). See §10.
+2. Tag = the version: `git tag -a v0.3.0 -m "MDForge 0.3.0" && git push origin v0.3.0`.
+3. `.github/workflows/publish.yml` derives the version from the tag, packages, and
+   publishes. Secrets: `VSCE_PAT` and `OVSX_PAT` (Open VSX step skipped when unset).
 
 ## 9. Conventions & known limitations
 
 - Non-standard checkbox states are an MDForge convention: `[ ]`/`[x]` are GFM;
   `[~]` (in progress) is ours.
-- Alerts currently write `[!TYPE]` inline with the first line; MDForge renders
-  them, but for strict GitHub parity the marker ideally sits on its own line.
 - Wikilink `[[ ]]` brackets stay visible while editing (not yet hidden).
-- Shiki bundles many grammars → `media/dist` is large; trim the language list
-  in `shiki-highlight.ts` if the `.vsix` gets too heavy.
-- Toolbar can flicker as the selection changes (provider show/hide).
+- Blank-line normalization is **opt-in only** (command / format-on-save); the
+  editor never rewrites the source on its own.
+- **Perf**: `buildDecorations` re-scans the whole document on every selection
+  change. Fine for normal notes; add a viewport limit before very large files.
+- Bundle size: mermaid (many diagram chunks), KaTeX fonts and the
+  `@codemirror/language-data` grammars dominate `media/dist`.
 
-## 10. Publishing (later)
+### Native diff editor — blocked on proposed API (watch actively)
 
-VS Code Marketplace: create a `tribaud` publisher at
-<https://marketplace.visualstudio.com/manage>, make an Azure DevOps PAT with
-**Marketplace > Manage**, then `vsce package` / `vsce publish`. Optionally
-mirror to Open VSX. It's free.
+MDForge **cannot** render inside VS Code's native diff editor. A
+`CustomTextEditorProvider` webview only ever receives its own side, never the
+counterpart or the computed diff — so red/green is impossible. VS Code's own
+experimental Markdown editor gets native diffs only via **proposed APIs**
+(`customEditorDiffs` — `resolveCustomTextEditorInlineDiff(documents:{original,
+modified}, singleWebview)` — and `customEditorPriority`), which are stripped for
+Marketplace extensions. **Watch for these to graduate to stable** (track
+microsoft/vscode#292379). When stable, implement
+`resolveCustomTextEditorInlineDiff` and drop the opt-in-only stance. Interim: the
+diff editor's title bar carries two buttons (`mdforge.openDiffOriginal` /
+`openDiffModified`) to open either side in MDForge as a normal editor. Full audit
+in repo memory (`mdforge-vscode-diff-audit`).
+
+## 10. Publishing
+
+VS Code Marketplace: `tribaud` publisher, Azure DevOps PAT with **Marketplace >
+Manage**, then `vsce package` / `vsce publish`. Optionally mirror to Open VSX.
+It's free.

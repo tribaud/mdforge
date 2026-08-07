@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <text x="12" y="10.5" text-anchor="middle" fill="currentColor"
+        font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="10.5" font-weight="800">md</text>
+  <!-- horizontal hammer: hollow squared head on the left, solid handle to the right -->
+  <rect x="3.2" y="13.2" width="5.6" height="7.6" rx="0.6"
+        fill="none" stroke="currentColor" stroke-width="1.4"/>
+  <!-- square butt at the head (tucked 0.5 under the stroke), rounded free end -->
+  <path d="M 9 15.5 H 20 A 1.5 1.5 0 0 1 20 18.5 H 9 Z" fill="currentColor"/>
+</svg>

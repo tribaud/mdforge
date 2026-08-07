@@ -6,15 +6,15 @@
 
 - **WYSIWYG « live » type Typora** : le Markdown se rend en place ; les marqueurs de syntaxe n'apparaissent qu'au contact du curseur.
 - **Rendu GitHub** : référence visuelle `github-markdown-css`, thèmes clair/sombre alignés sur VS Code.
-- **Le fichier `.md` reste la source de vérité** : écritures propres, diffs git minimaux (surveiller le reformatage ProseMirror).
+- **Le fichier `.md` reste la source de vérité** : le document EST le texte Markdown (CodeMirror), aucune réécriture → diffs git minimaux (un caractère modifié = un caractère de diff).
 - **Pas de fonctions payantes** : tout est libre (contrairement à mark-sharp).
 - **Pas de spécifique Hugo** (c'était le parti pris de MD-Editor, hors périmètre ici).
 
 ## 2. Moteur
 
-- **Milkdown** (ProseMirror + remark), **headless** → on écrit nous-mêmes le thème GitHub.
-- Aller-retour Markdown via **remark** (AST Markdown).
-- Rendu diagrammes via le plugin **Mermaid** de Milkdown.
+- **CodeMirror 6** en « live preview » façon Obsidian : le document est le texte Markdown ; l'analyse Lezer (`@lezer/markdown` + GFM) alimente des décorations qui masquent les marqueurs et stylent le contenu. On écrit nous-mêmes le thème GitHub.
+- Aucune sérialisation : les éditions modifient directement le texte source.
+- Rendu diagrammes via la lib **Mermaid** (import dynamique), maths via **KaTeX**.
 - Intégration VS Code : `CustomTextEditorProvider` + webview, synchro bidirectionnelle fichier ↔ webview.
 
 ## 3. Fonctionnalités (dérivées du guide mark-sharp, priorisées)
@@ -85,4 +85,4 @@ L'étape « en cours » est activable/désactivable via `mdforge.checkbox.enable
 
 - **MIT.**
 - S'inspire des **fonctionnalités** de mark-sharp (utilisé comme cahier des charges) — **sans copier son code** (propriétaire).
-- Réutilise Milkdown / remark / Mermaid (tous MIT).
+- Réutilise CodeMirror 6 / Lezer / Mermaid / KaTeX (tous MIT).
