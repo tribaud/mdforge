@@ -35,6 +35,7 @@ import {
   openWikilink
 } from './cm-livepreview'
 import { createTopbar, createBubble, wrap, insertLink, insertTable } from './cm-toolbar'
+import { ICONS } from './cm-icons'
 import { createSlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
@@ -315,11 +316,11 @@ function addHostButtons(bar: HTMLElement): void {
     s.className = 'cm-tb-sep'
     bar.appendChild(s)
   }
-  const mk = (label: string, title: string, onClick: () => void, danger = false): HTMLElement => {
+  const mk = (icon: string, title: string, onClick: () => void, danger = false): HTMLElement => {
     const b = document.createElement('button')
     b.type = 'button'
     b.className = danger ? 'cm-tb-btn cm-tb-danger' : 'cm-tb-btn'
-    b.textContent = label
+    b.innerHTML = icon
     b.title = title
     b.setAttribute('data-tip', title)
     b.addEventListener('mousedown', (e) => e.preventDefault())
@@ -330,23 +331,23 @@ function addHostButtons(bar: HTMLElement): void {
   const post = (type: string) => (): void => vscode.postMessage({ type })
 
   sep()
-  mk('¶', 'Normaliser les lignes vides (markdownlint)', post('normalizeBlankLines'))
-  mk('🖼', 'Insérer une image', pickImage)
-  mk('⊞', 'Insérer un tableau', () => insertTable(view))
-  mk('⬇', 'Télécharger les images distantes en local', post('localizeAssets'))
-  mk('📁', 'Déplacer la note et ses assets', post('moveNote'))
-  mk('✏️', 'Renommer la note', post('renameNote'))
-  mk('🗑', 'Supprimer la note et ses assets', post('deleteNote'), true)
+  mk(ICONS.normalize, 'Normaliser les lignes vides (markdownlint)', post('normalizeBlankLines'))
+  mk(ICONS.image, 'Insérer une image', pickImage)
+  mk(ICONS.table, 'Insérer un tableau', () => insertTable(view))
+  mk(ICONS.localize, 'Télécharger les images distantes en local', post('localizeAssets'))
+  mk(ICONS.move, 'Déplacer la note et ses assets', post('moveNote'))
+  mk(ICONS.rename, 'Renommer la note', post('renameNote'))
+  mk(ICONS.trash, 'Supprimer la note et ses assets', post('deleteNote'), true)
 
   const spacer = document.createElement('span')
   spacer.className = 'cm-tb-spacer'
   bar.appendChild(spacer)
 
-  sourceButton = mk('🗎', 'Afficher la source Markdown', () => toggleSource())
-  mk('↻', 'Rafraîchir les images', () => refreshImages())
-  readOnlyButton = mk('🔓', "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
-  mk('▶', 'Mode présentation', () => togglePresentation())
-  mk('⚙', 'Réglages MDForge', post('openSettings'))
+  sourceButton = mk(ICONS.source, 'Afficher la source Markdown', () => toggleSource())
+  mk(ICONS.refresh, 'Rafraîchir les images', () => refreshImages())
+  readOnlyButton = mk(ICONS.lockOpen, "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
+  mk(ICONS.present, 'Mode présentation', () => togglePresentation())
+  mk(ICONS.settings, 'Réglages MDForge', post('openSettings'))
 }
 
 /** Toggle the raw-Markdown source view (live preview off). */
@@ -368,7 +369,7 @@ function toggleReadOnly(): void {
   readOnly = !readOnly
   document.body.classList.toggle('mdforge-readonly', readOnly)
   if (readOnlyButton) {
-    readOnlyButton.textContent = readOnly ? '🔒' : '🔓' // closed when locked, open when editable
+    readOnlyButton.innerHTML = readOnly ? ICONS.lock : ICONS.lockOpen // closed vs open shackle
     readOnlyButton.classList.toggle('cm-tb-btn-active', readOnly)
   }
   applyEditable()

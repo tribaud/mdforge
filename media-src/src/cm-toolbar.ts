@@ -8,6 +8,7 @@
 import { EditorView } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search'
+import { ICONS } from './cm-icons'
 
 /** Lezer node the marker produces, and the child node that IS the marker. */
 const MARKER_NODE: Record<string, { node: string; mark: string }> = {
@@ -368,20 +369,20 @@ const ENTRIES: Entry[] = [
   { label: 'B', title: 'Gras (Ctrl/⌘B)', run: (v) => wrap(v, '**') },
   { label: 'I', title: 'Italique (Ctrl/⌘I)', run: (v) => wrap(v, '*') },
   { label: 'S', title: 'Barré', run: (v) => wrap(v, '~~') },
-  { label: '</>', title: 'Code (Ctrl/⌘E)', run: (v) => wrap(v, '`') },
+  { label: ICONS.code, title: 'Code (Ctrl/⌘E)', run: (v) => wrap(v, '`') },
   'sep',
   { label: 'H1', title: 'Heading 1', run: (v) => toggleLinePrefix(v, '# ', /^#{1,6}\s+/) },
   { label: 'H2', title: 'Heading 2', run: (v) => toggleLinePrefix(v, '## ', /^#{1,6}\s+/) },
   { label: 'H3', title: 'Heading 3', run: (v) => toggleLinePrefix(v, '### ', /^#{1,6}\s+/) },
   'sep',
-  { label: '❝', title: 'Quote', run: (v) => toggleLinePrefix(v, '> ', /^>\s?/) },
-  { label: '•', title: 'Bullet list', run: (v) => toggleLinePrefix(v, '- ', /^[-*+]\s+/) },
-  { label: '☑', title: 'Task', run: (v) => toggleLinePrefix(v, '- [ ] ', /^[-*+]\s+(\[[ xX~]\]\s+)?/) },
-  { label: '🔗', title: 'Lien (Ctrl/⌘K)', run: (v) => insertLink(v) },
+  { label: ICONS.quote, title: 'Quote', run: (v) => toggleLinePrefix(v, '> ', /^>\s?/) },
+  { label: ICONS.bullet, title: 'Bullet list', run: (v) => toggleLinePrefix(v, '- ', /^[-*+]\s+/) },
+  { label: ICONS.task, title: 'Task', run: (v) => toggleLinePrefix(v, '- [ ] ', /^[-*+]\s+(\[[ xX~]\]\s+)?/) },
+  { label: ICONS.link, title: 'Lien (Ctrl/⌘K)', run: (v) => insertLink(v) },
   { label: '†', title: 'Note de bas de page', run: (v) => insertFootnote(v) },
-  { label: '—', title: 'Ligne horizontale', run: (v) => insertHr(v) },
+  { label: ICONS.hr, title: 'Ligne horizontale', run: (v) => insertHr(v) },
   'sep',
-  { label: '🔍', title: 'Rechercher (Ctrl/⌘F)', run: (v) => toggleSearch(v) }
+  { label: ICONS.search, title: 'Rechercher (Ctrl/⌘F)', run: (v) => toggleSearch(v) }
 ]
 
 function buildButtons(view: EditorView, container: HTMLElement): void {
@@ -395,7 +396,7 @@ function buildButtons(view: EditorView, container: HTMLElement): void {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.className = 'cm-tb-btn'
-    btn.textContent = entry.label
+    btn.innerHTML = entry.label // text labels (B, H1…) or an inline SVG icon
     btn.title = entry.title
     btn.setAttribute('data-tip', entry.title) // CSS tooltip (native title is unreliable in the webview)
     btn.addEventListener('mousedown', (e) => e.preventDefault())

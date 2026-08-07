@@ -54,12 +54,18 @@ body {
   border: none;
   border-radius: 5px;
   background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--vscode-editor-foreground);
   font: 15px/1 var(--mdforge-font);
   cursor: pointer;
-  /* Flat, monochrome look: strip the color from emoji glyphs so the whole bar
-     reads as a single-tone icon set (text labels like B/I/S are unaffected). */
-  filter: grayscale(1);
+}
+/* Minimalist line icons: a single currentColor stroke, sized uniformly. */
+.cm-tb-btn .cm-ic {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 /* CSS tooltip for every toolbar button (native title is unreliable in webview) */
 .cm-tb-btn[data-tip]:hover::after {
