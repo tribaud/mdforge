@@ -510,6 +510,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           case 'openExternal':
             if (message.url) await vscode.env.openExternal(vscode.Uri.parse(message.url))
             break
+          case 'openTextEditor':
+            await vscode.commands.executeCommand('vscode.openWith', document.uri, 'default')
+            break
           case 'insertImage':
             await this.insertImage(document, webview, message)
             break

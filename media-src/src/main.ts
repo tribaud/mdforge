@@ -344,6 +344,7 @@ function addHostButtons(bar: HTMLElement): void {
   bar.appendChild(spacer)
 
   sourceButton = mk(ICONS.source, 'Afficher la source Markdown', () => toggleSource())
+  mk(ICONS.textEditor, "Ouvrir dans l'éditeur de texte VS Code", post('openTextEditor'))
   mk(ICONS.refresh, 'Rafraîchir les images', () => refreshImages())
   readOnlyButton = mk(ICONS.lockOpen, "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
   mk(ICONS.present, 'Mode présentation', () => togglePresentation())
