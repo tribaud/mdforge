@@ -205,8 +205,8 @@ npx tsc -p media-src --noEmit # webview type-check (also in CI)
 
 - Press **F5** to open an Extension Development Host, then right-click a `.md` →
   **Open with MDForge** (or `Ctrl/Cmd+Shift+Alt+M`).
-- `examples/feat.md` exercises the CM features; `examples/demo.md` is the general
-  demo.
+- The headless harness ships a built-in sample; feed your own document with
+  `node scripts/cm-preview.mjs <file.md>` to exercise a specific case.
 - **Headless preview** (stand-in for F5 when there's no GUI): `npm run preview`
   or ad-hoc Playwright probes — run them **from the repo directory** (playwright-
   core resolves from the repo `node_modules`), with a mocked `acquireVsCodeApi`;
