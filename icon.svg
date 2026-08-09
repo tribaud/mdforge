@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- MDForge — une plaque Markdown poinçonnée sur l'enclume.
+       Monochrome (#5c5c5c) sur fond transparent ; les séparations entre
+       pièces sont des vides, jamais du blanc, pour rester lisibles aussi
+       bien sur fond clair que sur fond sombre. -->
+  <g fill="#5c5c5c">
+    <!-- plaque Markdown -->
+    <rect x="36" y="4" width="56" height="30" rx="6"/>
+    <!-- poinçon : descend de la plaque vers l'encoche de la table -->
+    <path d="M 59 34 h 10 v 26 a 5 5 0 0 1 -10 0 Z"/>
+    <!-- table de l'enclume : corne effilée à gauche, talon carré à droite,
+         encoche centrale qui reçoit le poinçon -->
+    <path d="M 6 62
+             C 18 54 30 53 40 53
+             H 55 V 69 H 73 V 53
+             H 122 V 76 H 40
+             C 28 76 16 70 6 65 Z"/>
+    <!-- taille concave et pied évasé -->
+    <path d="M 44 80 H 92
+             C 92 92 80 96 80 104
+             C 80 112 96 112 110 116
+             L 118 119 V 123 H 18 V 119 L 26 116
+             C 40 112 56 112 56 104
+             C 56 96 44 92 44 80 Z"/>
+  </g>
+  <!-- glyphe « M↓ » ajouré dans la plaque -->
+  <path d="M 46 27 V 11 L 53 19 L 60 11 V 27" fill="none" stroke="#ffffff"
+        stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 71 10 h 7 v 9 h 5.5 L 74.5 30 L 65.5 19 H 71 Z" fill="#ffffff"/>
+</svg>

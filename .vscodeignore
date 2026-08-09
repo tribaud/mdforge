@@ -13,6 +13,7 @@ esbuild.mjs
 flake.nix
 flake.lock
 .envrc
+icon.svg
 SPEC.md
 TODO.md
 CLAUDE.md

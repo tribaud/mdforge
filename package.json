@@ -2,7 +2,7 @@
   "name": "mdforge",
   "displayName": "MDForge",
   "description": "Transform VS Code into a Typora-like WYSIWYG Markdown editor with GitHub-style rendering, Mermaid diagrams and rich task lists.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "tribaud",
   "license": "MIT",
   "icon": "icon.png",
@@ -291,6 +291,7 @@
     "watch:ext": "tsc -watch -p ./",
     "watch:webview": "node esbuild.mjs --watch",
     "preview": "node scripts/cm-preview.mjs",
+    "icon": "magick -background none -density 384 icon.svg -resize 512x512 png:- | magick - -filter Lanczos -resize 128x128 -strip PNG32:icon.png",
     "test:fidelity": "npm run build:webview && node scripts/cm-fidelity.test.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"

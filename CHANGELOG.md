@@ -4,6 +4,63 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1]
+
+### Changed
+
+- New extension icon.
+
+### Fixed
+
+- The Marketplace listing now includes the 0.3.0 changelog (it was missing from
+  the 0.3.0 package).
+
+## [0.3.0]
+
+### Changed
+
+- **New editor engine: CodeMirror 6 live preview**, replacing Milkdown/
+  ProseMirror. The document **is** the Markdown text — there is no
+  parse→serialize round-trip, so editing never reformats the source: a
+  one-character change is a one-character diff and identifiers stay grep-able.
+- Lighter package: dropping Milkdown, ProseMirror and Shiki shrank the `.vsix`
+  from ~4.5 MB to ~2.5 MB.
+
+### Added
+
+- **Live-preview rendering** via CodeMirror decorations: headings, bold/italic/
+  strikethrough/inline-code, links, images, three-state task checkboxes
+  (`[ ]`/`[x]`/`[~]`, on bullet **and** numbered lists), Mermaid diagrams, KaTeX
+  math, GFM tables (with inline-rendered cells), GitHub alerts, wikilinks,
+  footnotes and a YAML frontmatter card (`title` → H1).
+- **Editing chrome**: a flat SVG-icon toolbar + selection bubble, slash menu,
+  table toolbar, a draggable block handle (a heading drags its whole section)
+  and a code-block language picker.
+- **Search** (`Ctrl/Cmd+F`) and **heading/code folding**.
+- **markdownlint diagnostics** shown inline (wavy underline) with a hover
+  explanation, a rule-documentation link and a **quick-fix** action.
+- **Footnote insert** popup — choose the target section (Notes / Bibliographie /
+  existing), with an auto-numbered, editable bookmark.
+- **Blank-line normalization** — on demand (command + toolbar) or opt-in on save
+  (`mdforge.format.blankLines`): collapses duplicate blanks and surrounds
+  headings and code blocks with a blank line (markdownlint MD012/MD022/MD031/
+  MD047).
+- **Source view**, **read-only lock**, **presentation mode** (with a floating
+  exit button), and a toolbar button to reopen the note in the plain text editor.
+
+### Fixed
+
+- The 0.2.x round-trip limitations are **gone by construction** (no
+  re-serialization): nested inline marks are never reordered or split, `_`/`~`
+  inside identifiers are never escaped, and bullets, thematic breaks and tight
+  lists are never restyled. Opening a file and saving it unchanged leaves a
+  **byte-identical** file.
+
+### Removed
+
+- The Milkdown engine and its dependencies (Milkdown, ProseMirror, Shiki,
+  remark) and the interim `mdforge.engine` setting.
+
 ## [0.2.6]
 
 ### Changed
