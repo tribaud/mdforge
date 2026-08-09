@@ -291,6 +291,7 @@
     "watch:ext": "tsc -watch -p ./",
     "watch:webview": "node esbuild.mjs --watch",
     "preview": "node scripts/cm-preview.mjs",
+    "test:fidelity": "npm run build:webview && node scripts/cm-fidelity.test.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
   },
