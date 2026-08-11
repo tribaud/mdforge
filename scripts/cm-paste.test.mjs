@@ -57,6 +57,17 @@ const NESTED_LIST_HTML = `<html><body>
 </ol>
 </body></html>`
 
+// OneNote splits one numbered list into chunks (an image/paragraph between two
+// steps closes and reopens the <ol>), marking each resumption with <li value=N>.
+// The numbering must continue (1, 2, 3), not restart at 1 each chunk.
+const SPLIT_LIST_HTML = `<html><body>
+<ol type=1><li value=1>First step.</li></ol>
+<p>An interrupting note.</p>
+<ol type=1><li value=2>Second step.</li></ol>
+<p>Another note.</p>
+<ol type=1><li value=3>Third step.</li></ol>
+</body></html>`
+
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
   if (url === '/') {
@@ -165,6 +176,16 @@ try {
     // The two sub-steps must be indented (nested), not flattened to top level.
     const indented = /^ {2,4}1\. Click the PLUS icon\./m.test(out) && /^ {2,4}2\. Set the name\./m.test(out)
     check('4. sous-liste numérotée indentée sous l’item 2', indented, JSON.stringify(out))
+    await page.close()
+  }
+
+  // 4) A list OneNote split into chunks keeps counting (1, 2, 3), not 1, 1, 1.
+  {
+    const page = await open()
+    await pasteHtml(page, SPLIT_LIST_HTML)
+    const out = (await lastEdit(page)) || ''
+    const continues = /^1\. First step\./m.test(out) && /^2\. Second step\./m.test(out) && /^3\. Third step\./m.test(out)
+    check('5. numérotation continue après découpage (1,2,3)', continues, JSON.stringify(out))
     await page.close()
   }
 } finally {

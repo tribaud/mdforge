@@ -89,6 +89,24 @@ function fixNestedLists(doc: Document): void {
 }
 
 /**
+ * Carry OneNote's list numbering across split lists. OneNote breaks one logical
+ * numbered list into several `<ol>` blocks (a paragraph or image between two
+ * steps closes and reopens the list) and marks each resumption with `<li
+ * value=N>` on its first item — but never `start` on the `<ol>`. Turndown honors
+ * `<ol start>` and ignores `<li value>`, so every chunk restarts at `1.`. Copy
+ * the first item's `value` onto its `<ol>` as `start` so the sequence continues
+ * (e.g. `5. 6. 7.` instead of a second `1. 2. 3.`).
+ */
+function carryListStart(doc: Document): void {
+  doc.querySelectorAll('ol').forEach((ol) => {
+    if (ol.hasAttribute('start')) return
+    const firstLi = Array.from(ol.children).find((c) => c.tagName === 'LI')
+    const value = firstLi?.getAttribute('value') ?? ''
+    if (/^\d+$/.test(value) && Number(value) > 1) ol.setAttribute('start', value)
+  })
+}
+
+/**
  * Resolve a pasted image `src` (a `data:` URI, a `http(s)`/`file:` URL) to a
  * local, note-relative path — or `null` to leave it untouched. Used to pull
  * OneNote/web images into the note's assets folder on paste (their original URLs
@@ -251,8 +269,10 @@ export async function htmlToMarkdown(html: string, resolveImage?: ImageResolver)
   const doc = new DOMParser().parseFromString(html, 'text/html')
   preprocessMath(doc)
   // Repair OneNote/Word sub-lists (a list mis-parented as a sibling of the
-  // `<li>`s) so nested numbering indents instead of flattening.
+  // `<li>`s) so nested numbering indents instead of flattening, then carry the
+  // start number across lists OneNote split apart so numbering doesn't reset.
   fixNestedLists(doc)
+  carryListStart(doc)
   // Footnote links carry the note text as a `title` tooltip; it duplicates the
   // note definition and, with parentheses inside, breaks the `[n](url)` output.
   doc.querySelectorAll('a[href*="#footnote"]').forEach((a) => a.removeAttribute('title'))

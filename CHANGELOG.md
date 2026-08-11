@@ -28,6 +28,9 @@ All notable changes to MDForge are documented here. The format follows
 - **Nested numbered lists from OneNote/Word** no longer flatten into an unreadable
   single sequence: OneNote emits sub-lists as siblings of the list items (invalid
   HTML), which are now re-parented so `1. 2. 3.` levels indent correctly.
+- **Numbered lists no longer restart at 1** when OneNote splits one list into
+  chunks (a paragraph or image between two steps): the resumption's `<li value=N>`
+  is carried onto the list as `start`, so the sequence keeps counting.
 
 ## [0.3.1]
 
