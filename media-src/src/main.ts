@@ -41,7 +41,7 @@ import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
 import { setDiagnostics, lintGutter } from '@codemirror/lint'
 import type { Diagnostic } from '@codemirror/lint'
-import { htmlToMarkdown, isRichHtml, htmlIsJustImage } from './cm-paste-html'
+import { htmlToMarkdown, isRichHtml, htmlIsJustImage, describeHtmlStructure } from './cm-paste-html'
 import './cm-theme.css'
 import 'katex/dist/katex.min.css'
 
@@ -316,6 +316,8 @@ function buildClipboardDump(cd: DataTransfer): string {
     }
     parts.push(`==== ${t} ====\n${value || '(empty)'}`)
   }
+  const html = cd.getData('text/html')
+  if (html) parts.push(`==== list/image skeleton ====\n${describeHtmlStructure(html)}`)
   return parts.join('\n\n')
 }
 

@@ -68,6 +68,19 @@ const SPLIT_LIST_HTML = `<html><body>
 <ol type=1><li value=3>Third step.</li></ol>
 </body></html>`
 
+// OneNote lifts a step's image out as a <p> sibling after the list (positioned
+// by margin-left). It must be pulled back into the step it follows — here the
+// deepest sub-step — so it indents under it instead of breaking the list.
+const LIST_IMAGE_HTML = `<html><body>
+<ol type=1>
+  <li value=1>Create a new group.</li>
+  <ol type=1>
+    <li value=1>Click the PLUS icon.</li>
+  </ol>
+</ol>
+<p style='margin-left:.75in'><img src="${PNG_DATA}"></p>
+</body></html>`
+
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
   if (url === '/') {
@@ -186,6 +199,19 @@ try {
     const out = (await lastEdit(page)) || ''
     const continues = /^1\. First step\./m.test(out) && /^2\. Second step\./m.test(out) && /^3\. Third step\./m.test(out)
     check('5. numérotation continue après découpage (1,2,3)', continues, JSON.stringify(out))
+    await page.close()
+  }
+
+  // 5) An image OneNote lifted out is pulled back under its sub-step (indented),
+  //    not left as a top-level paragraph after the list.
+  {
+    const page = await open()
+    await pasteHtml(page, LIST_IMAGE_HTML)
+    const out = (await lastEdit(page)) || ''
+    // The image link must be indented (nested under "Click the PLUS icon"),
+    // i.e. it must NOT sit at column 0.
+    const imgIndented = /\n {4,}!\[\]\(assets\//.test(out) && !/^!\[\]\(assets\//m.test(out)
+    check('6. image ré-indentée sous sa sous-étape', imgIndented, JSON.stringify(out))
     await page.close()
   }
 } finally {

@@ -31,6 +31,9 @@ All notable changes to MDForge are documented here. The format follows
 - **Numbered lists no longer restart at 1** when OneNote splits one list into
   chunks (a paragraph or image between two steps): the resumption's `<li value=N>`
   is carried onto the list as `start`, so the sequence keeps counting.
+- **A step's image indents under the step** — OneNote lifts an illustrating image
+  out of the list as a sibling paragraph, which broke the numbering and left the
+  image flush-left; it is now pulled back into the step it follows.
 
 ## [0.3.1]
 

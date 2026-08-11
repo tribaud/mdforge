@@ -88,6 +88,48 @@ function fixNestedLists(doc: Document): void {
   }
 }
 
+/** The deepest last `<li>` of a list — descends into a trailing nested list, so
+ * an image after a closed sub-list attaches to the sub-step it illustrates. */
+function deepestLastLi(list: Element): Element | null {
+  const items = Array.from(list.children).filter((c) => c.tagName === 'LI')
+  if (!items.length) return null
+  const last = items[items.length - 1]
+  const nested = Array.from(last.children)
+    .reverse()
+    .find((c) => c.tagName === 'OL' || c.tagName === 'UL')
+  return (nested && deepestLastLi(nested)) || last
+}
+
+/** A `<p>`/`<div>` whose only content is image(s) — no meaningful text. */
+function isImageOnlyBlock(el: Element | null): boolean {
+  if (!el || (el.tagName !== 'P' && el.tagName !== 'DIV')) return false
+  return (el.textContent || '').trim() === '' && el.querySelector('img') !== null
+}
+
+/**
+ * Pull images OneNote lifted out of a list back into it. OneNote emits an image
+ * that illustrates a step as a `<p>` sibling *after* the list (positioned by a
+ * `margin-left`), which both breaks the numbering and leaves the image
+ * un-indented. Move each such image into the step it follows (the list's deepest
+ * last item), so it renders indented under its step instead of splitting the list.
+ */
+function pullImagesIntoLists(doc: Document): void {
+  for (let guard = 0; guard < 2000; guard++) {
+    const image = Array.from(doc.querySelectorAll('p, div')).find((el) => {
+      const prev = el.previousElementSibling
+      return (
+        isImageOnlyBlock(el) &&
+        el.parentElement?.tagName !== 'LI' &&
+        Boolean(prev && (prev.tagName === 'OL' || prev.tagName === 'UL'))
+      )
+    })
+    if (!image) break
+    const target = deepestLastLi(image.previousElementSibling as Element)
+    if (!target) break
+    target.appendChild(image)
+  }
+}
+
 /**
  * Carry OneNote's list numbering across split lists. OneNote breaks one logical
  * numbered list into several `<ol>` blocks (a paragraph or image between two
@@ -265,13 +307,50 @@ function renumberFootnotes(md: string): string {
   )
 }
 
+/**
+ * A compact structural outline of the HTML's lists and images — tag, `value`,
+ * `margin-left`, and elided item text — for the paste-debug dump. Strips the
+ * noise so the list nesting (and where OneNote drops images) is legible at a
+ * glance, which is what the conversion heuristics key off.
+ */
+export function describeHtmlStructure(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const lines: string[] = []
+  const marginLeft = (el: Element): string => {
+    const m = /margin-left:\s*([^;]+)/i.exec(el.getAttribute('style') || '')
+    return m ? ` ml=${m[1].trim()}` : ''
+  }
+  const walk = (el: Element, depth: number): void => {
+    for (const child of Array.from(el.children)) {
+      const tag = child.tagName.toLowerCase()
+      if (tag === 'ol' || tag === 'ul') {
+        lines.push(`${'  '.repeat(depth)}<${tag}${marginLeft(child)}>`)
+        walk(child, depth + 1)
+      } else if (tag === 'li') {
+        const value = child.getAttribute('value')
+        const text = (child.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 48)
+        lines.push(`${'  '.repeat(depth)}<li${value ? ` value=${value}` : ''}${marginLeft(child)}> ${text}`)
+        walk(child, depth + 1)
+      } else if ((tag === 'p' || tag === 'div') && child.querySelector('img') && !(child.textContent || '').trim()) {
+        lines.push(`${'  '.repeat(depth)}<${tag}${marginLeft(child)}>[img]`)
+      } else {
+        walk(child, depth)
+      }
+    }
+  }
+  walk(doc.body, 0)
+  return lines.length ? lines.join('\n') : '(no lists or images)'
+}
+
 export async function htmlToMarkdown(html: string, resolveImage?: ImageResolver): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   preprocessMath(doc)
   // Repair OneNote/Word sub-lists (a list mis-parented as a sibling of the
-  // `<li>`s) so nested numbering indents instead of flattening, then carry the
-  // start number across lists OneNote split apart so numbering doesn't reset.
+  // `<li>`s) so nested numbering indents instead of flattening, pull images
+  // OneNote lifted out of a step back into it, then carry the start number across
+  // lists OneNote split apart so numbering doesn't reset.
   fixNestedLists(doc)
+  pullImagesIntoLists(doc)
   carryListStart(doc)
   // Footnote links carry the note text as a `title` tooltip; it duplicates the
   // note definition and, with parentheses inside, breaks the `[n](url)` output.
