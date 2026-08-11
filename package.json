@@ -60,7 +60,10 @@
         "command": "mdforge.openEditor",
         "title": "MDForge: Open with MDForge",
         "category": "MDForge",
-        "icon": "mdforge-editor.svg"
+        "icon": {
+          "light": "media/icons/editor-light.svg",
+          "dark": "media/icons/editor-dark.svg"
+        }
       },
       {
         "command": "mdforge.openWithTextEditor",
@@ -77,13 +80,19 @@
         "command": "mdforge.openDiffOriginal",
         "title": "MDForge: Open Original Side in MDForge",
         "category": "MDForge",
-        "icon": "mdforge-editor.svg"
+        "icon": {
+          "light": "media/icons/editor-light.svg",
+          "dark": "media/icons/editor-dark.svg"
+        }
       },
       {
         "command": "mdforge.openDiffModified",
         "title": "MDForge: Open Modified Side in MDForge",
         "category": "MDForge",
-        "icon": "mdforge-editor.svg"
+        "icon": {
+          "light": "media/icons/editor-light.svg",
+          "dark": "media/icons/editor-dark.svg"
+        }
       },
       {
         "command": "mdforge.normalizeBlankLines",
