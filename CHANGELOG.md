@@ -34,6 +34,10 @@ All notable changes to MDForge are documented here. The format follows
 - **A step's image indents under the step** — OneNote lifts an illustrating image
   out of the list as a sibling paragraph, which broke the numbering and left the
   image flush-left; it is now pulled back into the step it follows.
+- **Sub-steps keep their nesting across images** — OneNote drops each list
+  resumption after an image back to the top level, flattening deep steps; the tree
+  is now rebuilt from the resumption's `<li value=N>` and the images' `margin-left`
+  depth, so a multi-level numbered list survives the round-trip intact.
 
 ## [0.3.1]
 

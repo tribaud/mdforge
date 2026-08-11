@@ -130,6 +130,103 @@ function pullImagesIntoLists(doc: Document): void {
   }
 }
 
+/** Direct `<li>` children of a list. */
+const listItems = (list: Element): Element[] => Array.from(list.children).filter((c) => c.tagName === 'LI')
+/** The explicit number of a list's first item (`<li value=N>`), or null. */
+function firstItemValue(list: Element): number | null {
+  const v = listItems(list)[0]?.getAttribute('value') ?? ''
+  return /^\d+$/.test(v) ? Number(v) : null
+}
+/** The number the list's next item would carry (first value, or 1, + item count). */
+const nextValueOf = (list: Element): number => (firstItemValue(list) ?? 1) + listItems(list).length
+/** OneNote's `margin-left` (in inches) → nesting level: .375in→1, .75in→2, … */
+function marginLevel(el: Element): number | null {
+  const m = /margin-left:\s*([\d.]+)in/i.exec(el.getAttribute('style') || '')
+  if (!m) return null
+  const level = Math.round(parseFloat(m[1]) / 0.375)
+  return level >= 1 ? level : null
+}
+
+/**
+ * Rebuild the nesting OneNote destroys when a list holds images. OneNote splits
+ * one logical list into many sibling `<ol>` blocks (an image between two steps
+ * closes and reopens the list) and — crucially — emits every resumption at the
+ * container's top level, *losing the indentation*, so a sub-step after an image
+ * drops back to level 1. The only surviving depth signals are the resumption's
+ * `<li value=N>` and the `margin-left` of the images (`.375in`→L1, `.75in`→L2…).
+ *
+ * Reconstruct the tree with a value-keyed stack of open lists: a fragment whose
+ * first value continues an open list at some level is merged back into it (the
+ * preceding image's `margin-left` disambiguates when two levels expect the same
+ * number); a fragment starting at 1 opens a new top-level list. Images are
+ * attached to the step at their own `margin-left` level as we go. This only ever
+ * moves items into a sibling/ancestor list — it never drops or reorders content.
+ */
+function mergeSplitLists(doc: Document): void {
+  const containers = Array.from(doc.querySelectorAll('ul, div, section, body')).filter((p) => {
+    const kids = Array.from(p.children)
+    return kids.filter((c) => c.tagName === 'OL').length >= 2 && !kids.some((c) => c.tagName === 'LI')
+  })
+  for (const container of containers) {
+    // stack[i] = the open ordered list at level i+1, with its next expected number.
+    const stack: Array<{ list: Element; next: number }> = []
+    let pendingImageLevel: number | null = null
+    // After (re)opening the list at the top of the stack, follow any trailing
+    // nested `<ol>` down — those sub-lists are open for continuation too.
+    const openTrailing = (): void => {
+      for (;;) {
+        const top = stack[stack.length - 1]?.list
+        if (!top) break
+        const lastLi = listItems(top).at(-1)
+        const nested = lastLi && Array.from(lastLi.children).reverse().find((c) => c.tagName === 'OL')
+        if (!nested || stack.some((e) => e.list === nested)) break
+        stack.push({ list: nested, next: nextValueOf(nested) })
+      }
+    }
+    for (const child of Array.from(container.children)) {
+      if (isImageOnlyBlock(child)) {
+        const level = marginLevel(child)
+        if (stack.length) {
+          const idx = level ? Math.min(level, stack.length) - 1 : stack.length - 1
+          deepestLastLi(stack[idx].list)?.appendChild(child)
+        }
+        pendingImageLevel = level
+        continue
+      }
+      if (child.tagName !== 'OL') {
+        // Prose or a heading between lists ends the current list context.
+        if ((child.textContent || '').trim()) stack.length = 0
+        continue
+      }
+      const value = firstItemValue(child) ?? 1
+      // Pick the level to continue: the preceding image's level when it matches,
+      // else the shallowest open list expecting this number.
+      let level: number | null = null
+      if (pendingImageLevel && pendingImageLevel <= stack.length && stack[pendingImageLevel - 1].next === value) {
+        level = pendingImageLevel
+      } else {
+        const idx = stack.findIndex((e) => e.next === value)
+        if (idx >= 0) level = idx + 1
+      }
+      pendingImageLevel = null
+      if (level !== null) {
+        const target = stack[level - 1].list
+        const items = listItems(child)
+        items.forEach((li) => target.appendChild(li))
+        stack[level - 1].next += items.length
+        stack.length = level
+        openTrailing()
+        child.remove()
+      } else {
+        // A fresh top-level list (value 1, or an unmatched resumption).
+        stack.length = 0
+        stack.push({ list: child, next: nextValueOf(child) })
+        openTrailing()
+      }
+    }
+  }
+}
+
 /**
  * Carry OneNote's list numbering across split lists. OneNote breaks one logical
  * numbered list into several `<ol>` blocks (a paragraph or image between two
@@ -137,7 +234,8 @@ function pullImagesIntoLists(doc: Document): void {
  * value=N>` on its first item — but never `start` on the `<ol>`. Turndown honors
  * `<ol start>` and ignores `<li value>`, so every chunk restarts at `1.`. Copy
  * the first item's `value` onto its `<ol>` as `start` so the sequence continues
- * (e.g. `5. 6. 7.` instead of a second `1. 2. 3.`).
+ * (e.g. `5. 6. 7.` instead of a second `1. 2. 3.`). Runs after `mergeSplitLists`
+ * for any fragment it left standing (a resumption with no open list to rejoin).
  */
 function carryListStart(doc: Document): void {
   doc.querySelectorAll('ol').forEach((ol) => {
@@ -345,11 +443,13 @@ export function describeHtmlStructure(html: string): string {
 export async function htmlToMarkdown(html: string, resolveImage?: ImageResolver): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   preprocessMath(doc)
-  // Repair OneNote/Word sub-lists (a list mis-parented as a sibling of the
-  // `<li>`s) so nested numbering indents instead of flattening, pull images
-  // OneNote lifted out of a step back into it, then carry the start number across
-  // lists OneNote split apart so numbering doesn't reset.
+  // Rebuild OneNote's list structure: fix sub-lists mis-parented as siblings of
+  // the `<li>`s; re-nest the fragments OneNote split at each image (restoring the
+  // indentation and attaching images to their step); pull any remaining lifted
+  // image into the step it follows; then carry the start number across any list
+  // fragment left standing so numbering doesn't reset.
   fixNestedLists(doc)
+  mergeSplitLists(doc)
   pullImagesIntoLists(doc)
   carryListStart(doc)
   // Footnote links carry the note text as a `title` tooltip; it duplicates the

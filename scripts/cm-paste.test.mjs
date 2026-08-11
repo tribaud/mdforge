@@ -81,6 +81,28 @@ const LIST_IMAGE_HTML = `<html><body>
 <p style='margin-left:.75in'><img src="${PNG_DATA}"></p>
 </body></html>`
 
+// A faithful slice of the real OneNote export (the "Create a New Group" section):
+// one logical list split into many <ol> fragments by images, resumptions carrying
+// <li value=N>, image depth encoded by margin-left (.75in = level 2). The tree
+// must be rebuilt: sub-steps stay at level 2 (incl. "value=5 With the icon set"
+// which must climb back to level 1), numbering continuous, images under their step.
+const IMG = `<p style='margin-left:.75in'><img src="${PNG_DATA}"></p>`
+const REAL_LIST_HTML = `<html><body><ul>
+  <ol><li value=1>Within a browser.</li><li>Create a new group.</li>
+    <ol><li value=1>Click the PLUS icon.</li></ol></ol>
+  ${IMG}
+  <ol><li value=2>Set the name.</li></ol>
+  ${IMG}
+  <ol><li value=3>Click the Create button.</li></ol>
+  <ol><li value=3>You will be prompted.</li><li>It will appear in the nav.</li>
+    <ol><li value=1>Update the logo.</li></ol></ol>
+  ${IMG}
+  <ol><li value=2>Click the pencil icon.</li></ol>
+  <ol><li value=5>With the icon set, start a conversation.</li>
+    <ol><li value=1>Click New conversation.</li></ol></ol>
+  <ol><li value=6>The user is not subscribed.</li></ol>
+</ul></body></html>`
+
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
   if (url === '/') {
@@ -212,6 +234,19 @@ try {
     // i.e. it must NOT sit at column 0.
     const imgIndented = /\n {4,}!\[\]\(assets\//.test(out) && !/^!\[\]\(assets\//m.test(out)
     check('6. image ré-indentée sous sa sous-étape', imgIndented, JSON.stringify(out))
+    await page.close()
+  }
+
+  // 6) The real OneNote section: fragments split by images are rebuilt into a
+  //    correct two-level tree with continuous numbering.
+  {
+    const page = await open()
+    await pasteHtml(page, REAL_LIST_HTML)
+    const out = (await lastEdit(page)) || ''
+    const level1 = /^5\. With the icon set/m.test(out) && /^6\. The user is not subscribed/m.test(out)
+    const level2 = /^ {3,4}2\. Set the name\./m.test(out) && /^ {3,4}2\. Click the pencil icon\./m.test(out) && /^ {3,4}1\. Click New conversation\./m.test(out)
+    const notFlattened = !/^2\. Set the name\./m.test(out) && !/^1\. Click New conversation\./m.test(out)
+    check('7. section OneNote reconstruite (niveaux + numérotation)', level1 && level2 && notFlattened, JSON.stringify(out))
     await page.close()
   }
 } finally {
