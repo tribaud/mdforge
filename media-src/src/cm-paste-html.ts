@@ -45,6 +45,74 @@ export function isRichHtml(html: string): boolean {
   )
 }
 
+/**
+ * True when the clipboard HTML is essentially a lone image (a plain image copy),
+ * with no text and no block structure around it. In that case the bitmap the OS
+ * also puts on the clipboard should be saved instead of converting the `<img>`
+ * to a remote/embedded link. A OneNote note or a web selection carries real text
+ * or structure alongside its images, so it does NOT match here — it gets
+ * converted to Markdown (and its images localized).
+ */
+export function htmlIsJustImage(html: string): boolean {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const hasText = (doc.body.textContent || '').trim().length > 0
+  const structural = doc.body.querySelector('table,ul,ol,h1,h2,h3,h4,h5,h6,blockquote,pre,a')
+  const hasImage = doc.body.querySelector('img')
+  return Boolean(hasImage) && !hasText && !structural
+}
+
+/**
+ * Fix OneNote's mis-nested lists. OneNote (and Word) emit a sub-list as a
+ * **direct child of the parent list** — a `<ol>`/`<ul>` sibling of the `<li>`s,
+ * not inside one — which is invalid HTML. Turndown then can't indent it, so
+ * nested `1. 2. 3.` levels flatten into an unreadable single sequence. Move each
+ * such sub-list into the `<li>` that immediately precedes it, which is the
+ * HTML-correct structure Turndown indents properly. Repeated until stable so
+ * deeper levels are re-parented after their ancestors move.
+ */
+function fixNestedLists(doc: Document): void {
+  const precedingLi = (node: Element): Element | null => {
+    let prev = node.previousElementSibling
+    while (prev && prev.tagName !== 'LI') prev = prev.previousElementSibling
+    return prev
+  }
+  // A bounded loop (not recursion) — each pass re-parents one list; the DOM
+  // shrinks toward a fixpoint. The cap guards against a pathological tree.
+  for (let guard = 0; guard < 2000; guard++) {
+    const misnested = Array.from(doc.querySelectorAll('ol, ul')).find((list) => {
+      const parent = list.parentElement
+      return Boolean(parent && (parent.tagName === 'OL' || parent.tagName === 'UL') && precedingLi(list))
+    })
+    if (!misnested) break
+    precedingLi(misnested)!.appendChild(misnested)
+  }
+}
+
+/**
+ * Resolve a pasted image `src` (a `data:` URI, a `http(s)`/`file:` URL) to a
+ * local, note-relative path — or `null` to leave it untouched. Used to pull
+ * OneNote/web images into the note's assets folder on paste (their original URLs
+ * are often behind Office/CDN auth and stop resolving quickly).
+ */
+export type ImageResolver = (src: string, alt: string) => Promise<string | null>
+
+/** Rewrite every `<img>` whose source the resolver can localize, in parallel. */
+async function localizeImages(doc: Document, resolve: ImageResolver): Promise<void> {
+  const imgs = Array.from(doc.querySelectorAll('img'))
+  await Promise.all(
+    imgs.map(async (img) => {
+      const src = img.getAttribute('src') || ''
+      if (!src) return
+      try {
+        const local = await resolve(src, img.getAttribute('alt') || '')
+        if (local) img.setAttribute('src', local)
+      } catch {
+        // Unreachable/auth-gated source → keep the original link.
+      }
+    })
+  )
+}
+
 function mathToLatex(mathHtml: string): string {
   try {
     return MathMLToLaTeX.convert(mathHtml).replace(/\s+/g, ' ').trim()
@@ -179,12 +247,18 @@ function renumberFootnotes(md: string): string {
   )
 }
 
-export function htmlToMarkdown(html: string): string {
+export async function htmlToMarkdown(html: string, resolveImage?: ImageResolver): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   preprocessMath(doc)
+  // Repair OneNote/Word sub-lists (a list mis-parented as a sibling of the
+  // `<li>`s) so nested numbering indents instead of flattening.
+  fixNestedLists(doc)
   // Footnote links carry the note text as a `title` tooltip; it duplicates the
   // note definition and, with parentheses inside, breaks the `[n](url)` output.
   doc.querySelectorAll('a[href*="#footnote"]').forEach((a) => a.removeAttribute('title'))
+  // Pull embedded/remote images into the note's assets folder before converting,
+  // so the emitted `![](…)` points at a local file, not an auth-gated URL.
+  if (resolveImage) await localizeImages(doc, resolveImage)
   let md = getService().turndown(doc.body)
   md = renumberFootnotes(rewriteFootnotes(md))
   return md

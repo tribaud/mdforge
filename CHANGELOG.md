@@ -4,6 +4,31 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Paste from OneNote / Word** now keeps the content: rich HTML on the clipboard
+  is converted to Markdown instead of dropping the flat screenshot bitmap those
+  apps copy alongside it. A plain image copy (a lone image, no text) still saves
+  the bitmap.
+
+### Added
+
+- **Embedded images are localized on paste** — images inside the pasted HTML
+  (`data:` URIs and remote/`file:` URLs) are downloaded into the note's assets
+  folder (`Note-<hash>.png`) and the links rewritten, so the note keeps working
+  after the original OneNote/CDN URLs stop resolving behind Office auth.
+- **Clipboard debug button** (`🐛`) in the toolbar — dumps the full pasted
+  clipboard (every type: `text/html`, `text/plain`, `text/rtf`, files…) to a tab,
+  to inspect how an app encodes its content.
+
+### Fixed
+
+- **Nested numbered lists from OneNote/Word** no longer flatten into an unreadable
+  single sequence: OneNote emits sub-lists as siblings of the list items (invalid
+  HTML), which are now re-parented so `1. 2. 3.` levels indent correctly.
+
 ## [0.3.1]
 
 ### Changed

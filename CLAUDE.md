@@ -159,6 +159,20 @@ so it round-trips for free unless noted.
   escaping disabled; web math via `data-mathml` → `mathml-to-latex`; footnotes →
   `[^n]` with per-section renumber; optional `> source` footer (`appendSource`).
   Image on the clipboard / drop / the 🖼 picker → host saves it next to the note.
+  **Rich HTML wins over the fallback bitmap** an app also copies (OneNote/Word
+  paste a screenshot alongside the HTML — pasting a note used to drop just that
+  flat image); the exception is a **lone `<img>` with no text** (`htmlIsJustImage`
+  → plain image copy → save the crisper bitmap instead). On conversion, every
+  embedded `<img>` (`data:`/`http(s):`/`file:`) is **localized** into the assets
+  folder before turndown runs — `htmlToMarkdown(html, resolveImage)` is async and
+  the resolver round-trips through the host `importImagePath` (now handling `data:`
+  and remote URLs via `fetchImageBytes`, `quiet` so auth-gated OneNote/CDN URLs
+  fail without a modal). So the emitted `![](assets/Note-<hash>.png)` survives even
+  after Office/CDN auth expires on the original URLs. A toolbar **debug toggle**
+  (`🐛`, `ICONS.bug`) dumps the full clipboard — the type list, files, and every
+  string payload (`text/html`, `text/plain`, `text/rtf`, uri-list…) — to a tab
+  (`debugPasteHtml` → host), without consuming the paste, to inspect exactly how
+  an app encodes its content (e.g. nested numbered lists).
 - **Outline / presentation / wikilink open / asset ops / diff buttons**: host-side
   in `extension.ts` (engine-agnostic, unchanged from 0.2.x).
 

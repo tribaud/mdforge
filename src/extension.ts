@@ -486,7 +486,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         mime?: string
         name?: string
         path?: string
+        quiet?: boolean
         html?: string
+        dump?: string
         range?: {
           from: { line: number; character: number }
           to: { line: number; character: number }
@@ -546,8 +548,15 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             )
             break
           case 'debugPasteHtml': {
-            const content = `<!-- ==== text/html ==== -->\n${message.html || '(empty)'}\n\n<!-- ==== text/plain ==== -->\n${message.text || '(empty)'}\n`
-            const doc = await vscode.workspace.openTextDocument({ content, language: 'html' })
+            // `dump` is the full multi-type clipboard dump from the debug button;
+            // fall back to the old html/text shape for any legacy caller.
+            const content =
+              message.dump ??
+              `==== text/html ====\n${message.html || '(empty)'}\n\n==== text/plain ====\n${message.text || '(empty)'}\n`
+            const doc = await vscode.workspace.openTextDocument({
+              content,
+              language: message.dump ? 'markdown' : 'html'
+            })
             await vscode.window.showTextDocument(doc, { preview: false })
             break
           }
@@ -789,25 +798,41 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
   private async importImagePath(
     document: vscode.TextDocument,
     webview: vscode.Webview,
-    message: { id?: number; path?: string }
+    message: { id?: number; path?: string; quiet?: boolean }
   ): Promise<void> {
     const id = message.id ?? 0
     try {
-      if (!message.path) throw new Error('no path received')
-      const uri = /^[a-z][a-z0-9+.-]*:\/\//i.test(message.path)
-        ? vscode.Uri.parse(message.path)
-        : vscode.Uri.file(message.path)
-      const bytes = Buffer.from(await vscode.workspace.fs.readFile(uri))
+      const source = message.path
+      if (!source) throw new Error('no path received')
+      let bytes: Buffer
+      let ext: string
+      let originalName: string
+      // `data:`/`http(s):` can't be read through the file system — decode or
+      // download them; a bare path or `file:`/other URI is a real file to read.
+      if (/^data:image\//i.test(source) || /^https?:/i.test(source)) {
+        const fetched = await fetchImageBytes(source)
+        bytes = fetched.bytes
+        ext = fetched.ext
+        originalName = /^data:/i.test(source) ? 'image' : remoteBaseName(source)
+      } else {
+        const uri = /^[a-z][a-z0-9+.-]*:\/\//i.test(source)
+          ? vscode.Uri.parse(source)
+          : vscode.Uri.file(source)
+        bytes = Buffer.from(await vscode.workspace.fs.readFile(uri))
+        ext = imageExtension(undefined, uri.fsPath)
+        originalName = path.basename(uri.fsPath, path.extname(uri.fsPath)) || 'image'
+      }
       const linkStyle = vscode.workspace
         .getConfiguration('mdforge', document.uri)
         .get<string>('images.linkStyle', 'markdown')
-      const originalName = path.basename(uri.fsPath, path.extname(uri.fsPath)) || 'image'
-      const ext = imageExtension(undefined, uri.fsPath)
       const src = await this.saveAsset(document, bytes, ext, originalName)
       void webview.postMessage({ type: 'imageInserted', id, src, alt: originalName, linkStyle })
     } catch (error) {
       void webview.postMessage({ type: 'imageInserted', id, error: String(error) })
-      void vscode.window.showErrorMessage(`MDForge: could not import image — ${error}`)
+      // Paste localization tries many images and expects some (auth-gated OneNote/
+      // CDN URLs) to fail — stay quiet then, only log; a single drop/import warns.
+      if (message.quiet) console.warn(`MDForge: could not import pasted image — ${error}`)
+      else void vscode.window.showErrorMessage(`MDForge: could not import image — ${error}`)
     }
   }
 
