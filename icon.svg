@@ -1,30 +1,71 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <!-- MDForge — une plaque Markdown poinçonnée sur l'enclume.
-       Monochrome (#5c5c5c) sur fond transparent ; les séparations entre
-       pièces sont des vides, jamais du blanc, pour rester lisibles aussi
-       bien sur fond clair que sur fond sombre. -->
-  <g fill="#5c5c5c">
-    <!-- plaque Markdown -->
-    <rect x="36" y="4" width="56" height="30" rx="6"/>
-    <!-- poinçon : descend de la plaque vers l'encoche de la table -->
-    <path d="M 59 34 h 10 v 26 a 5 5 0 0 1 -10 0 Z"/>
-    <!-- table de l'enclume : corne effilée à gauche, talon carré à droite,
-         encoche centrale qui reçoit le poinçon -->
-    <path d="M 6 62
-             C 18 54 30 53 40 53
-             H 55 V 69 H 73 V 53
-             H 122 V 76 H 40
-             C 28 76 16 70 6 65 Z"/>
-    <!-- taille concave et pied évasé -->
-    <path d="M 44 80 H 92
-             C 92 92 80 96 80 104
-             C 80 112 96 112 110 116
-             L 118 119 V 123 H 18 V 119 L 26 116
-             C 40 112 56 112 56 104
-             C 56 96 44 92 44 80 Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!--
+    MDForge — icone d'extension. Source de verite : `npm run icon` regenere
+    icon.png d'ici, ne pas retoucher le PNG a la main.
+
+    Fond transparent volontaire. Le dessin se lit de deux facons selon le
+    theme, et c'est voulu :
+      - sur fond clair, les contours blancs disparaissent et il ne reste
+        qu'une silhouette pleine ;
+      - sur fond sombre, ce sont les contours qui portent le dessin.
+    Consequence : ne jamais remplacer le blanc des contours par une couleur
+    de theme, et ne jamais poser de tuile de fond, sinon l'une des deux
+    lectures casse.
+  -->
+  <style>
+    .shape-fill { fill: #555555; }
+    .pole-fill  { fill: #000000; }
+    .outline    { stroke: #ffffff; stroke-width: 4; stroke-linejoin: round; stroke-linecap: round; }
+    .text-m     { fill: #ffffff; font-family: Arial, Helvetica, sans-serif; font-weight: 900; font-size: 26px; }
+    .arrow      { stroke: #ffffff; stroke-width: 4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+
+  <!-- Le dessin est plus large que haut : ce translate le recentre
+       verticalement dans le carre, sinon il flotte en haut de la boite. -->
+  <g transform="translate(0,6)">
+
+  <!-- ================= ENCLUME ================= -->
+
+  <!-- pied evase, avec l'arche sous la base. Le pied a ete remonte de 180 a
+       164 pour aplatir l'enclume : la hauteur taille->pied passe de 65 a 49
+       unites. Les y intermediaires suivent la meme echelle (0.754) depuis la
+       taille (y=115), pour que le galbe du pied ne s'ecrase pas. -->
+  <path class="shape-fill outline"
+        d="M 60 115
+           L 140 115
+           L 140 133.8
+           C 150 145.2, 165 152.7, 175 164
+           L 125 164
+           C 120 152.7, 80 152.7, 75 164
+           L 25 164
+           C 35 152.7, 50 145.2, 60 133.8
+           Z" />
+
+  <!-- corps central -->
+  <rect class="shape-fill outline" x="50" y="70" width="100" height="45" />
+
+  <!-- pic gauche : pointe a x=6 (etait 15), dessous incurve -->
+  <path class="shape-fill outline"
+        d="M 50 82
+           L 6 82
+           C 19 102, 31 108, 50 115
+           Z" />
+
+  <!-- pic droit : miroir du gauche autour de x=100 -->
+  <path class="shape-fill outline"
+        d="M 150 82
+           L 194 82
+           C 181 102, 169 108, 150 115
+           Z" />
+
+  <!-- ================= MARTEAU ================= -->
+
+  <!-- manche raccourci a la meme echelle que le pied (bout a y=130 au lieu
+       de 135), pour qu'il s'enfonce d'autant dans la taille qu'avant -->
+  <rect class="pole-fill outline" x="92" y="45" width="16" height="85" rx="6" />
+  <rect class="shape-fill outline" x="67" y="24" width="66" height="36" rx="6" />
+  <text class="text-m" x="90" y="50" text-anchor="middle">M</text>
+  <path class="arrow" d="M 112 34 L 112 50 M 107 44 L 112 50 L 117 44" />
+
   </g>
-  <!-- glyphe « M↓ » ajouré dans la plaque -->
-  <path d="M 46 27 V 11 L 53 19 L 60 11 V 27" fill="none" stroke="#ffffff"
-        stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M 71 10 h 7 v 9 h 5.5 L 74.5 30 L 65.5 19 H 71 Z" fill="#ffffff"/>
 </svg>

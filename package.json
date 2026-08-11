@@ -300,7 +300,7 @@
     "watch:ext": "tsc -watch -p ./",
     "watch:webview": "node esbuild.mjs --watch",
     "preview": "node scripts/cm-preview.mjs",
-    "icon": "magick -background none -density 384 icon.svg -resize 512x512 png:- | magick - -filter Lanczos -resize 128x128 -strip PNG32:icon.png",
+    "icon": "magick -background none -density 384 icon.svg -filter Lanczos -resize 128x128 -strip PNG32:icon.png",
     "test:fidelity": "npm run build:webview && node scripts/cm-fidelity.test.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
