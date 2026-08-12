@@ -111,6 +111,21 @@ const HEADING_HTML = `<html><body><ul>
 <p style='font-size:12.0pt;color:#333333'>In this exercise, you will use the browser.</p>
 </ul></body></html>`
 
+// A WordPress SyntaxHighlighter code block: a <table> with a line-number gutter
+// column and a code column whose lines are split into many syntax <code> spans.
+// It must become a fenced ```csharp block, not a garbled GFM table.
+const SYNTAXHL_HTML = `<html><body>
+<p>Here is an example.</p>
+<div class="wp-block-syntaxhighlighter-code"><div><div id="highlighter_1" class="syntaxhighlighter  csharp">
+<table border="0" cellpadding="0" cellspacing="0"><tbody><tr>
+<td class="gutter"><div class="line number1 index0 alt2">1</div><div class="line number2 index1 alt1">2</div><div class="line number3 index2 alt2">3</div></td>
+<td class="code"><div class="container">
+<div class="line number1 index0 alt2"><code class="csharp keyword">public</code> <code class="csharp plain">ActionResult Index()</code></div>
+<div class="line number2 index1 alt1"><code class="csharp plain">{</code></div>
+<div class="line number3 index2 alt2"><code class="csharp spaces">&nbsp;&nbsp;&nbsp;&nbsp;</code><code class="csharp keyword">return</code> <code class="csharp plain">View(MyData);</code></div>
+</div></td></tr></tbody></table></div></div></div>
+</body></html>`
+
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
   if (url === '/') {
@@ -266,6 +281,18 @@ try {
     const asHeadings = /^# Deep Dive into the Graph$/m.test(out) && /^## Exercise 1: Create Groups$/m.test(out)
     const bodyStays = /^In this exercise, you will use the browser\.$/m.test(out)
     check('8. titres OneNote (gras/semibold) → titres Markdown', asHeadings && bodyStays, JSON.stringify(out))
+    await page.close()
+  }
+  // 8) A WordPress SyntaxHighlighter code widget becomes a fenced code block
+  //    (language from the brush), not a GFM table with a line-number column.
+  {
+    const page = await open()
+    await pasteHtml(page, SYNTAXHL_HTML)
+    const out = (await lastEdit(page)) || ''
+    const fenced = /```csharp\n/.test(out) && out.includes('public ActionResult Index()')
+    const code = out.includes('    return View(MyData);')
+    const noTable = !out.includes('| 1 |') && !/^\s*\|/m.test(out) && !/\b1\.\s*\n?\s*2\b/.test(out)
+    check('9. bloc SyntaxHighlighter → code fencé (csharp), pas un tableau', fenced && code && noTable, JSON.stringify(out))
     await page.close()
   }
 } finally {
