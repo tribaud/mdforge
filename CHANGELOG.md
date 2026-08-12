@@ -4,6 +4,45 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0]
+
+### Changed
+
+- **Paste from OneNote / Word** now keeps the content: rich HTML on the clipboard
+  is converted to Markdown instead of dropping the flat screenshot bitmap those
+  apps copy alongside it. A plain image copy (a lone image, no text) still saves
+  the bitmap.
+
+### Added
+
+- **OneNote section titles become headings** — OneNote has no heading element and
+  styles a title as a fully-bold (or `semibold`) paragraph, which pasted as body
+  text; such paragraphs are now promoted to Markdown `#`/`##` headings (by font
+  size) so sections stand out and read correctly.
+- **Embedded images are localized on paste** — images inside the pasted HTML
+  (`data:` URIs and remote/`file:` URLs) are downloaded into the note's assets
+  folder (`Note-<hash>.png`) and the links rewritten, so the note keeps working
+  after the original OneNote/CDN URLs stop resolving behind Office auth.
+- **Clipboard debug button** (`🐛`) in the toolbar — dumps the full pasted
+  clipboard (every type: `text/html`, `text/plain`, `text/rtf`, files…) to a tab,
+  to inspect how an app encodes its content.
+
+### Fixed
+
+- **Nested numbered lists from OneNote/Word** no longer flatten into an unreadable
+  single sequence: OneNote emits sub-lists as siblings of the list items (invalid
+  HTML), which are now re-parented so `1. 2. 3.` levels indent correctly.
+- **Numbered lists no longer restart at 1** when OneNote splits one list into
+  chunks (a paragraph or image between two steps): the resumption's `<li value=N>`
+  is carried onto the list as `start`, so the sequence keeps counting.
+- **A step's image indents under the step** — OneNote lifts an illustrating image
+  out of the list as a sibling paragraph, which broke the numbering and left the
+  image flush-left; it is now pulled back into the step it follows.
+- **Sub-steps keep their nesting across images** — OneNote drops each list
+  resumption after an image back to the top level, flattening deep steps; the tree
+  is now rebuilt from the resumption's `<li value=N>` and the images' `margin-left`
+  depth, so a multi-level numbered list survives the round-trip intact.
+
 ## [0.3.1]
 
 ### Changed

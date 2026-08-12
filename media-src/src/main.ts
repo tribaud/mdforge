@@ -41,7 +41,7 @@ import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
 import { setDiagnostics, lintGutter } from '@codemirror/lint'
 import type { Diagnostic } from '@codemirror/lint'
-import { htmlToMarkdown, isRichHtml } from './cm-paste-html'
+import { htmlToMarkdown, isRichHtml, htmlIsJustImage, describeHtmlStructure } from './cm-paste-html'
 import './cm-theme.css'
 import 'katex/dist/katex.min.css'
 
@@ -185,6 +185,48 @@ function sendImageFile(file: File, pos: number): void {
   )
 }
 
+/** Pending host image saves for paste localization (id → resolver). Distinct
+ * from `pendingImages` (which inserts a link at a saved caret position): here we
+ * only need the resulting local path to rewrite an `<img>` before conversion. */
+const pendingSaves = new Map<number, (src: string | null) => void>()
+
+/** Ask the host to save an image and resolve to its note-relative path (or null
+ * on failure). A timeout guards against a lost response wedging the paste. */
+function requestImageSave(message: Record<string, unknown>): Promise<string | null> {
+  const id = ++imageSeq
+  return new Promise((resolve) => {
+    pendingSaves.set(id, resolve)
+    vscode.postMessage({ ...message, id })
+    setTimeout(() => {
+      if (pendingSaves.delete(id)) resolve(null)
+    }, 15000)
+  })
+}
+
+/** Localize a pasted image source to a local asset. `data:`/`http(s):`/`file:`
+ * go through the host (`importImagePath`, quiet so auth-gated URLs fail without a
+ * modal); anything else (blob:, already-relative) is left as-is. */
+function localizePastedImage(src: string): Promise<string | null> {
+  if (/^(data:image\/|https?:|file:)/i.test(src)) {
+    return requestImageSave({ type: 'importImagePath', path: src, quiet: true })
+  }
+  return Promise.resolve(null)
+}
+
+/** Convert pasted rich HTML to Markdown (localizing its images) and insert it. */
+async function handleHtmlPaste(html: string, sourceUrl: string): Promise<void> {
+  let md = ''
+  try {
+    md = await htmlToMarkdown(html, (src) => localizePastedImage(src))
+  } catch {
+    md = ''
+  }
+  if (!md) return
+  view.dispatch(view.state.replaceSelection(md))
+  if (appendSource) appendSourceLine(view, sourceUrl)
+  view.focus()
+}
+
 /** Fold a heading down to the end of its section (up to the next heading of the
  * same or higher level) — click the gutter arrow to collapse/expand. */
 const markdownFold = foldService.of((state, lineStart) => {
@@ -242,30 +284,68 @@ function appendSourceLine(view: EditorView, url: string): void {
   view.focus()
 }
 
+/* ---------- clipboard debug: dump every paste to a tab ---------- */
+let debugPaste = false
+let debugButton: HTMLElement | null = null
+function toggleDebugPaste(): void {
+  debugPaste = !debugPaste
+  debugButton?.classList.toggle('cm-tb-btn-active', debugPaste)
+}
+
+/** A human-readable dump of everything on the clipboard: the type list, any
+ * files, and the full payload of each string type (text/html, text/plain,
+ * text/rtf, uri-list…). Sent to the host to open in a tab so the exact source
+ * markup — e.g. how an app encodes nested numbered lists — can be inspected. */
+function buildClipboardDump(cd: DataTransfer): string {
+  const types = Array.from(cd.types)
+  const parts = [`==== types ====\n${types.join(', ') || '(none)'}`]
+  const files =
+    cd.files && cd.files.length
+      ? Array.from(cd.files)
+          .map((f) => `${f.name} — ${f.type || '?'} — ${f.size} B`)
+          .join('\n')
+      : '(none)'
+  parts.push(`==== files ====\n${files}`)
+  for (const t of types) {
+    if (t === 'Files') continue
+    let value = ''
+    try {
+      value = cd.getData(t)
+    } catch {
+      value = '(unreadable)'
+    }
+    parts.push(`==== ${t} ====\n${value || '(empty)'}`)
+  }
+  const html = cd.getData('text/html')
+  if (html) parts.push(`==== list/image skeleton ====\n${describeHtmlStructure(html)}`)
+  return parts.join('\n\n')
+}
+
 const domEvents = EditorView.domEventHandlers({
   paste: (event, view) => {
     const cd = event.clipboardData
     if (!cd) return false
-    // 1) An image on the clipboard → save it next to the note (existing flow).
+    // Debug mode: open the raw clipboard payload in a tab (does not consume the
+    // paste — the normal handling below still runs).
+    if (debugPaste) vscode.postMessage({ type: 'debugPasteHtml', dump: buildClipboardDump(cd) })
+    // 1) Rich HTML (OneNote note, web page, doc) → convert to Markdown and pull
+    //    its images into the assets folder. This wins over the fallback bitmap
+    //    that OneNote (and others) also put on the clipboard — pasting a whole
+    //    note used to drop just a flat screenshot. Skipped inside a code block
+    //    (raw text pastes verbatim) and when the HTML is only a lone image
+    //    (a plain image copy → save the crisper bitmap in step 2 instead).
+    const html = cd.getData('text/html')
+    if (html && isRichHtml(html) && !htmlIsJustImage(html) && !inCodeContext(view)) {
+      event.preventDefault()
+      void handleHtmlPaste(html, detectSourceUrl(cd))
+      return true
+    }
+    // 2) An image on the clipboard → save it next to the note (existing flow).
     const image = cd.files && Array.from(cd.files).find((f) => f.type.startsWith('image/'))
     if (image) {
       event.preventDefault()
       sendImageFile(image, view.state.selection.main.head)
       return true
-    }
-    // 2) Rich HTML (web page, doc) → convert to Markdown. Skipped inside a code
-    //    block, where the raw text should paste verbatim.
-    const html = cd.getData('text/html')
-    if (html && isRichHtml(html) && !inCodeContext(view)) {
-      const md = htmlToMarkdown(html)
-      if (md) {
-        event.preventDefault()
-        view.dispatch(view.state.replaceSelection(md))
-        // Optional "From <url>" footer for external web content.
-        if (appendSource) appendSourceLine(view, detectSourceUrl(cd))
-        view.focus()
-        return true
-      }
     }
     return false
   },
@@ -344,6 +424,7 @@ function addHostButtons(bar: HTMLElement): void {
   bar.appendChild(spacer)
 
   sourceButton = mk(ICONS.source, 'Afficher la source Markdown', () => toggleSource())
+  debugButton = mk(ICONS.bug, 'Debug : afficher le presse-papiers collé (onglet)', () => toggleDebugPaste())
   mk(ICONS.textEditor, "Ouvrir dans l'éditeur de texte VS Code", post('openTextEditor'))
   mk(ICONS.refresh, 'Rafraîchir les images', () => refreshImages())
   readOnlyButton = mk(ICONS.lockOpen, "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
@@ -737,7 +818,11 @@ window.addEventListener('message', (event) => {
       break
     case 'imageInserted':
       if (typeof msg.id === 'number') {
-        if (msg.error) pendingImages.delete(msg.id)
+        const saver = pendingSaves.get(msg.id)
+        if (saver) {
+          pendingSaves.delete(msg.id)
+          saver(msg.error ? null : (msg.src ?? null))
+        } else if (msg.error) pendingImages.delete(msg.id)
         else if (msg.src) insertImageLink(msg.id, msg.src, msg.alt ?? '', msg.linkStyle ?? 'markdown')
       }
       break
