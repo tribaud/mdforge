@@ -111,6 +111,54 @@ function promoteHeadings(doc: Document): void {
 }
 
 /**
+ * Convert WordPress **SyntaxHighlighter** code blocks to real fenced code. That
+ * plugin (common on dev blogs) renders code as a `<table>`: a line-number gutter
+ * column and a code column whose every source line is a `<div class="line">`
+ * split into many syntax `<code>` spans (`csharp plain`, `csharp string`…).
+ * Turndown's GFM plugin would turn that `<table>` into a garbled Markdown table
+ * — line numbers and all — which is unreadable. Instead, read the code column
+ * line by line back into text and swap the whole widget for a `<pre><code
+ * class="language-…">`, so Turndown emits a fenced block tagged with the brush
+ * language. Runs before the list/table passes so the `<table>` never survives.
+ */
+function convertSyntaxHighlighter(doc: Document): void {
+  // Map a few SyntaxHighlighter brush aliases to the names fenced blocks expect.
+  const brushAlias: Record<string, string> = {
+    jscript: 'javascript',
+    js: 'javascript',
+    py: 'python',
+    ps1: 'powershell',
+    sh: 'bash',
+    shell: 'bash'
+  }
+  // Structural classes on the widget root — anything else is the brush name.
+  const structural = new Set(['syntaxhighlighter', 'nogutter', 'collapsed', 'toolbar', 'printing', 'first-line'])
+  for (const block of Array.from(doc.querySelectorAll('.syntaxhighlighter'))) {
+    const brush = Array.from(block.classList).find((c) => c && !structural.has(c)) || ''
+    const lang = brushAlias[brush] ?? brush
+    // The code lives in the `.code` column; the `.gutter` column holds the line
+    // numbers (also `.line` divs) and must be excluded.
+    const codeCol = block.querySelector('td.code, .code')
+    const lineEls = codeCol
+      ? Array.from(codeCol.querySelectorAll('.line'))
+      : Array.from(block.querySelectorAll('.line')).filter((l) => !l.closest('.gutter'))
+    if (!lineEls.length) continue
+    const code = lineEls
+      .map((l) => (l.textContent ?? '').replace(/\u00a0/g, ' '))
+      .join('\n')
+      .replace(/\s+$/, '')
+    const pre = doc.createElement('pre')
+    const codeEl = doc.createElement('code')
+    if (lang) codeEl.className = `language-${lang}`
+    codeEl.textContent = code
+    pre.appendChild(codeEl)
+    // Replace the outer widget wrapper when present, so no empty husk is left.
+    const wrapper = block.closest('.wp-block-syntaxhighlighter-code') ?? block
+    wrapper.replaceWith(pre)
+  }
+}
+
+/**
  * Fix OneNote's mis-nested lists. OneNote (and Word) emit a sub-list as a
  * **direct child of the parent list** — a `<ol>`/`<ul>` sibling of the `<li>`s,
  * not inside one — which is invalid HTML. Turndown then can't indent it, so
@@ -492,6 +540,9 @@ export function describeHtmlStructure(html: string): string {
 export async function htmlToMarkdown(html: string, resolveImage?: ImageResolver): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   preprocessMath(doc)
+  // Rewrite WordPress SyntaxHighlighter code widgets (a `<table>` of line spans)
+  // into fenced `<pre><code>` before the GFM table rule can mangle them.
+  convertSyntaxHighlighter(doc)
   // Promote OneNote's bold-paragraph section titles to real Markdown headings so
   // they don't read as body text (and so they cleanly break the list context).
   promoteHeadings(doc)
