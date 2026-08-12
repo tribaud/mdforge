@@ -4,6 +4,18 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.1]
+
+### Changed
+
+- **Slimmer package** — only KaTeX's `woff2` fonts are bundled now. Its CSS lists
+  `woff2`/`woff`/`ttf` per glyph family and VS Code's Chromium webview always uses
+  `woff2`, so the `woff`/`ttf` fallbacks (~40 files, ~0.9 MB) were dead weight and
+  are dropped at build time. The webview keeps its lazy code-splitting (Mermaid,
+  KaTeX and language grammars load on demand), which is best for startup latency.
+- CI and publish workflows run on **Node 24** — `actions/checkout` and
+  `actions/setup-node` bumped to v5 (they no longer target the deprecated Node 20).
+
 ## [0.4.0]
 
 ### Changed

@@ -19,9 +19,9 @@ jobs:
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
       PRERELEASE: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
