@@ -4,6 +4,16 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.2]
+
+### Fixed
+
+- **Code blocks paste readably from dev blogs** — the WordPress *SyntaxHighlighter*
+  widget renders code as a `<table>` (a line-number gutter column plus one
+  `<code>` span per token), which pasted as a garbled Markdown table. Such blocks
+  are now converted to a fenced code block tagged with the brush language (e.g.
+  ` ```csharp `), with indentation preserved and the line numbers dropped.
+
 ## [0.4.1]
 
 ### Changed
