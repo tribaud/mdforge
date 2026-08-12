@@ -15,6 +15,10 @@ All notable changes to MDForge are documented here. The format follows
 
 ### Added
 
+- **OneNote section titles become headings** — OneNote has no heading element and
+  styles a title as a fully-bold (or `semibold`) paragraph, which pasted as body
+  text; such paragraphs are now promoted to Markdown `#`/`##` headings (by font
+  size) so sections stand out and read correctly.
 - **Embedded images are localized on paste** — images inside the pasted HTML
   (`data:` URIs and remote/`file:` URLs) are downloaded into the note's assets
   folder (`Note-<hash>.png`) and the links rewritten, so the note keeps working

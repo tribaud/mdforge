@@ -62,6 +62,55 @@ export function htmlIsJustImage(html: string): boolean {
 }
 
 /**
+ * Promote OneNote's section headings to real Markdown headings. OneNote has no
+ * heading element: it styles a heading as a `<p>` whose whole text is bold (a
+ * single `font-weight:bold` span), often with a `sc_segoe-ui_semibold` font or a
+ * large `font-size`. Turndown renders those as plain paragraphs, so section
+ * titles read as body text. Detect them and swap in an `<h1>`/`<h2>` (by font
+ * size) so Turndown emits `#`/`##`. Paragraphs inside a list item, or carrying an
+ * image or a line break, are left alone.
+ */
+function promoteHeadings(doc: Document): void {
+  const styleOf = (el: Element): string => el.getAttribute('style') || ''
+  const fontPt = (el: Element): number | null => {
+    const m = /font-size:\s*([\d.]+)pt/i.exec(styleOf(el))
+    return m ? parseFloat(m[1]) : null
+  }
+  const isBold = (el: Element): boolean =>
+    el.tagName === 'B' || el.tagName === 'STRONG' || /font-weight:\s*(bold|[6-9]\d\d)/i.test(styleOf(el))
+  // True when every text-bearing node under `root` sits in a bold context.
+  const allBold = (root: Element): boolean => {
+    let hasText = false
+    let all = true
+    const walk = (node: Node, bold: boolean): void => {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType === 3) {
+          if ((child.textContent || '').trim()) {
+            hasText = true
+            if (!bold) all = false
+          }
+        } else if (child.nodeType === 1) {
+          walk(child, bold || isBold(child as Element))
+        }
+      }
+    }
+    walk(root, false)
+    return hasText && all
+  }
+  for (const p of Array.from(doc.querySelectorAll('p'))) {
+    if (p.closest('li') || p.querySelector('img, br')) continue
+    const text = (p.textContent || '').replace(/\s+/g, ' ').trim()
+    if (!text || text.length > 200) continue
+    const semibold = /font-family:[^;]*semibold/i.test(styleOf(p))
+    if (!(allBold(p) || (semibold && text.length <= 140))) continue
+    const size = fontPt(p) ?? fontPt(p.querySelector('span') ?? p) ?? 0
+    const heading = doc.createElement(size >= 18 ? 'h1' : 'h2')
+    heading.textContent = text
+    p.replaceWith(heading)
+  }
+}
+
+/**
  * Fix OneNote's mis-nested lists. OneNote (and Word) emit a sub-list as a
  * **direct child of the parent list** — a `<ol>`/`<ul>` sibling of the `<li>`s,
  * not inside one — which is invalid HTML. Turndown then can't indent it, so
@@ -443,6 +492,9 @@ export function describeHtmlStructure(html: string): string {
 export async function htmlToMarkdown(html: string, resolveImage?: ImageResolver): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   preprocessMath(doc)
+  // Promote OneNote's bold-paragraph section titles to real Markdown headings so
+  // they don't read as body text (and so they cleanly break the list context).
+  promoteHeadings(doc)
   // Rebuild OneNote's list structure: fix sub-lists mis-parented as siblings of
   // the `<li>`s; re-nest the fragments OneNote split at each image (restoring the
   // indentation and attaching images to their step); pull any remaining lifted

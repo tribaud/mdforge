@@ -103,6 +103,14 @@ const REAL_LIST_HTML = `<html><body><ul>
   <ol><li value=6>The user is not subscribed.</li></ol>
 </ul></body></html>`
 
+// OneNote has no heading tag: a section title is a fully-bold <p> (big font, or a
+// semibold family). These must become real Markdown headings, not body text.
+const HEADING_HTML = `<html><body><ul>
+<p style='font-size:20.0pt'><span style='font-weight:bold'>Deep Dive into the Graph</span></p>
+<p style='font-family:sc_segoe-ui_semibold;font-size:10.0pt'><span style='font-weight:bold'>Exercise 1: Create Groups</span></p>
+<p style='font-size:12.0pt;color:#333333'>In this exercise, you will use the browser.</p>
+</ul></body></html>`
+
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
   if (url === '/') {
@@ -247,6 +255,17 @@ try {
     const level2 = /^ {3,4}2\. Set the name\./m.test(out) && /^ {3,4}2\. Click the pencil icon\./m.test(out) && /^ {3,4}1\. Click New conversation\./m.test(out)
     const notFlattened = !/^2\. Set the name\./m.test(out) && !/^1\. Click New conversation\./m.test(out)
     check('7. section OneNote reconstruite (niveaux + numérotation)', level1 && level2 && notFlattened, JSON.stringify(out))
+    await page.close()
+  }
+
+  // 7) OneNote's bold-paragraph section titles become Markdown headings.
+  {
+    const page = await open()
+    await pasteHtml(page, HEADING_HTML)
+    const out = (await lastEdit(page)) || ''
+    const asHeadings = /^# Deep Dive into the Graph$/m.test(out) && /^## Exercise 1: Create Groups$/m.test(out)
+    const bodyStays = /^In this exercise, you will use the browser\.$/m.test(out)
+    check('8. titres OneNote (gras/semibold) → titres Markdown', asHeadings && bodyStays, JSON.stringify(out))
     await page.close()
   }
 } finally {
