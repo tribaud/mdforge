@@ -4,6 +4,51 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.3]
+
+### Added
+
+- **Fenced code block button** in the toolbar — inserts a ` ``` ` block (wrapping
+  the selection when there is one) and **toggles**: with the caret already inside
+  a block it unwraps it, keeping the code and re-selecting it so a second click
+  wraps it again.
+- **Insert a standard frontmatter block** from the toolbar (a *properties* button)
+  or the `/frontmatter` slash command: `title` / `tags` / `author` / `date`, with
+  `title` prefilled from the document's first `# H1` — which is then removed
+  (markdownlint MD025 flags a frontmatter title next to an H1, and the card
+  already renders the title).
+- **Enlarge a Mermaid diagram** — a `⤢` button opens the diagram in a centered
+  popup with mouse-wheel / `+` `−` zoom and drag-to-pan (the SVG stays vector-crisp
+  at any zoom).
+- **Refresh a Mermaid diagram** — a `↻` button re-renders a single diagram, for
+  the rare transient render error (it stays visible while a diagram is in error).
+- A little more breathing room **above headings**.
+
+### Changed
+
+- **Mermaid diagrams re-render when the theme changes** (`mdforge.mermaid.theme`,
+  or the VS Code theme in `auto`) — they no longer keep their previous colours.
+- **Code-block language picker** is now a custom filtered, scrollable dropdown
+  (the native `<datalist>` arrow stole focus and could not be sized): type to
+  filter, wheel/click or ↑/↓+Enter to pick. It offers `mermaid` (turning the block
+  into a diagram) and every language **alias** — so `bash`, `zsh`, `sh`, … are
+  listed, not just `Shell`.
+
+### Fixed
+
+- **The frontmatter card no longer disappears** after editing it and clicking
+  *✓ Terminer*: the closing `---` fence parsed as a thematic break and drew a
+  block rule that overlapped — and, on a rebuild, replaced — the card.
+- **Mermaid no longer errors with “Cannot read properties of null (reading
+  'firstChild')”**: concurrent renders clobbered each other's temporary node.
+  Renders are now serialized, with one automatic retry before showing an error.
+- **The code-block button can no longer crash the editor** with an *invalid change
+  range*: right after unwrapping, the position-mapped (not-yet-reparsed) syntax
+  tree could report an inverted node range. The block boundaries are now read from
+  the current text instead.
+- A failing toolbar action is caught and logged instead of tearing down the whole
+  editor (the fatal “failed to initialize” screen).
+
 ## [0.4.2]
 
 ### Fixed

@@ -407,10 +407,14 @@ body.mdforge-width-full .cm-content {
   cursor: pointer;
 }
 
-/* Headings: enlarge the whole line. */
+/* Headings: enlarge the whole line, and add breathing room above so the
+   heading doesn't crowd the paragraph before it. Padding (not margin) — CM
+   measures the line's border-box, and margin would drift the caret. The value
+   is in `em`, so bigger headings get proportionally more space. */
 .cm-md-h {
   font-weight: 700;
   line-height: 1.3;
+  padding-top: 0.5em;
 }
 .cm-md-h1 {
   font-size: 1.9em;
@@ -519,6 +523,32 @@ body.mdforge-width-full .cm-content {
   outline: none;
 }
 
+/* Custom dropdown for the language picker (filtered, scrollable). */
+.cm-code-lang-menu {
+  position: absolute;
+  z-index: 30;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  font: 12px/1.4 var(--mdforge-font);
+}
+.cm-code-lang-item {
+  padding: 3px 10px 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--vscode-foreground, inherit);
+}
+.cm-code-lang-item:hover,
+.cm-code-lang-item.cm-active {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.25)));
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+
 /* Edit affordance on rendered blocks (mermaid / table / block math) */
 .cm-block-edit {
   position: absolute;
@@ -543,6 +573,126 @@ body.mdforge-width-full .cm-content {
   opacity: 1;
 }
 .cm-block-edit:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+
+/* "↻" — re-render a diagram (retry a transient Mermaid error). Sits to the left
+   of "✎ Éditer", shown on hover like it. */
+.cm-block-refresh {
+  position: absolute;
+  top: 6px;
+  right: 74px;
+  z-index: 2;
+  width: 24px;
+  padding: 2px 0;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 5px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  font: 12px/1.4 var(--mdforge-font);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cm-mermaid:hover .cm-block-refresh,
+.cm-mermaid:has(.cm-mermaid-error) .cm-block-refresh {
+  opacity: 1;
+}
+
+/* "⤢" — open the diagram full-screen. Sits left of "↻". */
+.cm-block-zoom {
+  position: absolute;
+  top: 6px;
+  right: 104px;
+  z-index: 2;
+  width: 24px;
+  height: 22px;
+  padding: 2px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 5px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cm-block-zoom svg {
+  width: 13px;
+  height: 13px;
+}
+.cm-mermaid:hover .cm-block-zoom {
+  opacity: 1;
+}
+.cm-block-zoom:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+
+/* Diagram viewer popup (zoom + pan) — a centered panel over a dimmed backdrop. */
+.cm-mermaid-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cm-mermaid-zoom-panel {
+  position: relative;
+  width: 78vw;
+  height: 78vh;
+  overflow: hidden;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.5));
+  border-radius: 10px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+}
+.cm-mermaid-zoom-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  cursor: grab;
+  user-select: none;
+  /* No `will-change`/layer promotion: keep the SVG re-rasterized as vector at the
+     displayed scale instead of scaling a cached 1x bitmap (which looks pixelated). */
+}
+.cm-mermaid-zoom-stage:active {
+  cursor: grabbing;
+}
+.cm-mermaid-zoom-stage svg {
+  width: min(70vw, 1100px); /* open large and crisp; transform adds further zoom */
+  max-width: none;
+  height: auto;
+}
+.cm-mermaid-zoom-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+}
+.cm-mermaid-zoom-bar button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.5));
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  font: 15px/1 var(--mdforge-font);
+  cursor: pointer;
+}
+.cm-mermaid-zoom-bar button:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
+}
+.cm-block-refresh:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
 }
 

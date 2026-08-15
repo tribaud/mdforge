@@ -6,6 +6,7 @@
  * line prefix), so — like the rest of this engine — it never re-serializes.
  */
 import { EditorView } from '@codemirror/view'
+import type { ChangeSpec } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import { openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search'
 import { ICONS } from './cm-icons'
@@ -101,6 +102,120 @@ function toggleLinePrefix(view: EditorView, prefix: string, re: RegExp): void {
     }
   }
   view.dispatch({ changes })
+  view.focus()
+}
+
+/** Toggle a fenced code block. Caret already inside one → unwrap it (drop the
+ * opening/closing fences, keep the code). Otherwise insert a block below the
+ * caret — or wrap the selection in one — landing ready to type: on the language
+ * slot of the opening fence when wrapping a selection, on the empty body line.
+ *
+ * The enclosing block is located by scanning the current text for fence lines,
+ * NOT via the syntax tree: right after an edit the tree is position-mapped but
+ * not yet reparsed, and a node whose boundary was just edited can come back with
+ * `from > to`, which crashes `ChangeSet.of` with an inverted change range. */
+function toggleCodeBlock(view: EditorView): void {
+  const doc = view.state.doc
+  const fence = /^\s*(```|~~~)/
+  const headLn = doc.lineAt(view.state.selection.main.head).number
+  // Pair fence lines top-to-bottom; the caret sits in the first pair (or a
+  // trailing unclosed opener) that spans its line.
+  let openLn = -1
+  let block: { open: number; close: number } | null = null
+  for (let n = 1; n <= doc.lines && !block; n++) {
+    if (!fence.test(doc.line(n).text)) continue
+    if (openLn === -1) openLn = n
+    else if (headLn >= openLn && headLn <= n) block = { open: openLn, close: n }
+    else openLn = -1
+  }
+  if (!block && openLn !== -1 && headLn >= openLn) block = { open: openLn, close: -1 }
+
+  if (block) {
+    const lastLn = block.close === -1 ? doc.lines : block.close
+    const innerEnd = block.close === -1 ? doc.lines : block.close - 1
+    const content: string[] = []
+    for (let ln = block.open + 1; ln <= innerEnd; ln++) content.push(doc.line(ln).text)
+    const from = doc.line(block.open).from
+    const insert = content.join('\n')
+    // Select the unwrapped code so a second click re-wraps exactly it (clean
+    // toggle) — leaving the caret adrift would strand the selection at the edges.
+    view.dispatch({
+      changes: { from, to: doc.line(lastLn).to, insert },
+      selection: { anchor: from, head: from + insert.length }
+    })
+    view.focus()
+    return
+  }
+  insertCodeBlock(view)
+}
+
+/** Insert a fenced code block below the caret — or wrap the selection in one —
+ * and land ready to type: on the language slot of the opening fence when wrapping
+ * a selection, on the empty body line otherwise. */
+function insertCodeBlock(view: EditorView): void {
+  const sel = view.state.selection.main
+  if (!sel.empty) {
+    const body = view.state.sliceDoc(sel.from, sel.to)
+    const insert = '```\n' + body + '\n```'
+    view.dispatch({ changes: { from: sel.from, to: sel.to, insert }, selection: { anchor: sel.from + 3 } })
+    view.focus()
+    return
+  }
+  const line = view.state.doc.lineAt(sel.head)
+  const at = line.to
+  const insert = (line.text.trim() ? '\n\n' : '') + '```\n\n```\n'
+  const caret = at + insert.indexOf('```\n') + 4 // the empty line between the fences
+  view.dispatch({ changes: { from: at, insert }, selection: { anchor: caret } })
+  view.focus()
+}
+
+/** Insert a standard YAML frontmatter block at the top of the document, prefilled
+ * with the first H1 as `title` (and that H1 removed — markdownlint MD025 flags a
+ * frontmatter title next to an H1, and the card already renders the title). Keys:
+ * title / tags / author / date. No-op if a frontmatter block already exists. */
+export function insertFrontmatter(view: EditorView): void {
+  const doc = view.state.doc
+  const full = doc.toString()
+  // Same detection as the live-preview card: a leading `---` fence with a closer.
+  if (full.startsWith('---\n') && full.indexOf('\n---', 3) !== -1) {
+    view.focus()
+    return
+  }
+  // First H1 → the title, then removed. Use the parse tree so a `#` inside a
+  // fenced code block is never mistaken for a heading.
+  let h1From = -1
+  let h1To = -1
+  let title = ''
+  syntaxTree(view.state).iterate({
+    enter: (node) => {
+      if (h1From !== -1) return false
+      if (node.name === 'ATXHeading1') {
+        const line = doc.lineAt(node.from)
+        const m = /^#\s+(.*?)\s*#*\s*$/.exec(line.text)
+        title = m ? m[1].trim() : ''
+        h1From = line.from
+        h1To = line.to
+        return false
+      }
+      return undefined
+    }
+  })
+  const block = `---\n${title ? `title: ${title}` : 'title: '}\ntags: []\nauthor:\ndate:\n---\n\n`
+  const changes: ChangeSpec[] = [{ from: 0, insert: block }]
+  if (h1From !== -1) {
+    // Remove the H1 line, plus a single blank line after it if present, so the
+    // body doesn't start with an orphan gap.
+    let delTo = Math.min(doc.length, h1To + 1)
+    const lineNo = doc.lineAt(h1From).number
+    if (lineNo < doc.lines && doc.line(lineNo + 1).text.trim() === '') {
+      delTo = Math.min(doc.length, doc.line(lineNo + 1).to + 1)
+    }
+    changes.push({ from: h1From, to: delTo })
+  }
+  // Land where the user types next: inside `tags: [` when the title is prefilled,
+  // else after `title: `. Both markers are 7 chars long.
+  const anchor = (title ? block.indexOf('tags: [') : block.indexOf('title: ')) + 7
+  view.dispatch({ changes, selection: { anchor } })
   view.focus()
 }
 
@@ -370,10 +485,12 @@ const ENTRIES: Entry[] = [
   { label: 'I', title: 'Italique (Ctrl/⌘I)', run: (v) => wrap(v, '*') },
   { label: 'S', title: 'Barré', run: (v) => wrap(v, '~~') },
   { label: ICONS.code, title: 'Code (Ctrl/⌘E)', run: (v) => wrap(v, '`') },
+  { label: ICONS.codeBlock, title: 'Bloc de code', run: (v) => toggleCodeBlock(v) },
   'sep',
   { label: 'H1', title: 'Heading 1', run: (v) => toggleLinePrefix(v, '# ', /^#{1,6}\s+/) },
   { label: 'H2', title: 'Heading 2', run: (v) => toggleLinePrefix(v, '## ', /^#{1,6}\s+/) },
   { label: 'H3', title: 'Heading 3', run: (v) => toggleLinePrefix(v, '### ', /^#{1,6}\s+/) },
+  { label: ICONS.frontmatter, title: 'Propriétés (frontmatter)', run: (v) => insertFrontmatter(v) },
   'sep',
   { label: ICONS.quote, title: 'Quote', run: (v) => toggleLinePrefix(v, '> ', /^>\s?/) },
   { label: ICONS.bullet, title: 'Bullet list', run: (v) => toggleLinePrefix(v, '- ', /^[-*+]\s+/) },
@@ -400,7 +517,15 @@ function buildButtons(view: EditorView, container: HTMLElement): void {
     btn.title = entry.title
     btn.setAttribute('data-tip', entry.title) // CSS tooltip (native title is unreliable in the webview)
     btn.addEventListener('mousedown', (e) => e.preventDefault())
-    btn.addEventListener('click', () => entry.run(view))
+    btn.addEventListener('click', () => {
+      // A throw in one action must never tear down the whole editor: an uncaught
+      // error trips window.onerror and shows the fatal "failed to initialize".
+      try {
+        entry.run(view)
+      } catch (err) {
+        console.error('[MDForge] toolbar action failed:', entry.title, err)
+      }
+    })
     container.appendChild(btn)
   }
 }

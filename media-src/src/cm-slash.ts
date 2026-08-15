@@ -11,15 +11,19 @@
  * ViewPlugin and drives key handling with a capture-phase keydown listener.
  */
 import { EditorView } from '@codemirror/view'
+import { insertFrontmatter } from './cm-toolbar'
 
 interface SlashItem {
   label: string
   hint: string
   keywords: string
   /** Text inserted in place of the `/query`. */
-  insert: string
+  insert?: string
   /** Caret offset inside `insert` after insertion (defaults to insert.length). */
   caret?: number
+  /** Dynamic command: the `/query` is removed, then this runs its own edit
+   * (used when the insertion isn't a fixed template, e.g. frontmatter). */
+  run?: (view: EditorView) => void
 }
 
 const ITEMS: SlashItem[] = [
@@ -55,7 +59,13 @@ const ITEMS: SlashItem[] = [
   { label: 'Formule (maths)', hint: '$$ … $$', keywords: 'math katex formule latex', insert: '$$\n\n$$\n', caret: 3 },
   { label: 'Image', hint: '![](url)', keywords: 'image img photo', insert: '![](url)', caret: 2 },
   { label: 'Lien', hint: '[texte](url)', keywords: 'link lien url', insert: '[texte](url)', caret: 1 },
-  { label: 'Séparateur', hint: 'Ligne horizontale', keywords: 'hr divider rule separateur trait', insert: '---\n' }
+  { label: 'Séparateur', hint: 'Ligne horizontale', keywords: 'hr divider rule separateur trait', insert: '---\n' },
+  {
+    label: 'Propriétés (frontmatter)',
+    hint: 'title / tags / author / date',
+    keywords: 'frontmatter properties props metadata title tags author yaml entete',
+    run: (v) => insertFrontmatter(v)
+  }
 ]
 
 /** Match a `/query` ending at the caret, anchored at line start or after a space. */
@@ -126,8 +136,16 @@ export function createSlashMenu(view: EditorView): { update: () => void } {
   const select = (): void => {
     if (!open) return
     const it = filtered[active]
-    const caret = from + (it.caret ?? it.insert.length)
-    view.dispatch({ changes: { from, to, insert: it.insert }, selection: { anchor: caret } })
+    if (it.run) {
+      // Drop the typed `/query`, then let the command make its own edit.
+      view.dispatch({ changes: { from, to, insert: '' } })
+      hide()
+      it.run(view)
+      return
+    }
+    const insert = it.insert ?? ''
+    const caret = from + (it.caret ?? insert.length)
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: caret } })
     hide()
     view.focus()
   }

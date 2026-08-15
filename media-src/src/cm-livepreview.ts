@@ -15,7 +15,7 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
-import { StateField } from '@codemirror/state'
+import { StateEffect, StateField } from '@codemirror/state'
 import type { EditorState, Range } from '@codemirror/state'
 
 /* ---------- host bridge (wikilink navigation) ---------- */
@@ -67,7 +67,8 @@ async function getMermaid(): Promise<unknown> {
   }
   return mermaidLoading
 }
-export function setMermaidTheme(theme: string): void {
+export function setMermaidTheme(theme: string): boolean {
+  const prev = mermaidTheme
   mermaidTheme =
     theme === 'dark'
       ? 'dark'
@@ -81,6 +82,19 @@ export function setMermaidTheme(theme: string): void {
               ? 'dark'
               : 'default'
   if (mermaidMod) mermaidMod.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
+  return mermaidTheme !== prev
+}
+
+// Bumped whenever every diagram must be re-rendered (a theme change). It is
+// baked into MermaidWidget.eq(), so a bump makes CodeMirror rebuild the diagram
+// DOM — mermaid only reads the theme at render time, and existing widgets would
+// otherwise be reused with their stale SVG.
+let mermaidGen = 0
+const redrawMermaidEffect = StateEffect.define<void>()
+/** Re-render every Mermaid diagram in the document (after a theme change). */
+export function redrawMermaid(view: EditorView): void {
+  mermaidGen++
+  view.dispatch({ effects: redrawMermaidEffect.of(undefined) })
 }
 
 let mermaidCounter = 0
@@ -96,22 +110,39 @@ function sweepMermaidOrphans(): void {
     if (!n.closest('.cm-mermaid')) n.remove()
   })
 }
+// Mermaid keeps global/DOM state for the duration of a render(): two renders in
+// flight at once clobber each other's temporary node — and our orphan-sweep can
+// yank an in-flight one — surfacing as "Cannot read properties of null (reading
+// 'firstChild')". Serialize every render through a single promise chain so a doc
+// with several diagrams (or a manual refresh) renders them one at a time. This is
+// why entering/leaving the source — an isolated single re-render — used to fix it.
+let mermaidQueue: Promise<void> = Promise.resolve()
 function renderMermaid(view: EditorView, el: HTMLElement, code: string): void {
+  mermaidQueue = mermaidQueue.then(() => renderMermaidOnce(view, el, code)).catch(() => {})
+}
+async function renderMermaidOnce(view: EditorView, el: HTMLElement, code: string, attempt = 0): Promise<void> {
   const id = `mdforge-mermaid-${mermaidCounter++}`
-  getMermaid()
-    .then((m) => (m as { render: (id: string, code: string) => Promise<{ svg: string }> }).render(id, code))
-    .then(({ svg }) => {
-      el.innerHTML = svg
-      // The SVG changes the widget height after CodeMirror measured the layout;
-      // re-measure so vertical click/caret mapping below stays accurate.
-      view.requestMeasure()
-    })
-    .catch((error: unknown) => {
-      el.classList.add('cm-mermaid-error')
-      el.textContent = `Mermaid error: ${error instanceof Error ? error.message : String(error)}`
-      view.requestMeasure()
-    })
-    .finally(sweepMermaidOrphans)
+  try {
+    const m = (await getMermaid()) as { render: (id: string, code: string) => Promise<{ svg: string }> }
+    const { svg } = await m.render(id, code)
+    el.classList.remove('cm-mermaid-error')
+    el.innerHTML = svg
+  } catch (error: unknown) {
+    // A first render can still fail transiently (fonts/layout not ready); a
+    // single retry usually succeeds, so try once more before showing the error.
+    if (attempt < 1) {
+      sweepMermaidOrphans()
+      await renderMermaidOnce(view, el, code, attempt + 1)
+      return
+    }
+    el.classList.add('cm-mermaid-error')
+    el.textContent = `Mermaid error: ${error instanceof Error ? error.message : String(error)}`
+  } finally {
+    // The SVG changes the widget height after CodeMirror measured the layout;
+    // re-measure so vertical click/caret mapping below stays accurate.
+    sweepMermaidOrphans()
+    view.requestMeasure()
+  }
 }
 
 /* ---------- KaTeX (lazy-loaded, same reasoning as Mermaid) ---------- */
@@ -181,6 +212,146 @@ function addEditButton(host: HTMLElement, view: EditorView, pos: number): void {
     enterEdit(view, pos)
   })
   host.appendChild(btn)
+}
+
+/**
+ * Add a "↻" affordance to a rendered block that re-runs its render. Mermaid can
+ * occasionally fail transiently (a race on first load, a font not yet ready) and
+ * leave an error where re-rendering the same source succeeds — this gives that a
+ * one-click retry without having to enter and leave the source.
+ */
+function addRefreshButton(host: HTMLElement, rerender: () => void): void {
+  const btn = document.createElement('button')
+  btn.className = 'cm-block-refresh'
+  btn.textContent = '↻'
+  btn.title = 'Redessiner le diagramme'
+  btn.addEventListener('mousedown', (e) => e.preventDefault())
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    rerender()
+  })
+  host.appendChild(btn)
+}
+
+const EXPAND_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>'
+
+/** Add a "⤢" affordance that opens the diagram full-screen (zoom + pan). Reads
+ * the currently rendered SVG at click time (the render is async). */
+function addZoomButton(host: HTMLElement, getSvg: () => string): void {
+  const btn = document.createElement('button')
+  btn.className = 'cm-block-zoom'
+  btn.innerHTML = EXPAND_ICON
+  btn.title = 'Agrandir'
+  btn.addEventListener('mousedown', (e) => e.preventDefault())
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const svg = getSvg()
+    if (svg.trim()) openMermaidZoom(svg)
+  })
+  host.appendChild(btn)
+}
+
+/** A centered popup showing a diagram larger, with wheel/±-button zoom and
+ * drag-to-pan. The diagram is an SVG scaled by CSS transform (kept off a
+ * compositor layer so it stays vector-crisp, not a pixelated raster). Esc, ✕ or
+ * a click on the dimmed backdrop closes it; dragging happens inside the panel so
+ * it never closes mid-pan. Self-contained DOM on `document.body`. */
+function openMermaidZoom(svg: string): void {
+  const overlay = document.createElement('div')
+  overlay.className = 'cm-mermaid-zoom'
+
+  const panel = document.createElement('div')
+  panel.className = 'cm-mermaid-zoom-panel'
+  overlay.appendChild(panel)
+
+  const stage = document.createElement('div')
+  stage.className = 'cm-mermaid-zoom-stage'
+  stage.innerHTML = svg
+  panel.appendChild(stage)
+
+  let scale = 1
+  let tx = 0
+  let ty = 0
+  const apply = (): void => {
+    stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`
+  }
+  const zoom = (factor: number): void => {
+    scale = Math.min(8, Math.max(0.2, scale * factor))
+    apply()
+  }
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') close()
+    else if (e.key === '+' || e.key === '=') zoom(1.2)
+    else if (e.key === '-') zoom(1 / 1.2)
+  }
+  function close(): void {
+    window.removeEventListener('keydown', onKey)
+    overlay.remove()
+  }
+
+  const bar = document.createElement('div')
+  bar.className = 'cm-mermaid-zoom-bar'
+  const mk = (label: string, title: string, fn: () => void): void => {
+    const b = document.createElement('button')
+    b.textContent = label
+    b.title = title
+    b.addEventListener('mousedown', (e) => e.preventDefault())
+    b.addEventListener('click', (e) => {
+      e.stopPropagation()
+      fn()
+    })
+    bar.appendChild(b)
+  }
+  mk('−', 'Zoom arrière', () => zoom(1 / 1.2))
+  mk('⟳', 'Taille réelle', () => {
+    scale = 1
+    tx = 0
+    ty = 0
+    apply()
+  })
+  mk('+', 'Zoom avant', () => zoom(1.2))
+  mk('✕', 'Fermer', close)
+  panel.appendChild(bar)
+
+  panel.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault()
+      zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1)
+    },
+    { passive: false }
+  )
+  // Drag to pan. Start on the stage (which fills the panel), track on the panel
+  // so a drag never reaches the backdrop's close handler.
+  let dragging = false
+  let sx = 0
+  let sy = 0
+  stage.addEventListener('mousedown', (e) => {
+    dragging = true
+    sx = e.clientX - tx
+    sy = e.clientY - ty
+    e.preventDefault()
+  })
+  panel.addEventListener('mousemove', (e) => {
+    if (!dragging) return
+    tx = e.clientX - sx
+    ty = e.clientY - sy
+    apply()
+  })
+  const endDrag = (): void => {
+    dragging = false
+  }
+  panel.addEventListener('mouseup', endDrag)
+  panel.addEventListener('mouseleave', endDrag)
+  // Only a click on the dimmed backdrop (never the panel) closes.
+  overlay.addEventListener('mousedown', (e) => {
+    if (e.target === overlay) close()
+  })
+  window.addEventListener('keydown', onKey)
+
+  document.body.appendChild(overlay)
+  apply()
 }
 
 /**
@@ -296,6 +467,9 @@ class HrWidget extends WidgetType {
 }
 
 class MermaidWidget extends WidgetType {
+  // Snapshot of the redraw counter at build time — a theme change bumps it so
+  // eq() reports inequality and CodeMirror rebuilds the diagram with the theme.
+  readonly gen = mermaidGen
   constructor(
     readonly code: string,
     readonly pos: number,
@@ -304,7 +478,7 @@ class MermaidWidget extends WidgetType {
     super()
   }
   eq(other: MermaidWidget): boolean {
-    return other.code === this.code && other.mode === this.mode
+    return other.code === this.code && other.mode === this.mode && other.gen === this.gen
   }
   get estimatedHeight(): number {
     return 200
@@ -316,8 +490,11 @@ class MermaidWidget extends WidgetType {
     target.className = 'cm-mermaid-target'
     el.appendChild(target)
     renderMermaid(view, target, this.code)
-    if (this.mode === 'render') addEditButton(el, view, this.pos)
-    else addCloseButton(el, view)
+    if (this.mode === 'render') {
+      addZoomButton(el, () => target.innerHTML)
+      addRefreshButton(el, () => renderMermaid(view, target, this.code))
+      addEditButton(el, view, this.pos)
+    } else addCloseButton(el, view)
     return el
   }
 }
@@ -608,25 +785,38 @@ class BlockCloseWidget extends WidgetType {
 }
 
 /* ---------- code-block language picker ---------- */
-let langListEl: HTMLDataListElement | null = null
-/** A shared <datalist> of the known languages (from @codemirror/language-data),
- * so the picker offers autocompletion while still allowing free text. */
-function ensureLangDatalist(): string {
-  if (!langListEl) {
-    langListEl = document.createElement('datalist')
-    langListEl.id = 'cm-lang-list'
-    const names = Array.from(new Set(languages.map((l) => l.name))).sort((a, b) => a.localeCompare(b))
-    for (const n of names) {
-      const o = document.createElement('option')
-      o.value = n
-      langListEl.appendChild(o)
+let langNamesCache: string[] | null = null
+/** Known language identifiers for the picker: each language's canonical name AND
+ * its aliases (from @codemirror/language-data), so common info strings like
+ * `bash`, `zsh`, `sh` (aliases of "Shell") are offered — highlighting resolves by
+ * name or alias. Deduped case-insensitively (drop `python` next to `Python`, keep
+ * alias-only ones like `bash`). `mermaid` first — not a CM language, but a valid
+ * info string that renders as a diagram. */
+function languageNames(): string[] {
+  if (!langNamesCache) {
+    const seen = new Set<string>()
+    const out: string[] = []
+    const add = (s: string): void => {
+      const k = s.toLowerCase()
+      if (!seen.has(k)) {
+        seen.add(k)
+        out.push(s)
+      }
     }
-    document.body.appendChild(langListEl)
+    for (const l of languages) {
+      add(l.name)
+      for (const a of l.alias) add(a)
+    }
+    out.sort((a, b) => a.localeCompare(b))
+    langNamesCache = ['mermaid', ...out]
   }
-  return langListEl.id
+  return langNamesCache
 }
 
-/** Language field floated at the top-right of a fenced code block. Editing it
+/** Language field floated at the top-right of a fenced code block. A custom
+ * combobox (not a native `<datalist>`, whose dropdown arrow steals focus and
+ * can't be sized): a text input that filters a compact, scrollable menu —
+ * wheel/click to pick, ↑/↓ + Enter to keyboard-pick, Esc closes. Committing
  * rewrites the info string on the opening fence line (a plain text edit). */
 class LangWidget extends WidgetType {
   constructor(readonly lang: string) {
@@ -638,28 +828,98 @@ class LangWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const input = document.createElement('input')
     input.className = 'cm-code-lang'
-    input.setAttribute('list', ensureLangDatalist())
     input.value = this.lang
     input.placeholder = 'langage'
     input.spellcheck = false
     input.title = 'Langage du bloc de code'
     input.addEventListener('mousedown', (e) => e.stopPropagation())
-    const commit = (): void => {
+
+    const menu = document.createElement('div')
+    menu.className = 'cm-code-lang-menu'
+    menu.style.display = 'none'
+    document.body.appendChild(menu)
+    ;(input as unknown as { _menu: HTMLElement })._menu = menu
+
+    let filtered: string[] = []
+    let active = 0
+
+    const commit = (value: string): void => {
       const line = view.state.doc.lineAt(view.posAtDOM(input))
       const m = /^(\s*)(`{3,}|~{3,})/.exec(line.text)
       if (!m) return
       const infoFrom = line.from + m[0].length
-      view.dispatch({ changes: { from: infoFrom, to: line.to, insert: input.value.trim() } })
+      view.dispatch({ changes: { from: infoFrom, to: line.to, insert: value.trim() } })
+      hide()
       view.focus()
     }
-    input.addEventListener('change', commit)
+    const hide = (): void => {
+      menu.style.display = 'none'
+    }
+    const render = (): void => {
+      const q = input.value.trim().toLowerCase()
+      filtered = languageNames().filter((n) => n.toLowerCase().includes(q))
+      if (active >= filtered.length) active = 0
+      if (!filtered.length) {
+        hide()
+        return
+      }
+      menu.replaceChildren()
+      filtered.forEach((n, i) => {
+        const row = document.createElement('div')
+        row.className = 'cm-code-lang-item' + (i === active ? ' cm-active' : '')
+        row.textContent = n
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault() // keep focus in the input
+          commit(n)
+        })
+        menu.appendChild(row)
+      })
+      const r = input.getBoundingClientRect()
+      menu.style.top = `${r.bottom + window.scrollY + 2}px`
+      menu.style.left = `${r.left + window.scrollX}px`
+      menu.style.minWidth = `${r.width}px`
+      menu.style.display = 'block'
+      ;(menu.children[active] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' })
+    }
+
+    input.addEventListener('focus', () => {
+      active = 0
+      render()
+    })
+    input.addEventListener('input', () => {
+      active = 0
+      render()
+    })
+    input.addEventListener('blur', () => {
+      // Delay so a click on a menu row still commits before the menu hides.
+      window.setTimeout(hide, 150)
+    })
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'ArrowDown') {
         e.preventDefault()
-        commit()
+        if (filtered.length) {
+          active = (active + 1) % filtered.length
+          render()
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (filtered.length) {
+          active = (active - 1 + filtered.length) % filtered.length
+          render()
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        commit(filtered[active] ?? input.value)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        hide()
       }
     })
     return input
+  }
+  destroy(dom: HTMLElement): void {
+    // The menu lives on document.body — remove it when the widget is torn down.
+    ;(dom as unknown as { _menu?: HTMLElement })._menu?.remove()
   }
   ignoreEvent(): boolean {
     return true
@@ -833,6 +1093,10 @@ function buildDecorations(state: EditorState): DecorationSet {
       // Thematic break (`---` / `***` / `___`) → a compact rendered rule; raw
       // `---` is shown (editable) only when the caret is on the line.
       if (name === 'HorizontalRule') {
+        // The frontmatter fence `---` parses as a HorizontalRule; leave it to the
+        // frontmatter card. Emitting an HR here would overlap the card's block
+        // replace and, on a rebuild, win it — the card would vanish.
+        if (inFrontmatter(from)) return false
         const line = doc.lineAt(from)
         if (!editing(state, line.from, line.to) && line.to > line.from) {
           deco.push(Decoration.replace({ widget: new HrWidget(), block: true }).range(line.from, line.to))
@@ -1031,7 +1295,8 @@ function buildDecorations(state: EditorState): DecorationSet {
 export const livePreview = StateField.define<DecorationSet>({
   create: (state) => buildDecorations(state),
   update: (deco, tr) => {
-    if (tr.docChanged || tr.selection) return buildDecorations(tr.state)
+    if (tr.docChanged || tr.selection || tr.effects.some((e) => e.is(redrawMermaidEffect)))
+      return buildDecorations(tr.state)
     return deco.map(tr.changes)
   },
   provide: (field) => EditorView.decorations.from(field)
