@@ -30,6 +30,7 @@ import {
   livePreview,
   setAssetsBase,
   setMermaidTheme,
+  redrawMermaid,
   setWikilinkHandler,
   setEnableInProgress,
   openWikilink
@@ -778,7 +779,7 @@ function applyConfig(config: MdForgeConfig): void {
   }
   document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
   if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
-  if (config.mermaidTheme) setMermaidTheme(config.mermaidTheme)
+  if (config.mermaidTheme && setMermaidTheme(config.mermaidTheme)) redrawMermaid(view)
   if (typeof config.enableInProgress === 'boolean') setEnableInProgress(config.enableInProgress)
   if (typeof config.appendSource === 'boolean') appendSource = config.appendSource
   if (typeof config.sourceLabel === 'string' && config.sourceLabel) sourceLabel = config.sourceLabel

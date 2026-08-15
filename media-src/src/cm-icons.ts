@@ -10,6 +10,8 @@ const svg = (paths: string): string =>
 
 export const ICONS: Record<string, string> = {
   code: svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
+  // Fenced code block: the inline chevrons, but framed — distinct from `code`.
+  codeBlock: svg('<rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="9 10 7 12 9 14"/><polyline points="15 10 17 12 15 14"/>'),
   task: svg('<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>'),
   link: svg(
     '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'
@@ -50,6 +52,10 @@ export const ICONS: Record<string, string> = {
   ),
   normalize: svg('<line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="15" y1="18" x2="3" y2="18"/>'),
   hr: svg('<line x1="4" y1="12" x2="20" y2="12"/>'),
+  // Frontmatter / properties: a metadata card — a title bar over key lines.
+  frontmatter: svg(
+    '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/>'
+  ),
   quote: svg('<line x1="6" y1="4" x2="6" y2="20"/><line x1="11" y1="8" x2="18" y2="8"/><line x1="11" y1="12" x2="18" y2="12"/><line x1="11" y1="16" x2="16" y2="16"/>'),
   bullet: svg('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>'),
   bug: svg(
