@@ -47,11 +47,11 @@ it fully before making changes.
 | --- | --- |
 | `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
 | `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
-| `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines). |
+| `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
 | `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble; `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
 | `media-src/src/cm-slash.ts` | `/` slash command menu (`createSlashMenu(view).update`). |
 | `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
-| `media-src/src/cm-block-drag.ts` | Draggable `⠿` block handle (reorders top-level blocks / heading sections). |
+| `media-src/src/cm-block-drag.ts` | Left-margin block controls: draggable `⠿` handle (reorders top-level blocks / heading sections, click = select the block) and the `▾`/`▸` fold chevron. |
 | `media-src/src/cm-paste-html.ts` | Paste HTML→Markdown (turndown+GFM, escaping OFF, MathML→LaTeX, footnote rewrite + per-section renumber). |
 | `media-src/src/cm-theme.css` | All styling, VS Code light/dark aware. |
 | `media-src/src/turndown-plugin-gfm.d.ts` | Type shim for `turndown-plugin-gfm`. |
@@ -82,11 +82,11 @@ it fully before making changes.
   perfect diffs.** On the first `setContent` the caret is placed past any
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
-  `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`.
+  `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`, `tags`.
   webview→host: `ready`, `edit`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
-  `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `debugPasteHtml`,
-  `error`.
+  `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
+  `debugPasteHtml`, `error`.
 
 ## 4. How each feature works (and why)
 
@@ -116,10 +116,26 @@ so it round-trips for free unless noted.
   `codeLanguages`); a **language picker** (`LangWidget`, `<input list=datalist>`
   of `@codemirror/language-data` names + free text) floats top-right and rewrites
   the info string on change.
-- **Tables** (`TableWidget` + `cm-table.ts`): rendered HTML table; cells render
-  inline Markdown (`renderInline`). Caret inside → raw source + preview + a
-  floating structural toolbar (add/del row & col, align, delete) that rewrites the
-  table text.
+- **Tables** (`TableWidget` + `cm-table.ts`): rendered HTML table. **Cells render
+  their content**: `renderCell` → `renderMarkdown` (images incl. `![[embed]]`,
+  code, math, bold/italic/strike, links, wikilinks, footnote refs, bare URLs —
+  emphasis and link labels **recurse**) or, as soon as the cell carries a tag,
+  `renderHtml` (DOMParser + an allow-list: unknown tags keep their content,
+  `script`/`style`/`iframe` are dropped, `on*` / script URLs / `url()` in a style
+  never survive, and text nodes still go through the Markdown renderer). Cells are
+  parsed by `parseTableCells` → `splitCells`, which yields each cell's **absolute
+  document offsets** and treats `\|` as an escaped pipe.
+  Two levels of editing:
+  - **one cell** — hover → `✎` (or double-click): the table STAYS rendered, the
+    cell gets `.cm-td-editing`, and its raw Markdown opens in a field above the
+    table (`cellEditor`). Enter/`✓` commits, Escape/`✕` cancels, Tab moves on. The
+    field is plain DOM, so the state (`cellEdit` + `cellEditEffect`, which the
+    live-preview field must rebuild on) lives module-side; committing rewrites
+    only that cell's range, and **bails out if the offsets went stale**.
+    `flushCellEdit` keeps a pending edit when another cell's `✎` is clicked.
+  - **the whole table** — the block's `✎ Éditer`, i.e. caret inside → raw source +
+    preview + the floating structural toolbar (add/del row & col, align, delete)
+    that rewrites the table text. Entering it clears any open cell field.
 - **GitHub alerts**: a per-blockquote type dropdown (`AlertSelectWidget`, "—
   Citation" = none) always shown on the first line; the `[!TYPE]` marker is hidden
   and the block styled as a callout.
@@ -131,16 +147,73 @@ so it round-trips for free unless noted.
   of that section.
 - **Frontmatter**: a leading `---` block renders as a discreet **card** (title →
   H1, other keys → chips); `✎` reveals the raw YAML. Exempt from inline parsing.
+  **One property at a time**: clicking a chip opens its value in a field below the
+  card (`fmEdit` + `fmEditEffect`, the same shape as the table's `cellEdit`).
+  `parseFrontmatter` models only what people write — scalar, flow `[a, b]`, comma
+  `a, b`, indented `- item` block — keeps each entry's document range, and
+  `serializeEntry` writes it back **in its own style**; anything else is marked
+  `complex` and clicking it opens the raw YAML instead of guessing. A list key
+  (`tags`, `keywords`, `categories`, `aliases`) gets a chip editor, and `tags` /
+  `keywords` complete on the workspace's known tags (`attachSuggestions`, a
+  reusable dropdown — Enter takes the typed text unless the user walked into the
+  list with the arrows, else both handlers fired and added two values).
+  The `+` chip (`fmAdding`) opens a combobox over `KNOWN_KEYS` — the curated
+  PKM/Obsidian list, `@today` resolved at insertion — then the workspace's own
+  keys, then free text; keys already in the block are filtered out. The new line
+  is appended at `pos + raw.length` (or before the closing `---` when the block is
+  empty) and its editor opens in the same transaction.
+- **Known tags** (`TagIndex` in `extension.ts`): ONE recursive sweep of the
+  workspace's Markdown frontmatter (`findFiles`, only the first 4 KB of each file
+  decoded, 3000-file cap, 16 in flight), cached in `context.workspaceState` so a
+  reopen is instant, run **lazily on the first `requestTags`** and again only on
+  the editor's `↻` (with a progress notification). `parseFrontmatterTags` is pure
+  and exported (flow / comma / block lists, `tags` + `keywords`, top-level only),
+  as is `parseFrontmatterKeys` — the sweep collects the key NAMES too, for free.
+  No file watcher, no index to maintain: a saved document's own tags are merged in
+  (`onDidSaveTextDocument` + the webview `edit` message). The freshness line in the
+  editor is the deal with the user — it says how old the list is and how to redo
+  it. NOTE: the tag list is part of the card widget's `eq()` (via `tagsGen`), or
+  CodeMirror keeps the old DOM and the line never updates.
 - **HR / blank lines**: `---` → a compact rule widget. Blank source lines are
   shrunk to a **stable** small height (`cm-md-blank`) — never revealed on caret
   (see gotchas).
 - **Draggable blocks** (`cm-block-drag.ts`): `⠿` on hover moves the top-level block
   (a heading drags its whole section) via a whole-line, whole-doc text edit.
+  **Clicking** it instead SELECTS the block (guarded by `justDragged`), so the
+  selection bubble lands on it and a style can be applied at once.
 - **Source view**: toolbar toggle reconfigures the `preview` compartment to `[]`,
   showing raw Markdown (syntax highlighting only) in a monospace column.
 - **Search & folding**: `@codemirror/search` (`Cmd+F`, toolbar 🔍 toggles the
-  panel) + `foldGutter`/`codeFolding` with a `foldService` that folds heading
-  sections.
+  panel) + `codeFolding` with a `foldService` that folds heading sections. There is
+  **no fold gutter**: its arrows were too discreet, so the `▾`/`▸` chevron sits in
+  the left margin next to the `⠿` handle (`cm-block-fold`, `foldable` +
+  `foldEffect`/`unfoldEffect`/`foldedRanges`). The **open** `▾` follows the
+  pointer; every **collapsed** section keeps a permanent `▸`
+  (`.cm-block-fold-closed`, a pooled element per folded range in the viewport,
+  re-placed from `update()` via `requestMeasure` — never read the layout during an
+  update) — a fold with no marker only showed as a jump in the line numbers.
+  All three controls carry the same instant `data-tip` bubble as the toolbar
+  (anchored on their LEFT edge — centred would fall off the window — and flipped
+  below the control near the top of the frame, where above would cover the
+  toolbar). No native `title`: it would double the bubble.
+  On a **heading**, a third control (`.cm-block-fold-all`, a rotated `»`) folds or
+  unfolds every heading of that level at once (`headingRangesAtLevel`, fenced code
+  skipped; one transaction of `foldEffect`/`unfoldEffect`, never a duplicate).
+  Its level scan runs on mousemove, so it is cached and invalidated from
+  `update()` on any doc or fold change. Only the glyph is rotated, never the box —
+  a rotated box rotates its tooltip with it. The three controls need ~58px of left
+  margin — hence `.cm-content` padding `24px 64px`.
+- **Line numbers** (`mdforge.lineNumbers`, default on): `lineNumbers()` in the
+  `gutters` compartment. `formatNumber` returns `''` for an empty line **while the
+  live-preview field is present** (a compacted blank line is ~0.55em tall and the
+  number would be clipped mid-glyph); source view numbers every line. It is also
+  called with a padding number PAST the last line to size the gutter — check
+  `line <= state.doc.lines` first or it throws.
+- **Justified text** (`mdforge.textAlign: justify`): display only, a
+  `mdforge-justify` body class → `text-align: justify` on `.cm-line`, minus
+  headings / code / frontmatter / blank lines. It only shows on **soft-wrapped**
+  lines: justification never stretches the last line of a block and every source
+  line is its own block — hence `mdforge.format.paragraphs`, below.
 - **Linter diagnostics** (`@codemirror/lint`): the host forwards
   `vscode.languages.getDiagnostics(uri)` (markdownlint, spell checkers…) on
   `onDidChangeDiagnostics`; `main.ts` builds `Diagnostic[]` (wavy underline,
@@ -148,13 +221,24 @@ so it round-trips for free unless noted.
   The action posts `requestQuickFix` → host `runQuickFix` runs
   `executeCodeActionProvider` + a `showQuickPick` + applies the chosen edit/command
   (no webview lightbulb).
-- **Blank-line normalization** (`normalizeBlankLines` in `extension.ts`,
-  host-side, pure): MD012 collapse dupes / MD022 around headings / MD031 around
-  fences / MD047 final newline; skips fence + frontmatter content. Runs **on
-  demand** (command `mdforge.normalizeBlankLines` + toolbar `¶`) or **opt-in on
-  save** (`mdforge.format.blankLines: onSave` via `onWillSaveTextDocument`, gated
-  on `provider.isOpen`). **Never per-keystroke** — that would resurrect the diff
-  noise the CM engine exists to avoid.
+- **Reformatting** (host-side, pure, in `extension.ts`): `formatMarkdown(text,
+  joinParas)` = the optional paragraph unwrap, then the blank-line pass.
+  - `normalizeBlankLines`: MD012 collapse dupes / MD022 around headings / MD031
+    around fences / MD047 final newline; skips fence + frontmatter content.
+  - `joinParagraphs` (`mdforge.format.paragraphs: oneLine`, **the default**): puts
+    each paragraph back on ONE line — the prerequisite for justified text. Leaves
+    frontmatter, fenced/indented code, block math, tables, quotes, headings, HTML
+    blocks, thematic breaks and link/footnote definitions verbatim, and never joins
+    across a Markdown hard break (two trailing spaces, `\`, `<br>`); a wrapped list
+    item IS joined onto its marker line. Idempotent.
+  Runs **on demand** (command `mdforge.normalizeBlankLines`, titled *Reformat
+  document*, + toolbar `¶`) or **on save when asked** (`mdforge.format.onSave`, via
+  `onWillSaveTextDocument`, gated on `provider.isOpen`). **Never per-keystroke** —
+  that would resurrect the diff noise the CM engine exists to avoid.
+  `format.onSave` replaces `format.blankLines: onSave`, whose name read like
+  *which rules apply* when it only ever answered *automatically or on demand*;
+  `reformatOnSave()` honours the old setting unless the new one is set explicitly
+  (`inspect()`, not `get()` — `get` cannot tell a default from a choice).
 - **Paste** (`cm-paste-html.ts`): rich HTML → Markdown via turndown+GFM with
   escaping disabled; web math via `data-mathml` → `mathml-to-latex`; footnotes →
   `[^n]` with per-section renumber; optional `> source` footer (`appendSource`).
@@ -202,12 +286,53 @@ so it round-trips for free unless noted.
   sits in the left margin (outside the scroller); a `mouseleave` on the scroller
   hid it the instant the pointer crossed the margin to grab it. Use `view.dom` +
   a `relatedTarget` check.
+- **Place margin controls from the `.cm-line` element, not from `coordsAtPos`.** A
+  widget at the start of a line (the alert-type dropdown, a checkbox) pushes
+  `coordsAtPos(line.from)` to the RIGHT of itself, so the handle/chevrons landed
+  inside that widget (reported on `> [!NOTE]`). `lineLeft()` measures the line
+  element's rect instead.
+- **Anything placed against `view.dom` must be re-placed on SCROLL.** `view.dom`
+  is the editor frame and does not scroll, so a marker positioned from
+  `coordsAtPos` stays pinned to the screen while its block travels — listen on
+  `view.scrollDOM` (`passive`) and re-run the placement. And because `.cm-editor`
+  has `overflow: visible` **and** CodeMirror's viewport extends past what is on
+  screen, off-frame markers must be hidden (or clamped, for the hover handle of a
+  tall block) — otherwise they are painted over the toolbar.
 - **Open links on `mousedown` (capture), not click.** Ctrl/⌘-click first places
   the caret, which reveals the raw `[text](url)` and drops the `data-href` before
   a click lands — so intercept on mousedown.
 - **`setDiagnostics` from `@codemirror/lint` auto-enables the lint extension**; we
   also add `lintGutter()`. Don't set the `Diagnostic.source` field if you already
   render the source in `renderMessage` (it double-prints).
+- **`lineNumbers({ formatNumber })` is also called with a line number PAST the end
+  of the document** (a `9`/`99`/`999` padding value used to measure the gutter's
+  width). `state.doc.line(n)` on it throws, CM catches it and *disables the
+  crashed plugin* — the gutter silently vanishes. Guard with
+  `line <= state.doc.lines`.
+- **A DOM field inside a widget must survive the rebuild it triggers.** Writing to
+  the document re-creates the widget, so the `<input>` is a NEW element: keep the
+  state module-side (see `cellEdit`), re-focus from `toDOM`, and commit on
+  Enter/blur rather than per keystroke (a per-keystroke rebuild re-renders every
+  image in the table).
+- **A dropdown on `document.body` must die with the input that opened it, and a
+  blanket purge in `destroy()` is wrong.** CodeMirror builds the NEW widget's DOM
+  before destroying the old one, so `destroy()` wiping every `.cm-suggest-menu`
+  killed the menu the rebuilt card had just created (symptom: the list went empty,
+  or answered from a stale closure). Stash the menu on its input (`_menu`) and
+  remove only those (LangWidget's idiom).
+- **A `blur` from a widget being rebuilt is not the user leaving.** Beyond
+  deferring the dispatch (below), check `input.isConnected` before acting: the
+  frontmatter combobox closed itself the moment the tag list arrived.
+- **NEVER `view.dispatch()` from a `blur` handler inside a widget.** CodeMirror
+  re-syncs the focus while updating its DOM, so the blur fires from *inside*
+  `updateInner` and the dispatch throws *"Calls to EditorView.update are not
+  allowed while an update is in progress"* — which, via the global error handler,
+  used to blank the whole editor. Defer out of the update (`setTimeout(…, 0)`,
+  plus `safeDispatch`), and treat a blur that comes with a `destroy()` as a
+  teardown, not as the user leaving the field.
+- **A post-boot error must not tear the editor down.** `showError` replaces the
+  page only before `booted`; afterwards it reports to the host and logs. A widget
+  hiccup is not a failed initialization.
 
 ## 6. Build, run, verify
 
@@ -262,8 +387,12 @@ directly.
 - Non-standard checkbox states are an MDForge convention: `[ ]`/`[x]` are GFM;
   `[~]` (in progress) is ours.
 - Wikilink `[[ ]]` brackets stay visible while editing (not yet hidden).
-- Blank-line normalization is **opt-in only** (command / format-on-save); the
-  editor never rewrites the source on its own.
+- Reformatting (blank lines + paragraph unwrap) only ever runs **when asked**:
+  the command, the toolbar `¶`, or every save if `mdforge.format.onSave` is on. The
+  editor never rewrites the source on its own, and never per keystroke.
+- Justification is a **view** preference: nothing is written into the Markdown. It
+  needs `mdforge.format.paragraphs: oneLine` + one reformat to be visible on
+  hard-wrapped prose.
 - **Perf**: `buildDecorations` re-scans the whole document on every selection
   change. Fine for normal notes; add a viewport limit before very large files.
 - Bundle size: mermaid (many diagram chunks), KaTeX fonts and the

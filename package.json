@@ -2,7 +2,7 @@
   "name": "mdforge",
   "displayName": "MDForge",
   "description": "Transform VS Code into a Typora-like WYSIWYG Markdown editor with GitHub-style rendering, Mermaid diagrams and rich task lists.",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "publisher": "tribaud",
   "license": "MIT",
   "icon": "icon.png",
@@ -96,7 +96,7 @@
       },
       {
         "command": "mdforge.normalizeBlankLines",
-        "title": "MDForge: Normalize blank lines (markdownlint)",
+        "title": "MDForge: Reformat document (blank lines, paragraphs)",
         "category": "MDForge"
       }
     ],
@@ -169,18 +169,38 @@
           "default": true,
           "description": "Enable the custom [~] 'in progress' state in the checkbox click cycle (empty -> in progress -> done)."
         },
+        "mdforge.format.onSave": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Reformat the document automatically on every save — exactly what the toolbar's **¶ Reformat** button does: collapse duplicate blank lines, put a blank line around headings and code fences, end the file with a single newline, and — when `#mdforge.format.paragraphs#` is `oneLine` — bring each paragraph back onto a single line.\n\nOff (the default): the file is reformatted only when you ask for it, with the ¶ button or the **MDForge: Reformat document** command."
+        },
         "mdforge.format.blankLines": {
           "type": "string",
           "enum": [
             "off",
             "onSave"
           ],
-          "enumDescriptions": [
-            "Never rewrite blank lines automatically (perfect source fidelity). Use the 'MDForge: Normalize blank lines' command when you want it.",
-            "Normalize blank lines on every save (markdownlint MD012/MD022/MD031/MD047): collapse duplicate blanks and surround headings and code blocks with a blank line."
-          ],
           "default": "off",
-          "markdownDescription": "Blank-line normalization for the CodeMirror engine. `off` preserves the source exactly; `onSave` tidies blank lines when you save. The **MDForge: Normalize blank lines** command runs it on demand regardless."
+          "markdownDeprecationMessage": "Renamed: use `#mdforge.format.onSave#` (a checkbox). This setting is still honoured, but will be removed.",
+          "markdownDescription": "Deprecated — replaced by `#mdforge.format.onSave#`."
+        },
+        "mdforge.format.paragraphs": {
+          "type": "string",
+          "enum": [
+            "preserve",
+            "oneLine"
+          ],
+          "enumDescriptions": [
+            "Keep the source line breaks inside paragraphs exactly as they are (default).",
+            "Put each paragraph back on a single line when the document is reformatted (the toolbar's paragraph button, the 'Normalize blank lines' command, and format-on-save). Required for justified text to have any visible effect."
+          ],
+          "default": "oneLine",
+          "markdownDescription": "Whether reformatting also unwraps paragraphs onto one line. `oneLine` is needed by `#mdforge.textAlign#` = `justify`: justification never stretches the last line of a block, and every *source* line is a block — so a hard-wrapped paragraph cannot be justified. Code, tables, quotes, headings and deliberate hard breaks (two trailing spaces, `\\`, `<br>`) are never touched."
+        },
+        "mdforge.lineNumbers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show source line numbers in the gutter."
         },
         "mdforge.fontSize": {
           "type": "number",
@@ -224,7 +244,7 @@
             "Paragraphs align left (default).",
             "Paragraphs are justified. Display-only — no HTML is written to the Markdown."
           ],
-          "description": "Text alignment for paragraphs in the editor view (viewer preference; not stored in the file)."
+          "markdownDescription": "Text alignment for paragraphs in the editor view (viewer preference; not stored in the file). `justify` only shows on wrapped lines, so set `#mdforge.format.paragraphs#` to `oneLine` and reformat once (toolbar ¶) to unwrap hard-wrapped paragraphs."
         },
         "mdforge.images.folder": {
           "type": "string",

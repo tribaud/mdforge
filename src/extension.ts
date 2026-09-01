@@ -6,7 +6,8 @@ const VIEW_TYPE = 'mdforge.editor'
 
 export function activate(context: vscode.ExtensionContext): void {
   const outline = new OutlineProvider()
-  const provider = new MdForgeEditorProvider(context, outline)
+  const tagIndex = new TagIndex(context)
+  const provider = new MdForgeEditorProvider(context, outline, tagIndex)
 
   const presentationStatus = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -61,7 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const input = activeDiffInput()
       if (input) await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
     }),
-    // On-demand markdownlint blank-line normalization for the active note.
+    // On-demand reformat of the active note (blank lines + paragraphs).
     vscode.commands.registerCommand('mdforge.normalizeBlankLines', async () => {
       const active = outline.active
       if (!active) {
@@ -69,7 +70,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return
       }
       const doc = active.document
-      const norm = normalizeBlankLines(doc.getText())
+      const norm = formatMarkdown(doc.getText(), joinParagraphsEnabled(doc.uri))
       if (norm === doc.getText()) return
       const edit = new vscode.WorkspaceEdit()
       edit.replace(
@@ -79,13 +80,24 @@ export function activate(context: vscode.ExtensionContext): void {
       )
       await vscode.workspace.applyEdit(edit)
     }),
-    // Opt-in format-on-save: normalize blank lines just before the file is
-    // written, only for notes open in an MDForge editor.
+    // A saved Markdown file's own tags join the known list — the only automatic
+    // upkeep of the index (no watcher, no rescan).
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      if (doc.languageId === 'markdown' || /\.(md|markdown)$/i.test(doc.uri.fsPath)) {
+        tagIndex.mergeFromText(doc.getText())
+      }
+    }),
+    // Opt-in format-on-save (`mdforge.format.onSave`): run the same reformat as
+    // the toolbar's ¶ button just before the file is written, only for notes open
+    // in an MDForge editor.
     vscode.workspace.onWillSaveTextDocument((event) => {
-      const cfg = vscode.workspace.getConfiguration('mdforge', event.document.uri)
-      if (cfg.get<string>('format.blankLines', 'off') !== 'onSave') return
+      const onSave = reformatOnSave(event.document.uri)
+      if (!onSave.on) return
       if (!provider.isOpen(event.document.uri)) return
-      const norm = normalizeBlankLines(event.document.getText())
+      const norm = formatMarkdown(
+        event.document.getText(),
+        onSave.joinParas && joinParagraphsEnabled(event.document.uri)
+      )
       if (norm === event.document.getText()) return
       const range = new vscode.Range(
         event.document.positionAt(0),
@@ -180,6 +192,160 @@ export function normalizeBlankLines(text: string): string {
   while (out.length && out[0] === '') out.shift()
   while (out.length && out[out.length - 1] === '') out.pop()
   return out.length ? out.join('\n') + '\n' : ''
+}
+
+/**
+ * Put each paragraph back on a SINGLE line (undo hard-wrapping). This is what
+ * makes justified text possible: `text-align: justify` never stretches the last
+ * line of a block, and in the editor every *source* line is its own block — so a
+ * paragraph wrapped over five lines can never be justified. Opt-in
+ * (`mdforge.format.paragraphs`), because unlike the blank-line pass this rewrites
+ * prose lines.
+ *
+ * Left verbatim: YAML frontmatter, fenced and indented code, block math, tables,
+ * blockquotes, headings, HTML blocks, thematic breaks, link/footnote definitions
+ * — and any line ending with a Markdown hard break (two spaces, `\` or `<br>`),
+ * which is a deliberate break rather than wrapping. A wrapped list item IS joined
+ * onto its marker line: that is the same paragraph.
+ */
+export function joinParagraphs(text: string): string {
+  const src = text.replace(/\r\n?/g, '\n').split('\n')
+  const out: string[] = []
+  const FENCE = /^\s*(`{3,}|~{3,})/
+  const LIST_ITEM = /^\s{0,3}([-*+]|\d{1,9}[.)])(\s|$)/
+  const THEMATIC = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/
+
+  /** A GFM delimiter row: only pipes, dashes and colons, with both present.
+   * It is what identifies a table — the border pipes are OPTIONAL, so a table
+   * written `Nom | Âge` used to be collapsed into one prose line. */
+  const isDelimiterRow = (s: string): boolean => /^[\s|:-]+$/.test(s) && s.includes('-') && s.includes('|')
+  /** Line indices belonging to a table (header, delimiter and body rows). */
+  const inTable = new Set<number>()
+  for (let i = 1; i < src.length; i++) {
+    if (!isDelimiterRow(src[i]) || !src[i - 1].includes('|')) continue
+    inTable.add(i - 1)
+    for (let n = i; n < src.length && src[n].trim() !== '' && src[n].includes('|'); n++) inTable.add(n)
+  }
+
+  /** A line that opens its own block — never appended to the previous one. */
+  const startsBlock = (s: string, i: number): boolean =>
+    s.trim() === '' ||
+    inTable.has(i) || // table row, with or without border pipes
+    /^\s{0,3}#{1,6}\s/.test(s) || // ATX heading
+    /^\s{0,3}>/.test(s) || // blockquote
+    LIST_ITEM.test(s) ||
+    /^\s{0,3}\|/.test(s) ||
+    FENCE.test(s) ||
+    THEMATIC.test(s) ||
+    /^\s{0,3}(=+|-+)\s*$/.test(s) || // setext underline
+    /^\s*<[a-zA-Z!/]/.test(s) || // HTML block
+    /^ {4,}\S/.test(s) || // indented code
+    /^\s{0,3}\[\^?[^\]]+\]:/.test(s) || // footnote or link definition
+    /^\s{0,3}\$\$/.test(s) || // block math
+    /^\s{0,3}:\s/.test(s) // definition list
+
+  /**
+   * A line that may absorb the next one. Anything that OPENS a block cannot —
+   * the one exception is a list item, whose wrapped text belongs to it. Deriving
+   * this from `startsBlock` (rather than a second, shorter list) is what stops a
+   * setext underline or a `[ref]: url` line from swallowing the paragraph below.
+   */
+  const canAbsorb = (s: string, i: number): boolean =>
+    s.trim() !== '' && (!startsBlock(s, i) || (LIST_ITEM.test(s) && !THEMATIC.test(s) && !inTable.has(i)))
+
+  /** Markdown hard break at the end of a line: keep the break. */
+  const hardBreak = (s: string): boolean => /(\s{2}|\\|<br\s*\/?>)$/i.test(s)
+
+  let inFence = false
+  let fenceCh = ''
+  let inFrontmatter = false
+  let inMath = false
+  let open = false // the last pushed line can absorb a continuation
+
+  for (let i = 0; i < src.length; i++) {
+    const line = src[i]
+
+    if (!inFrontmatter && i === 0 && /^---\s*$/.test(line)) {
+      inFrontmatter = true
+      out.push(line)
+      continue
+    }
+    if (inFrontmatter) {
+      out.push(line)
+      if (/^---\s*$/.test(line)) inFrontmatter = false
+      continue
+    }
+
+    const fence = FENCE.exec(line)
+    if (fence) {
+      const ch = fence[1][0]
+      if (!inFence) {
+        inFence = true
+        fenceCh = ch
+      } else if (ch === fenceCh) inFence = false
+      out.push(line)
+      open = false
+      continue
+    }
+    if (inFence) {
+      out.push(line)
+      continue
+    }
+
+    // Block math: `$$` toggles, and its content is significant.
+    const dollars = (line.match(/\$\$/g) || []).length
+    if (inMath) {
+      out.push(line)
+      if (dollars % 2 === 1) inMath = false
+      open = false
+      continue
+    }
+    if (/^\s{0,3}\$\$/.test(line)) {
+      out.push(line)
+      if (dollars % 2 === 1) inMath = true
+      open = false
+      continue
+    }
+
+    if (open && !startsBlock(line, i) && !hardBreak(out[out.length - 1])) {
+      out[out.length - 1] += ' ' + line.trim()
+      continue
+    }
+    out.push(line)
+    open = canAbsorb(line, i)
+  }
+  return out.join('\n')
+}
+
+/** The document formatter behind the ¶ button, the command and format-on-save:
+ * the optional paragraph unwrap, then the blank-line pass. */
+export function formatMarkdown(text: string, joinParas: boolean): string {
+  return normalizeBlankLines(joinParas ? joinParagraphs(text) : text)
+}
+
+/** True when `mdforge.format.paragraphs` asks for one line per paragraph. */
+function joinParagraphsEnabled(uri: vscode.Uri): boolean {
+  return (
+    vscode.workspace.getConfiguration('mdforge', uri).get<string>('format.paragraphs', 'oneLine') === 'oneLine'
+  )
+}
+
+/**
+ * Whether the reformat runs on every save, and how much of it. The switch used to
+ * be `format.blankLines: onSave` — a name that read like "which rules apply" when
+ * it only ever answered "automatically, or on demand?". It is now the boolean
+ * `format.onSave`; an explicit value wins.
+ *
+ * The old setting is still honoured, but **blank lines only**: it promised that
+ * and nothing else, and paragraph unwrapping is now on by default — someone who
+ * opted into tidying blank lines on save must not discover their prose rewritten.
+ */
+function reformatOnSave(uri: vscode.Uri): { on: boolean; joinParas: boolean } {
+  const cfg = vscode.workspace.getConfiguration('mdforge', uri)
+  const set = cfg.inspect<boolean>('format.onSave')
+  const explicit = set?.workspaceFolderValue ?? set?.workspaceValue ?? set?.globalValue
+  if (typeof explicit === 'boolean') return { on: explicit, joinParas: true }
+  return { on: cfg.get<string>('format.blankLines', 'off') === 'onSave', joinParas: false }
 }
 
 interface Heading {
@@ -356,6 +522,198 @@ function remoteBaseName(url: string): string {
   return path.basename(base, path.extname(base)) || 'image'
 }
 
+/**
+ * Tags declared in a document's YAML frontmatter. Deliberately narrow — the three
+ * shapes people actually write:
+ *   tags: [a, b]      (flow)      tags: a, b     (bare)      tags:
+ *                                                              - a
+ * Anything else is ignored rather than half-parsed: this feeds an autocompletion
+ * list, so a wrong guess is worse than a missing one.
+ */
+export function parseFrontmatterTags(text: string): string[] {
+  const head = text.replace(/\r\n?/g, '\n')
+  if (!head.startsWith('---\n')) return []
+  const end = head.indexOf('\n---', 3)
+  if (end === -1) return []
+  const lines = head.slice(4, end).split('\n')
+  const out: string[] = []
+  const push = (raw: string): void => {
+    const tag = raw.trim().replace(/^["']|["']$/g, '').trim()
+    if (tag && !/[:{}[\]]/.test(tag)) out.push(tag)
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(tags|keywords)\s*:\s*(.*)$/i.exec(lines[i])
+    if (!m) continue
+    const inline = m[2].trim()
+    if (inline) {
+      const flow = /^\[(.*)\]$/.exec(inline)
+      ;(flow ? flow[1] : inline).split(',').forEach(push)
+      continue
+    }
+    // Block list: the indented `- item` lines that follow.
+    for (let n = i + 1; n < lines.length; n++) {
+      const item = /^\s+-\s*(.+)$/.exec(lines[n])
+      if (!item) break
+      push(item[1])
+      i = n
+    }
+  }
+  return out
+}
+
+/**
+ * Top-level frontmatter key names of a document. Free with the tag sweep (the
+ * frontmatter is already parsed), and it lets the "add a property" menu offer the
+ * keys this vault actually uses, next to the curated PKM list.
+ */
+export function parseFrontmatterKeys(text: string): string[] {
+  const head = text.replace(/\r\n?/g, '\n')
+  if (!head.startsWith('---\n')) return []
+  const end = head.indexOf('\n---', 3)
+  if (end === -1) return []
+  const out: string[] = []
+  for (const line of head.slice(4, end).split('\n')) {
+    const m = /^([A-Za-z][A-Za-z0-9_.-]{0,40})\s*:/.exec(line)
+    if (m) out.push(m[1])
+  }
+  return out
+}
+
+/** What the webview is told about the tag index. */
+interface TagSnapshot {
+  tags: string[]
+  keys: string[]
+  scannedAt: number
+  files: number
+  truncated: boolean
+}
+
+/** Hard cap on the sweep: past this, tell the user rather than crawl for minutes. */
+const TAG_SCAN_LIMIT = 3000
+
+/**
+ * The known-tags list behind the frontmatter tag editor: one recursive sweep of
+ * the workspace's Markdown frontmatter, cached in `workspaceState` (so reopening
+ * VS Code is instant) and refreshed only when asked. No watcher, no database —
+ * the only automatic upkeep is merging a document's own tags when it is saved,
+ * which keeps the list right for the file you are working on.
+ */
+class TagIndex {
+  private tags = new Set<string>()
+  private keys = new Set<string>()
+  private scannedAt = 0
+  private files = 0
+  private truncated = false
+  private scanning: Promise<void> | null = null
+  private static readonly KEY = 'mdforge.tagIndex'
+
+  public constructor(private readonly context: vscode.ExtensionContext) {
+    const saved = context.workspaceState.get<TagSnapshot>(TagIndex.KEY)
+    if (saved) {
+      saved.tags.forEach((t) => this.tags.add(t))
+      // `keys` arrived after `tags`: a cache written by an older build has none.
+      ;(saved.keys ?? []).forEach((k) => this.keys.add(k))
+      this.scannedAt = saved.scannedAt
+      this.files = saved.files
+      this.truncated = saved.truncated
+    }
+  }
+
+  public get scanned(): boolean {
+    return this.scannedAt > 0
+  }
+
+  public snapshot(): TagSnapshot {
+    const sorted = (set: Set<string>): string[] =>
+      [...set].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
+    return {
+      tags: sorted(this.tags),
+      keys: sorted(this.keys),
+      scannedAt: this.scannedAt,
+      files: this.files,
+      truncated: this.truncated
+    }
+  }
+
+  /** Add one document's tags and keys (cheap: a regex over its frontmatter). */
+  public mergeFromText(text: string): void {
+    let added = false
+    for (const tag of parseFrontmatterTags(text)) {
+      if (!this.tags.has(tag)) {
+        this.tags.add(tag)
+        added = true
+      }
+    }
+    for (const key of parseFrontmatterKeys(text)) {
+      if (!this.keys.has(key)) {
+        this.keys.add(key)
+        added = true
+      }
+    }
+    if (added && this.scanned) void this.persist()
+  }
+
+  /** Sweep the workspace. Concurrent calls share the one in flight. */
+  public async scan(showProgress: boolean): Promise<void> {
+    if (this.scanning) return this.scanning
+    const run = showProgress
+      ? Promise.resolve(
+          vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'MDForge : analyse des tags…' },
+            (progress) => this.sweep((done, total) => progress.report({ message: `${done}/${total} fichiers` }))
+          )
+        )
+      : this.sweep()
+    this.scanning = run.finally(() => {
+      this.scanning = null
+    })
+    await this.scanning
+  }
+
+  private async sweep(onProgress?: (done: number, total: number) => void): Promise<void> {
+    const found = await vscode.workspace.findFiles(
+      '**/*.{md,markdown}',
+      '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**}',
+      TAG_SCAN_LIMIT + 1
+    )
+    this.truncated = found.length > TAG_SCAN_LIMIT
+    const uris = this.truncated ? found.slice(0, TAG_SCAN_LIMIT) : found
+    const tags = new Set<string>()
+    const keys = new Set<string>()
+    let done = 0
+    let next = 0
+    // Only the head of each file is decoded — frontmatter is at the top, and a
+    // vault can hold thousands of notes.
+    const decoder = new TextDecoder('utf-8', { fatal: false })
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const i = next++
+        if (i >= uris.length) return
+        try {
+          const bytes = await vscode.workspace.fs.readFile(uris[i])
+          const head = decoder.decode(bytes.subarray(0, 4096))
+          parseFrontmatterTags(head).forEach((t) => tags.add(t))
+          parseFrontmatterKeys(head).forEach((k) => keys.add(k))
+        } catch {
+          // unreadable file: skip it, the list is best-effort
+        }
+        done++
+        if (onProgress && done % 25 === 0) onProgress(done, uris.length)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(16, uris.length) }, worker))
+    this.tags = tags
+    this.keys = keys
+    this.files = uris.length
+    this.scannedAt = Date.now()
+    await this.persist()
+  }
+
+  private persist(): Thenable<void> {
+    return this.context.workspaceState.update(TagIndex.KEY, this.snapshot())
+  }
+}
+
 class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
   /** Asset paths currently being re-hashed, to ignore the watcher events that
    *  the rename itself triggers (and to avoid double prompts). */
@@ -370,7 +728,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
 
   public constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly outline: OutlineProvider
+    private readonly outline: OutlineProvider,
+    private readonly tagIndex: TagIndex
   ) {}
 
   public async resolveCustomTextEditor(
@@ -421,6 +780,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           fontSize: config.get<number>('fontSize', 15),
           pageWidth: config.get<string>('pageWidth', 'comfortable'),
           textAlign: config.get<string>('textAlign', 'left'),
+          lineNumbers: config.get<boolean>('lineNumbers', true),
           appendSource: config.get<boolean>('paste.appendSource', false),
           sourceLabel: config.get<string>('paste.sourceLabel', "À partir de l'adresse"),
           debugPasteHtml: config.get<boolean>('debug.pasteHtml', false),
@@ -489,6 +849,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         quiet?: boolean
         html?: string
         dump?: string
+        refresh?: boolean
         range?: {
           from: { line: number; character: number }
           to: { line: number; character: number }
@@ -501,6 +862,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             postDiagnostics()
             break
           case 'edit':
+            // NOT merged into the tag index here: this fires on every keystroke,
+            // so a tag being typed would persist every prefix of itself (`p`,
+            // `pr`, `pro`…) with no way to take them back. Saving does it.
             if (typeof message.text === 'string' && message.text !== document.getText()) {
               syncedText = message.text
               await this.writeDocument(document, message.text)
@@ -534,13 +898,21 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             await this.deleteNote(document)
             break
           case 'normalizeBlankLines': {
-            const norm = normalizeBlankLines(document.getText())
+            const norm = formatMarkdown(document.getText(), joinParagraphsEnabled(document.uri))
             if (norm !== document.getText()) await this.writeDocument(document, norm)
             break
           }
           case 'requestQuickFix':
             if (message.range) await this.runQuickFix(document, message.range)
             break
+          case 'requestTags': {
+            // First ask sweeps the workspace; afterwards the cache answers
+            // instantly and only an explicit refresh sweeps again.
+            const refresh = message.refresh === true
+            if (refresh || !this.tagIndex.scanned) await this.tagIndex.scan(refresh)
+            void webview.postMessage({ type: 'tags', ...this.tagIndex.snapshot() })
+            break
+          }
           case 'openSettings':
             void vscode.commands.executeCommand(
               'workbench.action.openSettings',

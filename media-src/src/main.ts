@@ -10,14 +10,14 @@
  * It speaks the same host protocol as the Milkdown build (`ready`/`edit` out,
  * `setContent`/`config` in), so src/extension.ts is unchanged.
  */
-import { Compartment, EditorState } from '@codemirror/state'
-import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
+import type { Extension } from '@codemirror/state'
+import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view'
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
   syntaxTree,
-  foldGutter,
   codeFolding,
   foldKeymap,
   foldService
@@ -33,11 +33,16 @@ import {
   redrawMermaid,
   setWikilinkHandler,
   setEnableInProgress,
+  setTagsRequester,
+  setTagIndex,
+  refreshTags,
+  resetInlineEditors,
   openWikilink
 } from './cm-livepreview'
 import { createTopbar, createBubble, wrap, insertLink, insertTable } from './cm-toolbar'
 import { ICONS } from './cm-icons'
 import { createSlashMenu } from './cm-slash'
+import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
 import { setDiagnostics, lintGutter } from '@codemirror/lint'
@@ -55,6 +60,8 @@ declare function acquireVsCodeApi(): {
 interface MdForgeConfig {
   fontSize?: number
   pageWidth?: 'comfortable' | 'full'
+  textAlign?: 'left' | 'justify'
+  lineNumbers?: boolean
   assetsBaseUri?: string
   mermaidTheme?: string
   enableInProgress?: boolean
@@ -65,15 +72,26 @@ interface MdForgeConfig {
 const vscode = acquireVsCodeApi()
 const root = document.getElementById('app') as HTMLElement
 
-/** Turn a blank page into a visible, reportable error. */
+/** True once the editor is up. Before that, an error means a blank page and the
+ * message must replace it; after that, the editor is working and a stray runtime
+ * error (a widget handler, an async render) must NOT tear it down — losing a
+ * working editor over a hiccup is far worse than the hiccup. */
+let booted = false
+
+/** Turn a blank page into a visible, reportable error — and, once booted, just
+ * report it to the host. */
 function showError(error: unknown): void {
   const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
+  vscode.postMessage({ type: 'error', text: detail })
+  if (booted) {
+    console.error('[MDForge webview]', detail)
+    return
+  }
   const pre = document.createElement('pre')
   pre.style.cssText =
     'white-space:pre-wrap;word-break:break-word;color:#f14c4c;padding:16px;font:12px/1.5 monospace'
   pre.textContent = `MDForge (CodeMirror) failed to initialize:\n\n${detail}`
   root.replaceChildren(pre)
-  vscode.postMessage({ type: 'error', text: detail })
 }
 window.addEventListener('error', (event) => showError(event.error ?? event.message))
 window.addEventListener('unhandledrejection', (event) => showError(event.reason))
@@ -85,6 +103,10 @@ let applyingRemote = false
 
 // Wikilink clicks in the rendered text ask the host to open the target note.
 setWikilinkHandler((target) => vscode.postMessage({ type: 'openWikilink', target }))
+// The frontmatter tag editor completes on the tags already used in the workspace.
+// The host sweeps once on the first request, then answers from its cache; only
+// the editor's ↻ asks for a fresh sweep.
+setTagsRequester((refresh) => vscode.postMessage({ type: 'requestTags', refresh }))
 
 const editorTheme = EditorView.theme({
   '&': {
@@ -101,7 +123,10 @@ const editorTheme = EditorView.theme({
   '.cm-content': {
     maxWidth: '900px',
     margin: '0 auto',
-    padding: '24px 48px 40vh',
+    // The left margin carries three controls (level fold, fold, drag handle), so
+    // it needs ~58px of room even with the line-number gutter off. Kept
+    // symmetrical so the column stays centred.
+    padding: '24px 64px 40vh',
     fontSize: 'var(--mdforge-font-size, 15px)',
     caretColor: 'var(--vscode-editorCursor-foreground)'
   },
@@ -117,8 +142,26 @@ const editable = new Compartment()
  * the raw Markdown (only syntax highlighting remains). */
 const preview = new Compartment()
 
+/** Wraps the line-number gutter so `mdforge.lineNumbers` can switch it off. */
+const gutters = new Compartment()
+
+/** Source line numbers. Blank lines are compacted to a fixed small height in
+ * live preview, which would clip their number mid-glyph — so they get none
+ * there. In source view (the live-preview field is gone) every line is numbered.
+ * NOTE: the gutter also calls this with a padding number BEYOND the last line to
+ * measure its own width, so the line count must be checked first. */
+function lineNumberGutter(): Extension {
+  return lineNumbers({
+    formatNumber: (line, state) =>
+      line <= state.doc.lines && state.field(livePreview, false) && state.doc.line(line).length === 0
+        ? ''
+        : String(line)
+  })
+}
+
 let bubbleUpdate: () => void = () => {}
 let slashUpdate: () => void = () => {}
+let slashMenu: SlashMenu | null = null
 let tableUpdate: () => void = () => {}
 
 /* ---------- list indent / outdent on Tab ---------- */
@@ -412,7 +455,11 @@ function addHostButtons(bar: HTMLElement): void {
   const post = (type: string) => (): void => vscode.postMessage({ type })
 
   sep()
-  mk(ICONS.normalize, 'Normaliser les lignes vides (markdownlint)', post('normalizeBlankLines'))
+  mk(
+    ICONS.normalize,
+    'Reformater le document\nSupprime les sauts de ligne en trop et, si « Format: Paragraphs » vaut oneLine, regroupe chaque paragraphe sur une seule ligne. Automatique à la sauvegarde avec « Format: On Save ».',
+    post('normalizeBlankLines')
+  )
   mk(ICONS.image, 'Insérer une image', pickImage)
   mk(ICONS.table, 'Insérer un tableau', () => insertTable(view))
   mk(ICONS.localize, 'Télécharger les images distantes en local', post('localizeAssets'))
@@ -466,6 +513,19 @@ try {
       doc: '',
       extensions: [
         history(),
+        // Slash-menu navigation, above every other binding: when the menu is open
+        // these consume ↑/↓/Enter/Tab/Esc; otherwise they return false and the
+        // editor's normal keys apply. A keymap (not a DOM capture listener) so it
+        // reliably beats CodeMirror's own cursor bindings in every environment.
+        Prec.highest(
+          keymap.of([
+            { key: 'ArrowDown', run: () => slashMenu?.nav(1) ?? false },
+            { key: 'ArrowUp', run: () => slashMenu?.nav(-1) ?? false },
+            { key: 'Enter', run: () => slashMenu?.accept() ?? false },
+            { key: 'Tab', run: () => slashMenu?.accept() ?? false },
+            { key: 'Escape', run: () => slashMenu?.dismiss() ?? false }
+          ])
+        ),
         keymap.of([
           // Formatting shortcuts (toggle, same logic as the toolbar).
           { key: 'Mod-b', run: (v) => (wrap(v, '**'), true) },
@@ -490,8 +550,10 @@ try {
         syntaxHighlighting(defaultHighlightStyle),
         pasteURLAsLink,
         codeFolding(),
-        foldGutter(),
         markdownFold,
+        // Source line numbers. Folding is NOT in the gutter: its arrows were too
+        // discreet, so the chevron lives next to the ⠿ block handle instead.
+        gutters.of(lineNumberGutter()),
         search({ top: true }),
         highlightSelectionMatches(),
         blockDrag,
@@ -559,7 +621,8 @@ try {
   document.body.insertBefore(topbar, root)
   const bubble = createBubble(view)
   bubbleUpdate = bubble.update
-  slashUpdate = createSlashMenu(view).update
+  slashMenu = createSlashMenu(view)
+  slashUpdate = slashMenu.update
   tableUpdate = createTableToolbar(view).update
 
   // Presentation mode hides the toolbar, so its own toggle button vanishes — a
@@ -577,6 +640,7 @@ try {
       togglePresentation()
     }
   })
+  booted = true
 } catch (error) {
   showError(error)
   throw error
@@ -762,6 +826,9 @@ function applyDiagnostics(raw: RawDiagnostic[]): void {
 function setContent(text: string): void {
   if (text === currentText) return
   applyingRemote = true
+  // Another document (or an external rewrite): whatever was open in place — a
+  // frontmatter property, a table cell — pointed into the previous content.
+  resetInlineEditors()
   // On the first load, drop the caret past any frontmatter so it renders as its
   // collapsed card (a caret at 0 sits inside the block and reveals the raw YAML).
   const anchor = currentText === '' ? bodyStart(text) : undefined
@@ -773,11 +840,24 @@ function setContent(text: string): void {
   applyingRemote = false
 }
 
+/** Line-number gutter (mdforge.lineNumbers). */
+let lineNumbersOn = true
+function setLineNumbers(on: boolean): void {
+  if (on === lineNumbersOn) return
+  lineNumbersOn = on
+  view.dispatch({ effects: gutters.reconfigure(on ? lineNumberGutter() : []) })
+}
+
 function applyConfig(config: MdForgeConfig): void {
   if (typeof config.fontSize === 'number') {
     document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   }
   document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
+  // Display-only justification: nothing is written to the Markdown. It shows on
+  // wrapped lines, so a hard-wrapped paragraph needs `mdforge.format.paragraphs`
+  // set to `oneLine` (the ¶ button) for it to have any visible effect.
+  document.body.classList.toggle('mdforge-justify', config.textAlign === 'justify')
+  if (typeof config.lineNumbers === 'boolean') setLineNumbers(config.lineNumbers)
   if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
   if (config.mermaidTheme && setMermaidTheme(config.mermaidTheme)) redrawMermaid(view)
   if (typeof config.enableInProgress === 'boolean') setEnableInProgress(config.enableInProgress)
@@ -797,6 +877,11 @@ window.addEventListener('message', (event) => {
     linkStyle?: string
     error?: string
     items?: RawDiagnostic[]
+    tags?: string[]
+    keys?: string[]
+    scannedAt?: number
+    files?: number
+    truncated?: boolean
   }
   switch (msg.type) {
     case 'setContent':
@@ -816,6 +901,18 @@ window.addEventListener('message', (event) => {
       break
     case 'diagnostics':
       if (Array.isArray(msg.items)) applyDiagnostics(msg.items)
+      break
+    case 'tags':
+      if (Array.isArray(msg.tags)) {
+        setTagIndex({
+          tags: msg.tags,
+          keys: msg.keys ?? [],
+          scannedAt: msg.scannedAt ?? 0,
+          files: msg.files ?? 0,
+          truncated: msg.truncated === true
+        })
+        refreshTags(view) // repaint the open editor with the list it was waiting for
+      }
       break
     case 'imageInserted':
       if (typeof msg.id === 'number') {

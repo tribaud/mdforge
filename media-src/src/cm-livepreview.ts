@@ -201,11 +201,11 @@ function enterEdit(view: EditorView, pos: number): void {
  * enters edit mode — clicking the rendered body leaves the caret alone (so the
  * diagram/table stays a stable, non-disruptive preview until you ask to edit).
  */
-function addEditButton(host: HTMLElement, view: EditorView, pos: number): void {
+function addEditButton(host: HTMLElement, view: EditorView, pos: number, tip = 'Éditer la source'): void {
   const btn = document.createElement('button')
   btn.className = 'cm-block-edit'
   btn.textContent = '✎ Éditer'
-  btn.title = 'Éditer la source'
+  btn.title = tip
   btn.addEventListener('mousedown', (e) => e.preventDefault())
   btn.addEventListener('click', (e) => {
     e.stopPropagation()
@@ -535,108 +535,593 @@ class MathWidget extends WidgetType {
   }
 }
 
-/** Render the common inline Markdown (code, math, bold, italic, strike, link)
- * of a table cell into `container` — table cells are plain text otherwise. */
-function renderInline(view: EditorView, container: HTMLElement, text: string): void {
-  const RE = /(`[^`]+`)|(\$[^$\n]+?\$)|(\*\*[\s\S]+?\*\*)|(~~[\s\S]+?~~)|(\*[\s\S]+?\*)|(\[[^\]]+\]\([^)]+\))/g
+/* ---------- rich inline rendering (used by table cells) ---------- */
+
+/** Raw-HTML tags kept when a cell carries HTML. Anything else is dropped but its
+ * content is still rendered, so an unknown wrapper never eats the text. */
+const HTML_TAGS = new Set([
+  'a', 'abbr', 'b', 'br', 'cite', 'code', 'del', 'em', 'i', 'img', 'ins', 'kbd', 'mark', 'q',
+  's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'u', 'var', 'wbr'
+])
+/** Tags whose *content* is dropped too (never rendered, never executed). */
+const HTML_DROP = new Set(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta'])
+const HTML_ATTRS = new Set(['href', 'src', 'alt', 'title', 'width', 'height', 'style', 'align', 'lang', 'dir'])
+/** A cell needs the HTML path as soon as it carries something tag-shaped. */
+const HAS_TAG = /<[a-zA-Z!/][^>]*>/
+
+/** Refuse the script-bearing URL schemes; everything else (relative paths,
+ * http(s), mailto, vscode-webview…) is left to `resolveSrc`/the host. */
+function safeUrl(url: string): string {
+  return /^\s*(javascript|vbscript|data:text\/html)/i.test(url) ? '' : url.trim()
+}
+
+/** Keep only declarations that cannot fetch or execute anything. */
+function safeStyle(style: string): string {
+  return style
+    .split(';')
+    .filter((d) => d.trim() && !/url\s*\(|expression\s*\(|javascript:/i.test(d))
+    .join(';')
+}
+
+/** `![alt](src)` / `<img>` inside a cell → an <img> that re-measures the layout
+ * once loaded (a widget whose height changes after CM measured drifts the caret). */
+function appendImage(view: EditorView, container: HTMLElement, src: string, alt: string, title: string): void {
+  const img = document.createElement('img')
+  img.src = resolveSrc(src)
+  img.alt = alt
+  img.title = title || alt || src
+  img.className = 'cm-inline-image cm-cell-image'
+  img.addEventListener('load', () => view.requestMeasure())
+  container.appendChild(img)
+}
+
+// Inline Markdown tokens, in priority order: code and math first (their content
+// is literal), then the bracket forms (wikilink embed / wikilink / image / link /
+// footnote), then emphasis, then bare URLs.
+const INLINE_RE =
+  /(`[^`]+`)|(\$[^$\n]+?\$)|(!\[\[[^\]\n]+?\]\])|(\[\[[^\]\n]+?\]\])|(!\[[^\]]*\]\([^)]*\))|(\[\^[^\]\s]+\])|(\[[^\]]*\]\([^)]*\))|(\*\*[\s\S]+?\*\*)|(__[\s\S]+?__)|(~~[\s\S]+?~~)|(\*[^*\n]+\*)|(_[^_\n]+_)|(https?:\/\/[^\s<>()]+)/g
+
+/** Render one inline token. Emphasis/link labels recurse, so `**[a](b)**` and
+ * `*`code`*` render like they do in the body text. */
+function appendToken(view: EditorView, container: HTMLElement, tok: string): void {
+  if (tok.startsWith('`')) {
+    const c = document.createElement('code')
+    c.className = 'cm-md-code'
+    c.textContent = tok.slice(1, -1)
+    container.appendChild(c)
+    return
+  }
+  if (tok.startsWith('$')) {
+    const s = document.createElement('span')
+    renderMath(view, s, tok.slice(1, -1), false)
+    container.appendChild(s)
+    return
+  }
+  if (tok.startsWith('![[')) {
+    // Obsidian embed of an image asset.
+    const target = tok.slice(3, -2).split('|')[0].trim()
+    appendImage(view, container, target, '', target)
+    return
+  }
+  if (tok.startsWith('[[')) {
+    const raw = tok.slice(2, -2)
+    const pipe = raw.indexOf('|')
+    const target = (pipe === -1 ? raw : raw.slice(0, pipe)).trim()
+    const label = (pipe === -1 ? raw : raw.slice(pipe + 1)).trim()
+    const a = document.createElement('span')
+    a.className = 'cm-md-wikilink'
+    a.setAttribute('data-wikilink', target)
+    a.textContent = label
+    container.appendChild(a)
+    return
+  }
+  if (tok.startsWith('![')) {
+    const m = /^!\[([^\]]*)\]\(\s*<?([^)\s>]*)>?(?:\s+"([^"]*)")?\s*\)$/.exec(tok)
+    if (m) appendImage(view, container, m[2], m[1], m[3] ?? '')
+    else container.appendChild(document.createTextNode(tok))
+    return
+  }
+  if (tok.startsWith('[^')) {
+    const s = document.createElement('span')
+    s.className = 'cm-md-footnote-ref'
+    s.setAttribute('data-footnote', tok.slice(2, -1))
+    s.textContent = tok
+    container.appendChild(s)
+    return
+  }
+  if (tok.startsWith('[')) {
+    const m = /^\[([^\]]*)\]\(\s*<?([^)\s>]*)>?(?:\s+"([^"]*)")?\s*\)$/.exec(tok)
+    const a = document.createElement('a')
+    a.className = 'cm-md-link'
+    if (m) {
+      const url = safeUrl(m[2])
+      if (url) {
+        a.setAttribute('data-href', url)
+        a.title = m[3] || `${url}  (Ctrl/⌘+clic pour ouvrir)`
+      }
+      renderMarkdown(view, a, m[1])
+    } else a.textContent = tok
+    container.appendChild(a)
+    return
+  }
+  if (tok.startsWith('**') || tok.startsWith('__')) {
+    const b = document.createElement('strong')
+    renderMarkdown(view, b, tok.slice(2, -2))
+    container.appendChild(b)
+    return
+  }
+  if (tok.startsWith('~~')) {
+    const s = document.createElement('span')
+    s.className = 'cm-md-strike'
+    renderMarkdown(view, s, tok.slice(2, -2))
+    container.appendChild(s)
+    return
+  }
+  if (tok.startsWith('*') || tok.startsWith('_')) {
+    const i = document.createElement('em')
+    renderMarkdown(view, i, tok.slice(1, -1))
+    container.appendChild(i)
+    return
+  }
+  const url = safeUrl(tok)
+  const a = document.createElement('a')
+  a.className = 'cm-md-link'
+  a.textContent = tok
+  if (url) {
+    a.setAttribute('data-href', url)
+    a.title = `${url}  (Ctrl/⌘+clic pour ouvrir)`
+  }
+  container.appendChild(a)
+}
+
+/** Render inline Markdown (no HTML) into `container`. */
+function renderMarkdown(view: EditorView, container: HTMLElement, text: string): void {
+  const re = new RegExp(INLINE_RE.source, 'g')
   let last = 0
   let m: RegExpExecArray | null
-  while ((m = RE.exec(text))) {
+  while ((m = re.exec(text))) {
     if (m.index > last) container.appendChild(document.createTextNode(text.slice(last, m.index)))
-    const tok = m[0]
-    if (tok.startsWith('`')) {
-      const c = document.createElement('code')
-      c.className = 'cm-md-code'
-      c.textContent = tok.slice(1, -1)
-      container.appendChild(c)
-    } else if (tok.startsWith('$')) {
-      const s = document.createElement('span')
-      renderMath(view, s, tok.slice(1, -1), false)
-      container.appendChild(s)
-    } else if (tok.startsWith('**')) {
-      const b = document.createElement('strong')
-      b.textContent = tok.slice(2, -2)
-      container.appendChild(b)
-    } else if (tok.startsWith('~~')) {
-      const s = document.createElement('span')
-      s.className = 'cm-md-strike'
-      s.textContent = tok.slice(2, -2)
-      container.appendChild(s)
-    } else if (tok.startsWith('*')) {
-      const i = document.createElement('em')
-      i.textContent = tok.slice(1, -1)
-      container.appendChild(i)
-    } else {
-      const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok)
-      const a = document.createElement('a')
-      a.className = 'cm-md-link'
-      a.textContent = mm ? mm[1] : tok
-      if (mm) a.title = mm[2]
-      container.appendChild(a)
-    }
-    last = m.index + tok.length
+    appendToken(view, container, m[0])
+    last = m.index + m[0].length
   }
   if (last < text.length) container.appendChild(document.createTextNode(text.slice(last)))
 }
 
-function parseRow(line: string): string[] {
-  return line
-    .replace(/^\s*\|/, '')
-    .replace(/\|\s*$/, '')
-    .split('|')
-    .map((c) => c.trim())
+/** Placeholder for a code span pulled out before the HTML parser sees it. A
+ * private-use character, NOT NUL: the HTML tokenizer replaces NUL with U+FFFD,
+ * so the marker never survived the round-trip and the index leaked as text. */
+const CODE_MARK = /\ue000(\d+)\ue000/g
+
+/**
+ * Render a raw-HTML fragment: parsed with DOMParser (inert — nothing runs),
+ * rebuilt tag by tag through an allow-list, and every text node still goes
+ * through the Markdown renderer, so `<span>**gras**</span>` renders bold.
+ * Attributes are filtered (no `on*`, no script URL, no `url()` in a style).
+ *
+ * Inline code is pulled out FIRST: a cell showing `` `<br>` `` means the text
+ * `<br>`, and handing it to the HTML parser turned it into a real line break
+ * (and `` `<div>` `` into nothing at all).
+ */
+function renderHtml(view: EditorView, container: HTMLElement, html: string): void {
+  const code: string[] = []
+  const masked = html.replace(/`[^`]*`/g, (m) => {
+    code.push(m.slice(1, -1))
+    return `\ue000${code.length - 1}\ue000`
+  })
+  /** Emit a text node, restoring the code spans it holds. */
+  const emit = (dest: HTMLElement, text: string): void => {
+    let last = 0
+    let m: RegExpExecArray | null
+    const re = new RegExp(CODE_MARK.source, 'g')
+    while ((m = re.exec(text))) {
+      if (m.index > last) renderMarkdown(view, dest, text.slice(last, m.index))
+      const el = document.createElement('code')
+      el.className = 'cm-md-code'
+      el.textContent = code[Number(m[1])] ?? ''
+      dest.appendChild(el)
+      last = m.index + m[0].length
+    }
+    if (last < text.length) renderMarkdown(view, dest, text.slice(last))
+  }
+  const parsed = new DOMParser().parseFromString(`<body>${masked}</body>`, 'text/html')
+  const walk = (src: Node, dest: HTMLElement): void => {
+    src.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        emit(dest, node.nodeValue ?? '')
+        return
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return
+      const el = node as HTMLElement
+      const tag = el.tagName.toLowerCase()
+      if (HTML_DROP.has(tag)) return
+      if (!HTML_TAGS.has(tag)) {
+        walk(el, dest) // unknown wrapper: drop the tag, keep the content
+        return
+      }
+      if (tag === 'img') {
+        appendImage(view, dest, el.getAttribute('src') ?? '', el.getAttribute('alt') ?? '', el.getAttribute('title') ?? '')
+        return
+      }
+      const out = document.createElement(tag === 'a' ? 'a' : tag)
+      for (const attr of Array.from(el.attributes)) {
+        const name = attr.name.toLowerCase()
+        if (!HTML_ATTRS.has(name)) continue
+        if (name === 'style') {
+          const style = safeStyle(attr.value)
+          if (style) out.setAttribute('style', style)
+          continue
+        }
+        if (name === 'href') {
+          const url = safeUrl(attr.value)
+          if (url) {
+            out.setAttribute('data-href', url)
+            out.setAttribute('title', `${url}  (Ctrl/⌘+clic pour ouvrir)`)
+          }
+          continue
+        }
+        out.setAttribute(name, attr.value)
+      }
+      if (tag === 'a') out.classList.add('cm-md-link')
+      walk(el, out)
+      dest.appendChild(out)
+    })
+  }
+  walk(parsed.body, container)
+}
+
+/** Render a table cell: raw HTML when it carries tags, inline Markdown
+ * otherwise — images, code, math, links, wikilinks and emphasis included.
+ * A tag inside inline code does NOT count: `` `<br>` `` is text. */
+function renderCell(view: EditorView, container: HTMLElement, text: string): void {
+  const outsideCode = text.replace(/`[^`]*`/g, (m) => ' '.repeat(m.length))
+  if (HAS_TAG.test(outsideCode)) renderHtml(view, container, text)
+  else renderMarkdown(view, container, text)
+}
+
+/* ---------- tables ---------- */
+
+/** One table cell: its trimmed text and the absolute document offsets of that
+ * text (so a single cell can be rewritten without touching the rest), plus the
+ * offsets of the whole segment between the two pipes — an EMPTY cell has no text
+ * to replace, so it is filled through the padded range instead. */
+interface Cell {
+  text: string
+  from: number
+  to: number
+  padFrom: number
+  padTo: number
+}
+
+/** GFM escapes a literal pipe inside a cell as `\|`. */
+const unescapePipes = (s: string): string => s.replace(/\\\|/g, '|')
+const escapePipes = (s: string): string => s.replace(/\\\|/g, '|').replace(/\|/g, '\\|')
+
+/** Split one table line into positioned cells. `\|` is an escaped pipe, not a
+ * cell boundary; the leading and trailing border pipes are not cells. */
+function splitCells(line: string, lineStart: number): Cell[] {
+  const cells: Cell[] = []
+  let start = 0
+  while (start < line.length && /\s/.test(line[start])) start++
+  if (line[start] === '|') start++
+  let seg = start
+  const push = (end: number): void => {
+    let a = seg
+    let b = end
+    while (a < b && /\s/.test(line[a])) a++
+    while (b > a && /\s/.test(line[b - 1])) b--
+    cells.push({
+      text: line.slice(a, b),
+      from: lineStart + a,
+      to: lineStart + b,
+      padFrom: lineStart + seg,
+      padTo: lineStart + end
+    })
+  }
+  for (let i = start; i < line.length; i++) {
+    if (line[i] === '\\') {
+      i++
+      continue
+    }
+    if (line[i] === '|') {
+      push(i)
+      seg = i + 1
+    }
+  }
+  if (line.slice(seg).trim() !== '') push(line.length) // no trailing border pipe
+  return cells
+}
+
+/** A table source → rows of positioned cells: [0] header, [1] delimiter,
+ * [2…] body. `base` is the table's document offset. */
+function parseTableCells(source: string, base: number): Cell[][] {
+  const rows: Cell[][] = []
+  let off = 0
+  for (const line of source.split('\n')) {
+    if (line.trim()) rows.push(splitCells(line, base + off))
+    off += line.length + 1
+  }
+  return rows
+}
+
+/* ---------- single-cell editing ---------- */
+/**
+ * Edit ONE cell without unfolding the whole table: the table stays rendered, the
+ * cell is highlighted, and its raw Markdown opens in a field above the table —
+ * the same place the full source appears when you edit the table itself. The
+ * field is plain DOM (not part of the CM document), so committing it is a text
+ * edit on that cell's range alone.
+ */
+interface CellEdit {
+  table: number
+  row: number
+  col: number
+}
+let cellEdit: CellEdit | null = null
+/** Set when the rebuilt field must take the focus back (Tab between cells). */
+let cellEditFocus = false
+/** Commit hook of the open field, so clicking another cell's ✎ doesn't lose it. */
+let flushCellEdit: (() => void) | null = null
+const cellEditEffect = StateEffect.define<CellEdit | null>()
+
+function sameCellEdit(a: CellEdit | null, b: CellEdit | null): boolean {
+  if (!a || !b) return a === b
+  return a.table === b.table && a.row === b.row && a.col === b.col
+}
+
+/**
+ * Dispatch that survives being called from inside a CodeMirror DOM update.
+ * CM re-syncs the focus while updating its DOM, which fires `blur` on a field
+ * living in a widget — and dispatching there throws "Calls to EditorView.update
+ * are not allowed while an update is in progress", which used to blank the whole
+ * editor. Retry once, out of the update.
+ */
+function safeDispatch(view: EditorView, spec: Parameters<EditorView['dispatch']>[0]): void {
+  try {
+    view.dispatch(spec)
+  } catch {
+    window.setTimeout(() => {
+      try {
+        view.dispatch(spec)
+      } catch {
+        // give up rather than break the editor
+      }
+    }, 0)
+  }
+}
+
+/** Open (or close, with `null`) the cell field. A state effect — the live-preview
+ * field must rebuild for the widget to pick the change up. */
+function setCellEdit(view: EditorView, edit: CellEdit | null): void {
+  cellEdit = edit
+  cellEditFocus = edit !== null
+  safeDispatch(view, { effects: cellEditEffect.of(edit) })
+}
+
+/** Row 1 is the delimiter — never editable, so it is skipped when tabbing. */
+function stepCell(rows: Cell[][], edit: CellEdit, dir: number): CellEdit {
+  let { row, col } = edit
+  for (let guard = 0; guard < 1000; guard++) {
+    col += dir
+    if (col < 0) {
+      row -= 1
+      if (row === 1) row = 0
+      if (row < 0) return { ...edit }
+      col = (rows[row]?.length ?? 1) - 1
+    } else if (col >= (rows[row]?.length ?? 0)) {
+      row += 1
+      if (row === 1) row = 2
+      if (row >= rows.length) return { ...edit }
+      col = 0
+    }
+    if (rows[row]?.[col]) return { table: edit.table, row, col }
+  }
+  return { ...edit }
 }
 
 class TableWidget extends WidgetType {
   constructor(
     readonly source: string,
     readonly pos: number,
-    readonly mode: BlockMode
+    readonly mode: BlockMode,
+    readonly base: number,
+    readonly edit: CellEdit | null
   ) {
     super()
   }
   eq(other: TableWidget): boolean {
-    return other.source === this.source && other.mode === this.mode
+    return (
+      other.source === this.source &&
+      other.mode === this.mode &&
+      other.base === this.base &&
+      sameCellEdit(other.edit, this.edit)
+    )
   }
   get estimatedHeight(): number {
-    return this.source.split('\n').filter((l) => l.trim()).length * 34
+    return this.source.split('\n').filter((l) => l.trim()).length * 34 + (this.edit ? 40 : 0)
   }
+
+  /** The field above the table: label, the cell's raw Markdown, ✓ / ✕. */
+  private cellEditor(view: EditorView, rows: Cell[][]): HTMLElement {
+    const edit = this.edit as CellEdit
+    const cell = rows[edit.row]?.[edit.col]
+    const original = cell ? cell.text : ''
+    const bar = document.createElement('div')
+    bar.className = 'cm-td-editor'
+
+    const label = document.createElement('span')
+    label.className = 'cm-td-editor-label'
+    label.textContent = `${edit.row === 0 ? 'En-tête' : `Ligne ${edit.row - 1}`} · Colonne ${edit.col + 1}`
+    bar.appendChild(label)
+
+    const input = document.createElement('input')
+    input.className = 'cm-td-editor-input'
+    input.spellcheck = true
+    input.value = unescapePipes(original)
+    input.placeholder = 'Contenu de la cellule (Markdown, HTML, image…)'
+    bar.appendChild(input)
+
+    let done = false
+    /** True once CodeMirror threw this field's DOM away (widget re-created). */
+    let torn = false
+    ;(bar as HTMLElement & { _torn?: () => void })._torn = () => {
+      torn = true
+    }
+    /** `undefined` keeps the field open on the same cell, `null` closes it. */
+    const commit = (next: CellEdit | null | undefined): void => {
+      if (done) return
+      done = true
+      flushCellEdit = null
+      const target = next === undefined ? cellEdit : next
+      cellEdit = target
+      cellEditFocus = target !== null
+      const value = escapePipes(input.value.replace(/[\r\n]+/g, ' ')).trim()
+      // Bail out on stale offsets (the document moved under us) rather than
+      // writing over whatever now sits at that range.
+      const stale = !cell || view.state.doc.sliceString(cell.padFrom, cell.padTo).trim() !== original
+      if (!stale && value !== original) {
+        // An empty cell has a zero-width text range: fill it through the padded
+        // range so the result reads `| value |`, not `|  value|`.
+        const range = original === '' ? { from: cell.padFrom, to: cell.padTo } : { from: cell.from, to: cell.to }
+        safeDispatch(view, {
+          changes: { ...range, insert: original === '' ? ` ${value} ` : value },
+          effects: cellEditEffect.of(target)
+        })
+      } else {
+        safeDispatch(view, { effects: cellEditEffect.of(target) })
+      }
+    }
+    flushCellEdit = () => commit(undefined)
+
+    const btn = (text: string, tip: string, run: () => void): HTMLButtonElement => {
+      const b = document.createElement('button')
+      b.className = 'cm-td-editor-btn'
+      b.textContent = text
+      b.title = tip
+      // Keep the focus in the field: no blur, so the click below is the only
+      // path that runs (a blur-then-click would commit twice).
+      b.addEventListener('mousedown', (e) => e.preventDefault())
+      b.addEventListener('click', (e) => {
+        e.stopPropagation()
+        run()
+      })
+      return b
+    }
+    bar.appendChild(btn('✓', 'Valider (Entrée)', () => commit(null)))
+    bar.appendChild(
+      btn('✕', 'Annuler (Échap)', () => {
+        done = true
+        flushCellEdit = null
+        setCellEdit(view, null)
+      })
+    )
+
+    input.addEventListener('mousedown', (e) => e.stopPropagation())
+    // A blur here is not always the user leaving the field: CodeMirror re-syncs
+    // the focus while updating its DOM (a click elsewhere, a viewport
+    // re-render…), so this can fire from INSIDE an update. Never dispatch
+    // synchronously from it — and when the field was merely re-created under us
+    // with nothing typed, put the focus back instead of closing it.
+    input.addEventListener('blur', () => {
+      const typed = escapePipes(input.value.replace(/[\r\n]+/g, ' ')).trim() !== original
+      window.setTimeout(() => {
+        if (torn && !typed) {
+          const fresh = document.querySelector('.cm-td-editor-input') as HTMLInputElement | null
+          if (fresh && fresh !== input) fresh.focus()
+          return
+        }
+        commit(null)
+      }, 0)
+    })
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation() // the editor's own keymap must not see this typing
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        commit(null)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        done = true
+        flushCellEdit = null
+        setCellEdit(view, null)
+      } else if (e.key === 'Tab') {
+        e.preventDefault()
+        commit(stepCell(rows, edit, e.shiftKey ? -1 : 1))
+      }
+    })
+    // The widget was just rebuilt (opened, or tabbed to the next cell) — take
+    // the focus back after the DOM lands.
+    if (cellEditFocus) {
+      cellEditFocus = false
+      requestAnimationFrame(() => {
+        input.focus()
+        input.setSelectionRange(input.value.length, input.value.length)
+      })
+    }
+    return bar
+  }
+
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div')
     wrap.className = this.mode === 'preview' ? 'cm-md-table-wrap cm-block-preview' : 'cm-md-table-wrap'
-    if (this.mode === 'render') addEditButton(wrap, view, this.pos)
+    if (this.mode === 'render') addEditButton(wrap, view, this.pos, 'Éditer la source du tableau')
     else addCloseButton(wrap, view)
-    const lines = this.source.split('\n').filter((l) => l.trim())
-    if (lines.length < 2) {
+    const rows = parseTableCells(this.source, this.base)
+    if (rows.length < 2) {
       wrap.textContent = this.source
       return wrap
     }
-    const header = parseRow(lines[0])
-    const aligns = parseRow(lines[1]).map((c) => {
-      const l = c.startsWith(':')
-      const r = c.endsWith(':')
+    if (this.edit) wrap.appendChild(this.cellEditor(view, rows))
+    const aligns = rows[1].map((c) => {
+      const l = c.text.startsWith(':')
+      const r = c.text.endsWith(':')
       return l && r ? 'center' : r ? 'right' : l ? 'left' : ''
     })
     const table = document.createElement('table')
     table.className = 'cm-md-table'
+
+    /** Build one cell: rendered content, alignment, and — in render mode — the
+     * per-cell ✎ that opens the field above the table. */
+    const fill = (el: HTMLTableCellElement, cell: Cell, row: number, col: number): void => {
+      renderCell(view, el, unescapePipes(cell.text))
+      if (aligns[col]) el.style.textAlign = aligns[col]
+      if (!cell.text) el.classList.add('cm-td-empty')
+      if (this.mode !== 'render') return
+      if (this.edit && this.edit.row === row && this.edit.col === col) el.classList.add('cm-td-editing')
+      const open = (): void => {
+        flushCellEdit?.()
+        setCellEdit(view, { table: this.base, row, col })
+      }
+      const pen = document.createElement('button')
+      pen.className = 'cm-td-edit'
+      pen.textContent = '✎'
+      pen.title = 'Éditer cette cellule (double-clic)'
+      pen.addEventListener('mousedown', (e) => e.preventDefault())
+      pen.addEventListener('click', (e) => {
+        e.stopPropagation()
+        open()
+      })
+      el.appendChild(pen)
+      el.addEventListener('dblclick', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        open()
+      })
+    }
+
     const thead = document.createElement('thead')
     const htr = document.createElement('tr')
-    header.forEach((h, i) => {
+    rows[0].forEach((cell, i) => {
       const th = document.createElement('th')
-      renderInline(view, th, h)
-      if (aligns[i]) th.style.textAlign = aligns[i]
+      fill(th, cell, 0, i)
       htr.appendChild(th)
     })
     thead.appendChild(htr)
     table.appendChild(thead)
     const tbody = document.createElement('tbody')
-    for (let i = 2; i < lines.length; i++) {
-      const cells = parseRow(lines[i])
+    for (let i = 2; i < rows.length; i++) {
       const tr = document.createElement('tr')
-      cells.forEach((c, j) => {
+      rows[i].forEach((cell, j) => {
         const td = document.createElement('td')
-        renderInline(view, td, c)
-        if (aligns[j]) td.style.textAlign = aligns[j]
+        fill(td, cell, i, j)
         tr.appendChild(td)
       })
       tbody.appendChild(tr)
@@ -644,6 +1129,16 @@ class TableWidget extends WidgetType {
     table.appendChild(tbody)
     wrap.appendChild(table)
     return wrap
+  }
+  destroy(dom: HTMLElement): void {
+    flushCellEdit = null
+    // Tell the open field its DOM is gone, so the blur that follows is read as a
+    // teardown and not as the user leaving the field.
+    const bar = dom.querySelector?.('.cm-td-editor') as (HTMLElement & { _torn?: () => void }) | null
+    bar?._torn?.()
+  }
+  ignoreEvent(): boolean {
+    return true
   }
 }
 
@@ -716,32 +1211,619 @@ class AlertSelectWidget extends WidgetType {
  * (with a live editable block + `✓ Terminer` to leave). Replaces the whole
  * fenced block so the `---` fences don't sit as visible noise when not editing.
  */
+/* ---------- frontmatter ---------- */
+
+/**
+ * One `key: value` entry of the frontmatter, with the document range to rewrite
+ * when it is edited. Only the shapes people actually write are modelled — a
+ * scalar, a flow list `[a, b]`, a comma list `a, b` and an indented `- item`
+ * block. Anything else (nested map, `|`/`>` block scalar) is marked `complex`
+ * and is not editable field by field: clicking it opens the raw YAML instead,
+ * which is honest rather than half-parsing someone's file.
+ */
+type FmStyle = 'scalar' | 'flow' | 'comma' | 'block' | 'complex'
+interface FmEntry {
+  key: string
+  style: FmStyle
+  list: boolean
+  /** Values of a list entry (empty for a scalar). */
+  items: string[]
+  /** Text of a scalar entry. */
+  scalar: string
+  /** Range of the VALUE (from just after the colon to the end of the entry). */
+  from: number
+  to: number
+}
+
+/** Keys whose value is a set of words, even written as `a, b` on one line. */
+const MULTI_KEYS = new Set(['tags', 'keywords', 'categories', 'aliases'])
+/** Keys the known-tags list is offered for. */
+const TAG_KEYS = new Set(['tags', 'keywords'])
+
+const unquote = (s: string): string => s.trim().replace(/^["']|["']$/g, '').trim()
+
+function parseFrontmatter(raw: string, base: number): FmEntry[] {
+  const lines = raw.split('\n')
+  const offsets: number[] = []
+  let off = 0
+  for (const line of lines) {
+    offsets.push(off)
+    off += line.length + 1
+  }
+  const out: FmEntry[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^([A-Za-z0-9_.-]+)(\s*):(.*)$/.exec(lines[i])
+    if (!m) continue
+    const key = m[1]
+    const rest = m[3]
+    // The range starts right after the colon and INCLUDES the space that follows:
+    // `serializeEntry` writes its own, and skipping it made them pile up. The
+    // colon is located, not assumed: `tags : a` is legal YAML, and taking
+    // `key.length + 1` deleted the colon itself.
+    const from = base + offsets[i] + m[1].length + m[2].length + 1
+    let to = base + offsets[i] + lines[i].length
+    const inline = rest.trim()
+    const multi = MULTI_KEYS.has(key.toLowerCase())
+
+    if (inline) {
+      if (/^[|>]/.test(inline)) {
+        out.push({ key, style: 'complex', list: false, items: [], scalar: inline, from, to })
+        continue
+      }
+      const flow = /^\[(.*)\]$/.exec(inline)
+      if (flow) {
+        const items = flow[1].split(',').map(unquote).filter(Boolean)
+        out.push({ key, style: 'flow', list: true, items, scalar: inline, from, to })
+      } else if (multi) {
+        const items = inline.split(',').map(unquote).filter(Boolean)
+        out.push({ key, style: 'comma', list: true, items, scalar: inline, from, to })
+      } else {
+        out.push({ key, style: 'scalar', list: false, items: [], scalar: unquote(inline), from, to })
+      }
+      continue
+    }
+
+    // Nothing after the colon: an indented `- item` block, a nested map, or empty.
+    const items: string[] = []
+    let n = i + 1
+    for (; n < lines.length; n++) {
+      const item = /^\s+-\s*(.*)$/.exec(lines[n])
+      if (!item) break
+      items.push(unquote(item[1]))
+      to = base + offsets[n] + lines[n].length
+    }
+    if (items.length) {
+      out.push({ key, style: 'block', list: true, items: items.filter(Boolean), scalar: '', from, to })
+      i = n - 1
+      continue
+    }
+    const nested = n < lines.length && /^\s+\S/.test(lines[n])
+    out.push({
+      key,
+      style: nested ? 'complex' : multi ? 'flow' : 'scalar',
+      list: !nested && multi,
+      items: [],
+      scalar: '',
+      from,
+      to
+    })
+  }
+  return out
+}
+
+/** What a chip shows: the value as one readable line. */
+function entryText(entry: FmEntry): string {
+  return entry.list ? entry.items.join(', ') : entry.scalar
+}
+
+/** The replacement text for an entry's value range, in its own style. */
+function serializeEntry(entry: FmEntry, items: string[], scalar: string): string {
+  if (!entry.list) return scalar.trim() ? ` ${scalar.trim()}` : ''
+  const clean = items.map((t) => t.trim()).filter(Boolean)
+  if (entry.style === 'block') return clean.length ? clean.map((t) => `\n  - ${t}`).join('') : ' []'
+  if (entry.style === 'comma') return clean.length ? ` ${clean.join(', ')}` : ''
+  return ` [${clean.join(', ')}]`
+}
+
+/* ---------- known tags & keys (from the host's workspace sweep) ---------- */
+/**
+ * Frontmatter properties worth one click, from the PKM / Obsidian conventions.
+ * `@today` becomes the local ISO date at insertion time; `[]` opens the value as
+ * a list (so the tag-style chip editor takes over).
+ */
+interface KnownKey {
+  key: string
+  hint: string
+  value: string
+}
+const KNOWN_KEYS: KnownKey[] = [
+  { key: 'created', hint: 'Date de création (ISO)', value: '@today' },
+  { key: 'updated', hint: 'Date de dernière révision (ISO)', value: '@today' },
+  { key: 'due', hint: 'Échéance (ISO)', value: '@today' },
+  { key: 'title', hint: 'Titre affiché en tête de la carte', value: '' },
+  { key: 'description', hint: 'Résumé en une ligne', value: '' },
+  { key: 'tags', hint: 'Mots-clés — complétés sur le dossier', value: '[]' },
+  { key: 'aliases', hint: 'Autres noms de la note (Obsidian)', value: '[]' },
+  { key: 'type', hint: 'Nature de la note : projet, réunion, personne…', value: '' },
+  { key: 'status', hint: 'État : brouillon, en cours, terminé', value: '' },
+  { key: 'project', hint: 'Projet rattaché', value: '' },
+  { key: 'up', hint: 'Note parente — carte de contenu (MOC)', value: '' },
+  { key: 'related', hint: 'Notes liées', value: '[]' },
+  { key: 'source', hint: 'Provenance : URL ou référence', value: '' },
+  { key: 'author', hint: 'Auteur', value: '' },
+  { key: 'cssclasses', hint: 'Classes CSS de la note (Obsidian)', value: '[]' },
+  { key: 'publish', hint: 'Publier la note (Obsidian Publish)', value: 'false' },
+  { key: 'permalink', hint: 'URL stable pour la publication', value: '' }
+]
+
+let knownTags: string[] = []
+/** Frontmatter keys already used in the workspace (same sweep as the tags). */
+let knownKeys: string[] = []
+/** Bumped when the list changes: it is part of the card's widget identity, so
+ * `eq()` lets CodeMirror rebuild the DOM instead of keeping a stale one. */
+let tagsGen = 0
+let tagsScannedAt = 0
+let tagsFiles = 0
+let tagsTruncated = false
+let requestTags: (refresh: boolean) => void = () => {}
+
+/** Wired by main.ts: asks the host for the workspace's tags (once, or fresh). */
+export function setTagsRequester(fn: (refresh: boolean) => void): void {
+  requestTags = fn
+}
+/** The host answered with the workspace's known tags. */
+export function setTagIndex(index: {
+  tags: string[]
+  keys: string[]
+  scannedAt: number
+  files: number
+  truncated: boolean
+}): void {
+  knownTags = index.tags
+  knownKeys = index.keys
+  tagsScannedAt = index.scannedAt
+  tagsFiles = index.files
+  tagsTruncated = index.truncated
+  tagsGen++
+}
+/** Close every in-place editor (frontmatter property, table cell) — called when
+ * the host swaps the whole document, since they all point into the old text. */
+export function resetInlineEditors(): void {
+  fmEdit = null
+  fmAdding = false
+  cellEdit = null
+  cellEditFocus = false
+  flushCellEdit = null
+  document.querySelectorAll('.cm-suggest-menu').forEach((n) => n.remove())
+}
+
+/** Repaint the open frontmatter editor once the list arrives. */
+export function refreshTags(view: EditorView): void {
+  if (fmEdit || fmAdding) view.dispatch({ effects: fmEditEffect.of(fmEdit) })
+}
+
+/* ---------- one-entry frontmatter editing ---------- */
+/**
+ * Editing ONE property without unfolding the whole block: the card stays, the
+ * chip is highlighted, and the value opens in a field just below it — a plain
+ * text input for a scalar, a chip editor with tag completion for a list. Same
+ * shape (and the same reasons) as the single table cell editor above.
+ */
+let fmEdit: string | null = null
+let fmEditFocus = false
+/** True while the "+ propriété" combobox is open in the card. */
+let fmAdding = false
+const fmEditEffect = StateEffect.define<string | null>()
+
+function setFmEdit(view: EditorView, key: string | null): void {
+  fmEdit = key
+  fmEditFocus = key !== null
+  fmAdding = false
+  safeDispatch(view, { effects: fmEditEffect.of(key) })
+}
+
+function setFmAdding(view: EditorView, on: boolean): void {
+  fmAdding = on
+  if (on) {
+    fmEdit = null
+    // The list is only swept on demand — this is one of the two demands.
+    if (!tagsScannedAt) requestTags(false)
+  }
+  safeDispatch(view, { effects: fmEditEffect.of(fmEdit) })
+}
+
+/** One row of a suggestion dropdown: the value, plus what it is for. */
+interface SuggestItem {
+  value: string
+  hint?: string
+}
+/** An input whose dropdown (on document.body) is removed with it. */
+type InputWithMenu = HTMLInputElement & { _menu?: HTMLElement }
+
+/** Open a dropdown on `input` and tie its lifetime to that input. */
+function suggest(input: HTMLInputElement, items: () => SuggestItem[], pick: (value: string) => void): void {
+  ;(input as InputWithMenu)._menu = attachSuggestions(input, items, pick)
+}
+
+/** A filtered dropdown under `input`, same idea as the code-language picker. */
+function attachSuggestions(
+  input: HTMLInputElement,
+  items: () => SuggestItem[],
+  pick: (value: string) => void
+): HTMLElement {
+  // The menu lives on document.body (it must escape the card's overflow), so it
+  // outlives the widget that opened it. Only one is ever useful at a time, and a
+  // leftover one answers with a stale list — clear them on the way in, and again
+  // when the card is destroyed.
+  document.querySelectorAll('.cm-suggest-menu').forEach((n) => n.remove())
+  const menu = document.createElement('div')
+  menu.className = 'cm-suggest-menu'
+  menu.style.display = 'none'
+  document.body.appendChild(menu)
+  let filtered: SuggestItem[] = []
+  let active = 0
+  /** True once the user moved into the list: only then does Enter pick from it —
+   * otherwise Enter belongs to the text that was typed (both handlers sit on the
+   * same input, and two tags used to be added at once). */
+  let navigated = false
+
+  const hide = (): void => {
+    menu.style.display = 'none'
+  }
+  const render = (): void => {
+    const q = input.value.trim().toLowerCase()
+    filtered = items()
+      .filter((n) => n.value.toLowerCase().includes(q) || (n.hint ?? '').toLowerCase().includes(q))
+      .slice(0, 200)
+    if (active >= filtered.length) active = 0
+    if (!filtered.length) {
+      hide()
+      return
+    }
+    menu.replaceChildren()
+    filtered.forEach((n, i) => {
+      const row = document.createElement('div')
+      row.className = 'cm-suggest-item' + (i === active ? ' cm-active' : '')
+      const value = document.createElement('span')
+      value.className = 'cm-suggest-value'
+      value.textContent = n.value
+      row.appendChild(value)
+      if (n.hint) {
+        const hint = document.createElement('span')
+        hint.className = 'cm-suggest-hint'
+        hint.textContent = n.hint
+        row.appendChild(hint)
+      }
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault() // keep the focus in the input
+        pick(n.value)
+      })
+      menu.appendChild(row)
+    })
+    const r = input.getBoundingClientRect()
+    menu.style.top = `${r.bottom + window.scrollY + 2}px`
+    menu.style.left = `${r.left + window.scrollX}px`
+    menu.style.minWidth = `${Math.max(r.width, 140)}px`
+    menu.style.display = 'block'
+    ;(menu.children[active] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' })
+  }
+
+  input.addEventListener('focus', () => {
+    active = 0
+    navigated = false
+    render()
+  })
+  input.addEventListener('input', () => {
+    active = 0
+    navigated = false
+    render()
+  })
+  input.addEventListener('blur', () => window.setTimeout(hide, 150))
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && filtered.length) {
+      e.preventDefault()
+      navigated = true
+      active = (active + 1) % filtered.length
+      render()
+    } else if (e.key === 'ArrowUp' && filtered.length) {
+      e.preventDefault()
+      navigated = true
+      active = (active - 1 + filtered.length) % filtered.length
+      render()
+    } else if (e.key === 'Enter' && navigated && menu.style.display !== 'none' && filtered[active]) {
+      e.preventDefault()
+      e.stopImmediatePropagation() // the typed text must not be added as well
+      pick(filtered[active].value)
+    } else if (e.key === 'Escape' && menu.style.display !== 'none') {
+      e.stopPropagation() // close the menu, not the editor
+      e.preventDefault()
+      hide()
+    }
+  })
+  return menu
+}
+
 class FrontmatterWidget extends WidgetType {
+  /** Snapshot of the known-tags generation at build time (see `tagsGen`). */
+  readonly gen = tagsGen
+  /** Snapshot of the "+ propriété" state (same reason as `gen`). */
+  readonly adding = fmAdding
   constructor(
     readonly raw: string,
-    readonly pos: number
+    readonly pos: number,
+    readonly edit: string | null
   ) {
     super()
   }
   eq(other: FrontmatterWidget): boolean {
-    return other.raw === this.raw
+    return (
+      other.raw === this.raw &&
+      other.edit === this.edit &&
+      other.gen === this.gen &&
+      other.adding === this.adding
+    )
   }
   get estimatedHeight(): number {
-    return 70
+    return this.edit ? 120 : 70
   }
+
+  /** The field below the chips: a text input, or the tag chip editor. */
+  private editor(view: EditorView, entry: FmEntry): HTMLElement {
+    const box = document.createElement('div')
+    box.className = 'cm-fm-editor'
+    const label = document.createElement('span')
+    label.className = 'cm-fm-editor-key'
+    label.textContent = entry.key
+    box.appendChild(label)
+
+    const write = (items: string[], scalar: string, close: boolean): void => {
+      const insert = serializeEntry(entry, items, scalar)
+      const current = view.state.doc.sliceString(entry.from, entry.to)
+      const target = close ? null : fmEdit
+      fmEdit = target
+      fmEditFocus = !close
+      if (insert !== current) {
+        safeDispatch(view, {
+          changes: { from: entry.from, to: entry.to, insert },
+          effects: fmEditEffect.of(target)
+        })
+      } else {
+        safeDispatch(view, { effects: fmEditEffect.of(target) })
+      }
+    }
+
+    const btn = (text: string, tip: string, run: () => void): HTMLButtonElement => {
+      const b = document.createElement('button')
+      b.className = 'cm-fm-editor-btn'
+      b.textContent = text
+      b.setAttribute('data-tip', tip)
+      b.addEventListener('mousedown', (e) => e.preventDefault())
+      b.addEventListener('click', (e) => {
+        e.stopPropagation()
+        run()
+      })
+      return b
+    }
+
+    if (!entry.list) {
+      // Scalar: type the value, Enter validates, Escape leaves it alone.
+      const input = document.createElement('input')
+      input.className = 'cm-fm-editor-input'
+      input.value = entry.scalar
+      input.placeholder = `Valeur de « ${entry.key} »`
+      let done = false
+      const commit = (): void => {
+        if (done) return
+        done = true
+        write([], input.value, true)
+      }
+      input.addEventListener('mousedown', (e) => e.stopPropagation())
+      input.addEventListener('blur', () =>
+        window.setTimeout(() => {
+          // A rebuilt card (the tag list arriving, an edit elsewhere) blurs this
+          // input by throwing its DOM away — that is not the user leaving.
+          if (!input.isConnected && input.value === entry.scalar) return
+          commit()
+        }, 0)
+      )
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          commit()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          done = true
+          setFmEdit(view, null)
+        }
+      })
+      box.appendChild(input)
+      box.appendChild(btn('✓', 'Valider (Entrée)', commit))
+      box.appendChild(
+        btn('✕', 'Annuler (Échap)', () => {
+          done = true
+          setFmEdit(view, null)
+        })
+      )
+      if (fmEditFocus) {
+        fmEditFocus = false
+        requestAnimationFrame(() => {
+          input.focus()
+          input.setSelectionRange(input.value.length, input.value.length)
+        })
+      }
+      return box
+    }
+
+    // List: one chip per value with a `×`, plus an input that completes on the
+    // tags already used in the workspace.
+    const tags = document.createElement('div')
+    tags.className = 'cm-fm-tags'
+    entry.items.forEach((item, i) => {
+      const chip = document.createElement('span')
+      chip.className = 'cm-fm-tag'
+      chip.textContent = item
+      const del = document.createElement('button')
+      del.className = 'cm-fm-tag-del'
+      del.textContent = '×'
+      del.setAttribute('data-tip', `Retirer « ${item} »`)
+      del.addEventListener('mousedown', (e) => e.preventDefault())
+      del.addEventListener('click', (e) => {
+        e.stopPropagation()
+        write(
+          entry.items.filter((_, j) => j !== i),
+          '',
+          false
+        )
+      })
+      chip.appendChild(del)
+      tags.appendChild(chip)
+    })
+    const input = document.createElement('input')
+    input.className = 'cm-fm-editor-input cm-fm-tag-input'
+    input.placeholder = entry.items.length ? '+ ajouter' : 'premier tag…'
+    const add = (value: string): void => {
+      const clean = value.trim().replace(/,+$/, '').trim()
+      if (!clean || entry.items.includes(clean)) {
+        input.value = ''
+        return
+      }
+      write([...entry.items, clean], '', false)
+    }
+    const offered = TAG_KEYS.has(entry.key.toLowerCase())
+    if (offered) {
+      suggest(input, () => knownTags.filter((t) => !entry.items.includes(t)).map((value) => ({ value })), add)
+    }
+    input.addEventListener('mousedown', (e) => e.stopPropagation())
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault()
+        add(input.value)
+      } else if (e.key === 'Backspace' && !input.value && entry.items.length) {
+        e.preventDefault()
+        write(entry.items.slice(0, -1), '', false)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        setFmEdit(view, null)
+      }
+    })
+    tags.appendChild(input)
+    box.appendChild(tags)
+    box.appendChild(btn('✓', 'Terminer', () => setFmEdit(view, null)))
+
+    if (offered) {
+      // Where the completions come from, and how to refresh them. The sweep is
+      // one-shot on purpose: no watcher, no permanent indexing.
+      const info = document.createElement('div')
+      info.className = 'cm-fm-info'
+      const text = document.createElement('span')
+      text.textContent = tagsScannedAt
+        ? `${knownTags.length} tags connus · ${tagsFiles} fichiers · ${new Date(tagsScannedAt).toLocaleString()}${tagsTruncated ? ' · liste tronquée' : ''}`
+        : 'Analyse des tags du dossier…'
+      info.appendChild(text)
+      const again = document.createElement('button')
+      again.className = 'cm-fm-editor-btn'
+      again.textContent = '↻'
+      again.setAttribute('data-tip', 'Réanalyser les tags du dossier ouvert')
+      again.addEventListener('mousedown', (e) => e.preventDefault())
+      again.addEventListener('click', (e) => {
+        e.stopPropagation()
+        requestTags(true)
+      })
+      info.appendChild(again)
+      box.appendChild(info)
+      // Ask once (the host sweeps on the first request, then answers from cache).
+      if (!tagsScannedAt) requestTags(false)
+    }
+
+    if (fmEditFocus) {
+      fmEditFocus = false
+      requestAnimationFrame(() => input.focus())
+    }
+    return box
+  }
+
+  /**
+   * Add a property: the curated PKM list first, then the keys this workspace
+   * already uses, and any name can simply be typed. The new line goes at the end
+   * of the YAML and its editor opens straight away, so the value can be typed
+   * without a second click.
+   */
+  private addProperty(view: EditorView, used: Set<string>): HTMLElement {
+    const input = document.createElement('input')
+    input.className = 'cm-fm-editor-input cm-fm-add-input'
+    input.placeholder = 'nom de la propriété…'
+    const today = new Date()
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+    const insert = (key: string): void => {
+      const name = key.trim().replace(/[:\s]+$/, '')
+      if (!name || used.has(name.toLowerCase())) {
+        setFmAdding(view, false)
+        return
+      }
+      const known = KNOWN_KEYS.find((k) => k.key === name)
+      const value = (known?.value ?? '').replace('@today', iso)
+      const line = `${name}:${value ? ` ${value}` : ''}`
+      // Empty frontmatter: `pos` is the closing `---`, so the line goes before it.
+      const at = this.pos + this.raw.length
+      const text = this.raw.length ? `\n${line}` : `${line}\n`
+      fmAdding = false
+      fmEdit = name
+      fmEditFocus = true
+      safeDispatch(view, {
+        changes: { from: at, insert: text },
+        effects: fmEditEffect.of(name)
+      })
+    }
+
+    suggest(
+      input,
+      () => {
+        const curated = KNOWN_KEYS.filter((k) => !used.has(k.key.toLowerCase())).map((k) => ({
+          value: k.key,
+          hint: k.hint
+        }))
+        const seen = new Set(curated.map((c) => c.value.toLowerCase()))
+        const vault = knownKeys
+          .filter((k) => !used.has(k.toLowerCase()) && !seen.has(k.toLowerCase()))
+          .map((value) => ({ value, hint: 'déjà utilisée dans le dossier' }))
+        return [...curated, ...vault]
+      },
+      insert
+    )
+    input.addEventListener('mousedown', (e) => e.stopPropagation())
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        insert(input.value)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        setFmAdding(view, false)
+      }
+    })
+    input.addEventListener('blur', () => {
+      // Leave on a click elsewhere — but a blur can also come from the card being
+      // rebuilt under us (the key list arriving), and that must not close it.
+      window.setTimeout(() => {
+        if (fmAdding && input.isConnected) setFmAdding(view, false)
+      }, 180)
+    })
+    requestAnimationFrame(() => input.focus())
+    return input
+  }
+
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div')
     wrap.className = 'cm-frontmatter-card'
-    const pairs: Array<[string, string]> = []
-    for (const line of this.raw.split('\n')) {
-      const m = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line)
-      if (m) pairs.push([m[1], m[2].trim()])
-    }
-    const title = pairs.find(([k]) => k.toLowerCase() === 'title')
-    if (title && title[1]) {
+    const entries = parseFrontmatter(this.raw, this.pos)
+    const title = entries.find((e) => e.key.toLowerCase() === 'title')
+    if (title && entryText(title)) {
       const h = document.createElement('div')
       h.className = 'cm-fm-title'
-      h.textContent = title[1].replace(/^["']|["']$/g, '')
+      h.textContent = entryText(title)
       wrap.appendChild(h)
     }
     const bar = document.createElement('div')
@@ -750,12 +1832,30 @@ class FrontmatterWidget extends WidgetType {
     gear.className = 'cm-fm-gear'
     gear.textContent = '⚙'
     bar.appendChild(gear)
-    const rest = pairs.filter(([k]) => k.toLowerCase() !== 'title')
+    const rest = entries.filter((e) => e.key.toLowerCase() !== 'title')
     if (rest.length) {
-      for (const [k, v] of rest) {
+      for (const entry of rest) {
+        const value = entryText(entry)
         const chip = document.createElement('span')
         chip.className = 'cm-fm-chip'
-        chip.textContent = v ? `${k}: ${v}` : k
+        if (entry.style === 'complex') chip.classList.add('cm-fm-chip-raw')
+        if (this.edit === entry.key) chip.classList.add('cm-fm-chip-editing')
+        chip.textContent = value ? `${entry.key}: ${value}` : entry.key
+        chip.setAttribute(
+          'data-tip',
+          entry.style === 'complex'
+            ? `« ${entry.key} » est une valeur YAML structurée : cliquer ouvre la source`
+            : entry.list
+              ? `Modifier les valeurs de « ${entry.key} »`
+              : `Modifier « ${entry.key} »`
+        )
+        chip.addEventListener('mousedown', (e) => e.preventDefault())
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation()
+          // A shape we do not model: hand the whole YAML over rather than guess.
+          if (entry.style === 'complex') enterEdit(view, entry.from)
+          else setFmEdit(view, this.edit === entry.key ? null : entry.key)
+        })
         bar.appendChild(chip)
       }
     } else {
@@ -764,9 +1864,37 @@ class FrontmatterWidget extends WidgetType {
       empty.textContent = title ? 'Propriétés' : 'Frontmatter'
       bar.appendChild(empty)
     }
+    // `+` at the end of the row: the properties already there are excluded from
+    // the list, so it never offers a duplicate key.
+    const used = new Set(entries.map((e) => e.key.toLowerCase()))
+    if (this.adding) {
+      bar.appendChild(this.addProperty(view, used))
+    } else {
+      const add = document.createElement('span')
+      add.className = 'cm-fm-chip cm-fm-add'
+      add.textContent = '+'
+      add.setAttribute('data-tip', 'Ajouter une propriété\n(date de création, tags, aliases, statut…)')
+      add.addEventListener('mousedown', (e) => e.preventDefault())
+      add.addEventListener('click', (e) => {
+        e.stopPropagation()
+        setFmAdding(view, true)
+      })
+      bar.appendChild(add)
+    }
     wrap.appendChild(bar)
-    addEditButton(wrap, view, this.pos)
+    const editing = this.edit ? entries.find((e) => e.key === this.edit) : null
+    if (editing) wrap.appendChild(this.editor(view, editing))
+    addEditButton(wrap, view, this.pos, 'Éditer tout le frontmatter (YAML brut)')
     return wrap
+  }
+  destroy(dom: HTMLElement): void {
+    // Each input's dropdown lives on document.body: remove the ones this card
+    // opened, and only those — CodeMirror builds the new DOM BEFORE destroying
+    // the old widget, so a blanket purge here killed the fresh menu.
+    dom.querySelectorAll('input').forEach((i) => (i as InputWithMenu)._menu?.remove())
+  }
+  ignoreEvent(): boolean {
+    return true
   }
 }
 
@@ -965,9 +2093,16 @@ function buildDecorations(state: EditorState): DecorationSet {
         const rawTo = closeLine.number > 2 ? doc.line(closeLine.number - 1).to : rawFrom
         const raw = doc.sliceString(rawFrom, rawTo)
         deco.push(
-          Decoration.replace({ widget: new FrontmatterWidget(raw, rawFrom), block: true }).range(0, frontmatterEnd)
+          Decoration.replace({ widget: new FrontmatterWidget(raw, rawFrom, fmEdit), block: true }).range(
+            0,
+            frontmatterEnd
+          )
         )
       } else {
+        // The caret is in the raw YAML: that IS the full edit, so a half-open
+        // property field would just fight with it.
+        fmEdit = null
+        fmAdding = false
         // Editing: styled raw YAML + a "✓ Terminer" bar to leave the block.
         for (let n = 1; n <= closeLine.number; n++) {
           deco.push(Decoration.line({ class: 'cm-md-frontmatter' }).range(doc.line(n).from))
@@ -1031,10 +2166,22 @@ function buildDecorations(state: EditorState): DecorationSet {
         if (!editing(state, from, to)) {
           // Edit button lands the caret inside the first header cell (from + 2),
           // not on the table boundary, so the table toolbar resolves the node.
-          deco.push(Decoration.replace({ widget: new TableWidget(src, from + 2, 'render'), block: true }).range(from, to))
-        } else {
+          // A per-cell edit (the field above the table) keeps the table rendered.
+          const edit = cellEdit && cellEdit.table === from ? cellEdit : null
           deco.push(
-            Decoration.widget({ widget: new TableWidget(src, from, 'preview'), block: true, side: 1 }).range(to)
+            Decoration.replace({ widget: new TableWidget(src, from + 2, 'render', from, edit), block: true }).range(
+              from,
+              to
+            )
+          )
+        } else {
+          // The caret is in the table source: that IS the full edit, so a
+          // half-open cell field would just fight with it.
+          if (cellEdit && cellEdit.table === from) cellEdit = null
+          deco.push(
+            Decoration.widget({ widget: new TableWidget(src, from, 'preview', from, null), block: true, side: 1 }).range(
+              to
+            )
           )
         }
         return false
@@ -1295,7 +2442,11 @@ function buildDecorations(state: EditorState): DecorationSet {
 export const livePreview = StateField.define<DecorationSet>({
   create: (state) => buildDecorations(state),
   update: (deco, tr) => {
-    if (tr.docChanged || tr.selection || tr.effects.some((e) => e.is(redrawMermaidEffect)))
+    if (
+      tr.docChanged ||
+      tr.selection ||
+      tr.effects.some((e) => e.is(redrawMermaidEffect) || e.is(cellEditEffect) || e.is(fmEditEffect))
+    )
       return buildDecorations(tr.state)
     return deco.map(tr.changes)
   },

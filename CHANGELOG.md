@@ -4,6 +4,141 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0]
+
+### Added
+
+- **Table cells render their content**: images (`![](…)` and `![[embed]]`),
+  inline Markdown (bold, italic, code, strike, links, wikilinks, footnote refs,
+  `$math$`) and **raw HTML** (`<b>`, `<span style>`, `<br>`, `<img>`, `<code>`…).
+  HTML goes through an allow-list — unknown tags keep their content, `script` /
+  `style` / `iframe` are dropped, and `on*` handlers, script URLs and `url()` in a
+  style never survive. Nesting works (`**[lien](url)**`), and `\|` is finally
+  treated as an escaped pipe rather than a cell boundary.
+- **Edit one cell without opening the whole table**: hover a cell → `✎` (or
+  double-click it). The table stays rendered, the cell is highlighted, and its raw
+  Markdown opens in a field **above the table** — where the full source appears
+  when you edit the table itself. `Entrée` / `✓` validates, `Échap` / `✕` cancels,
+  `Tab` / `Maj+Tab` moves to the next / previous cell. Writing it back is a text
+  edit on that one cell's range. The block's `✎ Éditer` still opens the full
+  source, with the structural toolbar.
+- **Clicking the `⠿` block handle selects the block** (a heading takes its whole
+  section), so a style can be applied to it straight away — the selection bubble
+  appears on it. Dragging still moves the block.
+- **Folding moved next to the block handle**: a `▾` / `▸` chevron in the left
+  margin, on the row of the block it folds. The fold gutter's arrows were too
+  discreet to find, so they are gone. The chevrons are large enough to read, and a
+  **collapsed section keeps its `▸` shown at all times** (in the link colour),
+  clickable to unfold — without it, the only trace of a fold was a gap in the line
+  numbers.
+- **Edit one frontmatter property from its chip**: click it and the value opens in
+  a field just below the card, the chip highlighted — a text input for a scalar,
+  and for `tags` / `keywords` / `categories` / `aliases` a chip editor (one
+  pastille per value with its `×`, `Entrée` or `,` to add, `Retour arrière` to drop
+  the last). The card's `✎` still opens the whole raw YAML, and a structured YAML
+  value (nested map, `|` block) says so and hands you the source rather than
+  half-parsing it. The original style is preserved: a `[a, b]` list stays flow, an
+  indented `- item` list stays a block.
+- **Add a property in one click**: a `+` at the end of the chips row opens a
+  combobox listing the keys worth having in a PKM / Obsidian vault, each with what
+  it is for — `created` / `updated` / `due` (pre-filled with today's date),
+  `title`, `description`, `tags`, `aliases`, `type`, `status`, `project`, `up`
+  (parent note / MOC), `related`, `source`, `author`, `cssclasses`, `publish`,
+  `permalink` — then the keys **this workspace already uses**, and any name can
+  simply be typed. Keys already present are never offered twice; the new line is
+  appended to the YAML and its editor opens straight away, so the value can be
+  typed without a second click.
+- **Tag completion from the workspace's own tags.** The first time a tag editor
+  opens, the host sweeps the folder's Markdown frontmatter once (`**/*.{md,markdown}`,
+  `node_modules`/`.git`/`dist`/`out` excluded, only the first 4 KB of each file
+  decoded, 3000 files max) and caches the result in the workspace state — so
+  reopening VS Code is instant. The editor shows what the list is worth
+  ("142 tags connus · 128 fichiers · 01/09 16:48") and a `↻` re-sweeps with a
+  progress notification. No watcher and no database: the only automatic upkeep is
+  merging a document's own tags when it is saved. The same sweep also collects the
+  frontmatter **key names** (it already parses the block), which is what feeds the
+  "already used in the folder" half of the add-a-property list.
+- **Fold a whole outline level**: on a heading, a double chevron left of the
+  normal one folds *every* heading of that same level — “Replier tous les titres
+  H2 (3)” — leaving the other levels as they are. Once the level is fully folded
+  the chevron flips up and unfolds it again. Shown on headings only; folding a
+  level never touches the file.
+- **Source line numbers** in the gutter, on by default and switchable with
+  `mdforge.lineNumbers`. Compacted blank lines get no number (it would be clipped
+  mid-glyph); source view numbers every line.
+- **Justified text** now actually works: `mdforge.textAlign: justify` was declared
+  but never applied in the editor. Headings, code blocks and metadata stay left.
+- **`mdforge.format.paragraphs: oneLine`** — reformatting (the toolbar ¶ button,
+  the *Normalize blank lines* command, format-on-save) also puts each paragraph
+  back on a single line. This is what makes justification visible: it never
+  stretches the last line of a block, and every *source* line is a block, so a
+  hard-wrapped paragraph can never be justified. Code, tables, quotes, headings,
+  frontmatter, block math and deliberate hard breaks (two trailing spaces, `\`,
+  `<br>`) are left untouched; a wrapped list item is joined onto its marker.
+
+### Changed
+
+- **Reformatting joins paragraphs by default** (`mdforge.format.paragraphs` is now
+  `oneLine`): the ¶ button collapsing blank lines but leaving prose hard-wrapped
+  was surprising, and justification needs the unwrap to show at all.
+- **`mdforge.format.blankLines` → `mdforge.format.onSave`** (a checkbox). The old
+  name read like *which rules apply*, when it only ever answered *automatically on
+  save, or on demand?* — the ¶ button always reformats regardless. The old setting
+  is still honoured, but **blank lines only**: it promised that and nothing else,
+  so nobody who opted into tidying blank lines on save discovers their prose
+  unwrapped. Set `format.onSave` to get the full reformat. The command is now
+  titled **MDForge: Reformat document (blank lines, paragraphs)**.
+- **Instant tooltips on the left-margin controls**, and the ¶ button's tooltip now
+  says what reformatting actually does. The margin controls use the same bubble as
+  the toolbar, anchored so it cannot fall off the window's left edge.
+
+### Fixed
+
+- **Reformatting no longer mangles three legal Markdown constructs** (found in
+  review, with the paragraph unwrap now on by default): a GFM table written
+  *without* border pipes (`Nom | Âge`) was collapsed into one prose line — tables
+  are now detected by their delimiter row, as GFM specifies; a setext underline
+  (`=====`) and a link reference definition (`[ref]: url`) both swallowed the
+  paragraph that followed them — "may absorb the next line" is now derived from
+  "opens a block", with list items as the single exception.
+- **A tag inside inline code stays text in a table cell**: `` `<br>` `` rendered a
+  real line break and `` `<div>` `` rendered nothing. Code spans are now pulled out
+  before the HTML parser sees the cell.
+- **`tags : a, b`** (a space before the colon, legal YAML) no longer loses its
+  colon when the property is edited from its chip.
+- Typing in a note no longer persists every prefix of a tag (`p`, `pr`, `pro`…)
+  into the workspace tag index — only saving contributes to it.
+- Smaller ones from the same review: a dead "Replier les 0 titres" chevron on the
+  second hover of a level with nothing to fold; the double chevron left stranded
+  when its block scrolled out of view; a `RangeError` when selecting a block whose
+  snapshot outlived a shrinking document; and a table cell editor that could
+  reopen against a document the host had swapped underneath it.
+
+- **Editing a table cell no longer blanks the editor.** Leaving the cell field
+  could fire its `blur` from *inside* a CodeMirror DOM update (CM re-syncs the
+  focus while updating), and writing the cell there threw *"Calls to
+  EditorView.update are not allowed while an update is in progress"* — which the
+  global handler reported as a failure to initialize, wiping the editor. The
+  commit now always leaves the update first, and a blur caused by CM re-creating
+  the field (rather than by the user) puts the focus back instead of closing it.
+- **The left-margin controls follow the text when scrolling.** The `⠿` handle and
+  the fold chevrons are placed against the editor frame, which does not scroll, so
+  they stayed pinned to the screen while their block moved away. They are now
+  re-placed on scroll, and hidden (or clamped, for a block starting above the
+  frame) instead of being painted over the toolbar.
+- **The `/` menu's keyboard navigation works again**: ↑/↓/Enter/Tab/Esc are bound
+  through a `Prec.highest` keymap instead of a DOM capture listener, so they beat
+  CodeMirror's own cursor bindings reliably (and fall through untouched when the
+  menu is closed).
+- **The margin controls no longer land inside a leading widget.** On a `> [!NOTE]`
+  the fold chevron and the `⠿` handle appeared *in* the alert-type dropdown: their
+  x came from `coordsAtPos`, which sits to the right of a widget at the start of
+  the line. They are now measured on the `.cm-line` element, so every block —
+  alert, task, plain paragraph — gets them at the same place in the margin.
+- **A runtime error after startup no longer replaces the editor** with the
+  *"failed to initialize"* screen: once the editor is up, errors are reported to
+  the host and logged, and the editor keeps working.
+
 ## [0.4.3]
 
 ### Added
