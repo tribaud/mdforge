@@ -80,8 +80,16 @@ function slashContext(view: EditorView): { from: number; to: number; query: stri
   return { from, to: sel.head, query: m[1].toLowerCase() }
 }
 
-/** Create the slash menu. Call the returned `update()` from the update listener. */
-export function createSlashMenu(view: EditorView): { update: () => void } {
+/** Create the slash menu. Call the returned `update()` from the update listener,
+ * and wire `nav`/`accept`/`dismiss` to a high-precedence keymap (they no-op and
+ * return `false` when the menu is closed, so the editor keeps its normal keys). */
+export interface SlashMenu {
+  update: () => void
+  nav: (dir: number) => boolean
+  accept: () => boolean
+  dismiss: () => boolean
+}
+export function createSlashMenu(view: EditorView): SlashMenu {
   const dom = document.createElement('div')
   dom.className = 'cm-slash-menu'
   dom.style.display = 'none'
@@ -171,37 +179,26 @@ export function createSlashMenu(view: EditorView): { update: () => void } {
     dom.style.display = 'block'
   }
 
-  // Capture-phase so nav keys are intercepted before CodeMirror's own keymap.
-  view.dom.addEventListener(
-    'keydown',
-    (e) => {
-      if (!open) return
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault()
-          e.stopPropagation()
-          move(1)
-          break
-        case 'ArrowUp':
-          e.preventDefault()
-          e.stopPropagation()
-          move(-1)
-          break
-        case 'Enter':
-        case 'Tab':
-          e.preventDefault()
-          e.stopPropagation()
-          select()
-          break
-        case 'Escape':
-          e.preventDefault()
-          e.stopPropagation()
-          hide()
-          break
-      }
+  // Keyboard is driven by a high-precedence keymap in main.ts (see `SlashMenu`),
+  // which runs before CodeMirror's own arrow/Enter/Tab bindings — more reliable
+  // than a DOM capture listener across environments. Each returns whether it
+  // consumed the key (only when the menu is open).
+  return {
+    update,
+    nav: (dir: number): boolean => {
+      if (!open) return false
+      move(dir)
+      return true
     },
-    true
-  )
-
-  return { update }
+    accept: (): boolean => {
+      if (!open) return false
+      select()
+      return true
+    },
+    dismiss: (): boolean => {
+      if (!open) return false
+      hide()
+      return true
+    }
+  }
 }
