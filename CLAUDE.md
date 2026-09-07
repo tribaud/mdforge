@@ -123,11 +123,16 @@ so it round-trips for free unless noted.
   **Themes** (`mdforge.mermaid.theme`) come from `MERMAID_THEMES`: mermaid's own
   four (`default`/`dark`/`forest`/`neutral`) plus ours, built on **`base`** — the
   only built-in theme meant to be re-coloured through `themeVariables`. `blue` is
-  a pale-blue palette, `contrast` near-white fills with **thick** outlines
-  (`THICK_STROKES` passed as `themeCSS`, which mermaid appends after the theme's
-  own rules inside the SVG's `<style>` — so a plain `stroke-width` wins on order
-  alone, deliberately without `!important`, which would also beat a diagram's own
-  `classDef`). Ours come in light/dark **pairs** (`DARK_TWIN`): the setting names
+  a light cool-blue palette, `contrast` white fills with **thick black** outlines
+  and **bold** labels (`THICK_BOLD` passed as `themeCSS`, which mermaid appends
+  after the theme's own rules inside the SVG's `<style>` — so plain
+  `stroke-width` / `font-weight` win on order alone, deliberately without
+  `!important`, which would also beat a diagram's own `classDef`; mermaid measures
+  labels with that style applied, so bold text does not overflow its box). Labels
+  are `<text>` in some diagram kinds and a `foreignObject` span in others, hence
+  both selector families. `pieRamp` gives each theme explicit `pie1…` tints (and
+  `pieOpacity: 1`): derived from a monochrome palette, slices came out as
+  indistinguishable near-white wedges. Ours come in light/dark **pairs** (`DARK_TWIN`): the setting names
   the light side and the editor picks. This is not cosmetic — text that floats on
   the page instead of on a filled shape (a gantt title, its dates, a section
   label) is painted with `textColor`/`titleColor`, and the light palette left

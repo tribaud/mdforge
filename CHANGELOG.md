@@ -37,12 +37,15 @@ All notable changes to MDForge are documented here. The format follows
   the choice sticks across notes and reopens, and every open MDForge editor
   follows.
 
-- **Two more Mermaid themes**, on top of mermaid's own four: `blue` (pale blue
-  fills, mid-blue outlines and links) and `contrast` (near-white fills, near-black
-  **thick** outlines — the one that survives a projector, a printout or a
-  screenshot pasted into a document). Both follow the editor: each has a dark
-  palette used on a dark theme, because a title or a date drawn on the page rather
-  than inside a box would otherwise be navy on near-black.
+- **Two more Mermaid themes**, on top of mermaid's own four: `blue` (a light, cool
+  blue — pale fills, soft steel-blue outlines, deep navy text) and `contrast`
+  (white fills, **thick black** outlines, near-black **bold** labels — the one that
+  survives a projector, a printout or a screenshot pasted into a document). Both
+  follow the editor: each has a dark palette used on a dark theme, because a title
+  or a date drawn on the page rather than inside a box would otherwise be navy on
+  near-black. A diagram's own `classDef` still has the last word over both.
+  Pie slices get an explicit ramp of tints per theme: derived from a monochrome
+  palette they came out as three indistinguishable near-white wedges.
 
 ### Fixed
 

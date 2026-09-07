@@ -60,42 +60,69 @@ interface MermaidThemeDef {
   themeCSS?: string
 }
 
-/** Thicker outlines and links — the point of the `contrast` themes. */
-const THICK_STROKES = `
+/** Thick outlines and bold labels — the point of the `contrast` themes. Labels
+ * are `<text>` in some diagram kinds and a `foreignObject` span in others, hence
+ * both families of selectors. */
+const THICK_BOLD = `
   .node rect, .node circle, .node ellipse, .node polygon, .node path { stroke-width: 3px; }
   .cluster rect { stroke-width: 2.5px; }
   .edgePath .path, .flowchart-link, .messageLine0, .messageLine1, .relation,
   .relationshipLine, .transition { stroke-width: 2.5px; }
   .marker, .marker path { stroke-width: 1.5px; }
+  text, tspan, .nodeLabel, .edgeLabel, .label, .cluster-label, .titleText,
+  .actor, .messageText, .loopText, .noteText, .taskText, .sectionTitle,
+  .classTitle, .stateLabel, .entityLabel, .relationshipLabel, .pieTitleText,
+  .slice, .legend text { font-weight: 700; }
 `
+
+/** Pie slices are the one place a deliberately monochrome palette breaks down:
+ * mermaid derives `pie1…` from primary/secondary/tertiary, so three near-white
+ * fills came out indistinguishable. Give each theme an explicit ramp (and drop
+ * the default 0.7 opacity, which washes it out again). */
+const pieRamp = (colors: string[], text: string, stroke: string): Record<string, string> => ({
+  pieOpacity: '1',
+  pieStrokeColor: stroke,
+  pieSectionTextColor: text,
+  pieTitleTextColor: text,
+  pieLegendTextColor: text,
+  ...Object.fromEntries(colors.map((c, i) => [`pie${i + 1}`, c]))
+})
+
+const BLUE_PIE = ['#f0f5fc', '#dce8f7', '#c3d5e8', '#aac2dd', '#97b5d5', '#85a8cd', '#dce8f7', '#c3d5e8']
+const BLUE_PIE_DARK = ['#1c3a5c', '#24486e', '#2d5680', '#366492', '#3f72a4', '#4880b6', '#24486e', '#2d5680']
+const GREY_PIE = ['#ffffff', '#ececec', '#d9d9d9', '#c6c6c6', '#b3b3b3', '#a0a0a0', '#ececec', '#d9d9d9']
+const GREY_PIE_DARK = ['#1c1c1c', '#2b2b2b', '#3a3a3a', '#494949', '#585858', '#676767', '#2b2b2b', '#3a3a3a']
 
 const MERMAID_THEMES = {
   default: { theme: 'default' },
   dark: { theme: 'dark' },
   forest: { theme: 'forest' },
   neutral: { theme: 'neutral' },
-  // Light blue, Crossover-flavoured: pale fills, a mid-blue outline and links.
+  // The palette asked for: a light, cool blue — pale fills, a soft steel-blue
+  // outline, deep navy text. Deliberately NOT the saturated blue tried first,
+  // which read as too dark.
   blue: {
     theme: 'base',
     themeVariables: {
       background: 'transparent',
-      primaryColor: '#e6f3fc',
-      primaryTextColor: '#0b3a5b',
-      primaryBorderColor: '#2f8fd4',
-      secondaryColor: '#cfe8f9',
-      secondaryTextColor: '#0b3a5b',
-      secondaryBorderColor: '#2f8fd4',
-      tertiaryColor: '#f7fbff',
-      tertiaryTextColor: '#0b3a5b',
-      tertiaryBorderColor: '#7fbde8',
-      mainBkg: '#e6f3fc',
-      nodeBorder: '#2f8fd4',
-      lineColor: '#2f8fd4',
-      textColor: '#0b3a5b',
-      titleColor: '#0b3a5b',
-      clusterBkg: '#f3f9fe',
-      clusterBorder: '#7fbde8',
-      edgeLabelBackground: '#ffffff'
+      primaryColor: '#dce8f7',
+      primaryTextColor: '#12233d',
+      primaryBorderColor: '#7fa3cc',
+      secondaryColor: '#e8eef7',
+      secondaryTextColor: '#12233d',
+      secondaryBorderColor: '#7fa3cc',
+      tertiaryColor: '#fafcfe',
+      tertiaryTextColor: '#12233d',
+      tertiaryBorderColor: '#c3d5e8',
+      mainBkg: '#dce8f7',
+      nodeBorder: '#7fa3cc',
+      lineColor: '#5b7fa6',
+      textColor: '#12233d',
+      titleColor: '#12233d',
+      clusterBkg: '#fafcfe',
+      clusterBorder: '#c3d5e8',
+      edgeLabelBackground: '#eaf1f9',
+      ...pieRamp(BLUE_PIE, '#12233d', '#7fa3cc')
     }
   },
   // The same blue for a dark editor. It is not cosmetic: text that floats on the
@@ -107,50 +134,53 @@ const MERMAID_THEMES = {
     themeVariables: {
       darkMode: 'true',
       background: 'transparent',
-      primaryColor: '#143a57',
-      primaryTextColor: '#e3f2ff',
-      primaryBorderColor: '#5cb0e8',
-      secondaryColor: '#1c4a6e',
-      secondaryTextColor: '#e3f2ff',
-      secondaryBorderColor: '#5cb0e8',
-      tertiaryColor: '#102a3d',
-      tertiaryTextColor: '#e3f2ff',
-      tertiaryBorderColor: '#4a94c8',
-      mainBkg: '#143a57',
-      nodeBorder: '#5cb0e8',
-      lineColor: '#5cb0e8',
-      textColor: '#d6ecff',
-      titleColor: '#9ed3f5',
-      clusterBkg: '#102a3d',
-      clusterBorder: '#4a94c8',
-      edgeLabelBackground: '#143a57'
+      primaryColor: '#1c3a5c',
+      primaryTextColor: '#dce8f7',
+      primaryBorderColor: '#7fa3cc',
+      secondaryColor: '#24405e',
+      secondaryTextColor: '#dce8f7',
+      secondaryBorderColor: '#7fa3cc',
+      tertiaryColor: '#16283c',
+      tertiaryTextColor: '#dce8f7',
+      tertiaryBorderColor: '#5b7fa6',
+      mainBkg: '#1c3a5c',
+      nodeBorder: '#7fa3cc',
+      lineColor: '#8fb4d8',
+      textColor: '#dce8f7',
+      titleColor: '#b9d2ea',
+      clusterBkg: '#16283c',
+      clusterBorder: '#5b7fa6',
+      edgeLabelBackground: '#1c3a5c',
+      ...pieRamp(BLUE_PIE_DARK, '#eaf2fb', '#7fa3cc')
     }
   },
-  // Near-white on thick near-black outlines: the one that survives a projector,
-  // a printout and a screenshot pasted into a document.
+  // White (or barely grey) fills, BLACK thick outlines, near-black bold labels:
+  // the one that survives a projector, a printout and a screenshot pasted into a
+  // document.
   contrast: {
     theme: 'base',
     themeVariables: {
       background: 'transparent',
-      primaryColor: '#f4f5f7',
-      primaryTextColor: '#111418',
-      primaryBorderColor: '#1b1f24',
-      secondaryColor: '#e6e8eb',
-      secondaryTextColor: '#111418',
-      secondaryBorderColor: '#1b1f24',
+      primaryColor: '#ffffff',
+      primaryTextColor: '#111111',
+      primaryBorderColor: '#000000',
+      secondaryColor: '#f2f3f5',
+      secondaryTextColor: '#111111',
+      secondaryBorderColor: '#000000',
       tertiaryColor: '#ffffff',
-      tertiaryTextColor: '#111418',
-      tertiaryBorderColor: '#1b1f24',
-      mainBkg: '#f4f5f7',
-      nodeBorder: '#1b1f24',
-      lineColor: '#1b1f24',
-      textColor: '#111418',
-      titleColor: '#111418',
-      clusterBkg: '#ffffff',
-      clusterBorder: '#1b1f24',
-      edgeLabelBackground: '#ffffff'
+      tertiaryTextColor: '#111111',
+      tertiaryBorderColor: '#000000',
+      mainBkg: '#ffffff',
+      nodeBorder: '#000000',
+      lineColor: '#000000',
+      textColor: '#111111',
+      titleColor: '#000000',
+      clusterBkg: '#f6f7f8',
+      clusterBorder: '#000000',
+      edgeLabelBackground: '#ffffff',
+      ...pieRamp(GREY_PIE, '#111111', '#000000')
     },
-    themeCSS: THICK_STROKES
+    themeCSS: THICK_BOLD
   },
   // The same thick lines for a dark editor — `contrast` on dark is unreadable.
   contrastDark: {
@@ -158,25 +188,26 @@ const MERMAID_THEMES = {
     themeVariables: {
       darkMode: 'true',
       background: 'transparent',
-      primaryColor: '#2b3038',
-      primaryTextColor: '#f0f2f5',
-      primaryBorderColor: '#e6e8eb',
-      secondaryColor: '#3a4048',
-      secondaryTextColor: '#f0f2f5',
-      secondaryBorderColor: '#e6e8eb',
-      tertiaryColor: '#22262c',
-      tertiaryTextColor: '#f0f2f5',
-      tertiaryBorderColor: '#e6e8eb',
-      mainBkg: '#2b3038',
-      nodeBorder: '#e6e8eb',
-      lineColor: '#e6e8eb',
-      textColor: '#f0f2f5',
-      titleColor: '#f0f2f5',
-      clusterBkg: '#22262c',
-      clusterBorder: '#e6e8eb',
-      edgeLabelBackground: '#22262c'
+      primaryColor: '#1c1c1c',
+      primaryTextColor: '#ffffff',
+      primaryBorderColor: '#ffffff',
+      secondaryColor: '#2a2a2a',
+      secondaryTextColor: '#ffffff',
+      secondaryBorderColor: '#ffffff',
+      tertiaryColor: '#141414',
+      tertiaryTextColor: '#ffffff',
+      tertiaryBorderColor: '#ffffff',
+      mainBkg: '#1c1c1c',
+      nodeBorder: '#ffffff',
+      lineColor: '#ffffff',
+      textColor: '#ffffff',
+      titleColor: '#ffffff',
+      clusterBkg: '#141414',
+      clusterBorder: '#ffffff',
+      edgeLabelBackground: '#1c1c1c',
+      ...pieRamp(GREY_PIE_DARK, '#ffffff', '#ffffff')
     },
-    themeCSS: THICK_STROKES
+    themeCSS: THICK_BOLD
   }
 } satisfies Record<string, MermaidThemeDef>
 
