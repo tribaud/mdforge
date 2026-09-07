@@ -275,7 +275,9 @@
             "default",
             "dark",
             "neutral",
-            "forest"
+            "forest",
+            "blue",
+            "contrast"
           ],
           "default": "auto",
           "markdownEnumDescriptions": [
@@ -283,7 +285,9 @@
             "Mermaid 'default' theme (light).",
             "Mermaid 'dark' theme.",
             "Mermaid 'neutral' theme (grayscale, print-friendly).",
-            "Mermaid 'forest' theme (green)."
+            "Mermaid 'forest' theme (green).",
+            "MDForge 'blue': pale blue fills, mid-blue outlines and links (follows the editor: deep blue fills on a dark theme).",
+            "MDForge 'contrast': near-white fills, near-black **thick** outlines and links (follows the editor: the palette is inverted on a dark theme, the line weight kept)."
           ],
           "description": "Theme used to render Mermaid diagrams."
         },

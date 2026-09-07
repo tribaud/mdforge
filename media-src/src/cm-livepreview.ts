@@ -47,10 +47,156 @@ function resolveSrc(src: string): string {
 }
 
 /* ---------- mermaid (lazy-loaded so it can never block editor startup) ---------- */
-type MermaidTheme = 'default' | 'dark' | 'forest' | 'neutral'
+/* Four of these are mermaid's own themes; the rest are ours, built on `base` —
+ * the only built-in theme meant to be re-coloured through `themeVariables`
+ * (colouring `default` fights values it has already derived). `themeCSS` is
+ * appended after the theme's own rules inside the SVG's <style>, so a plain
+ * `stroke-width` there wins on order alone — deliberately without `!important`,
+ * which would also override a diagram's own `classDef` (mermaid writes those as
+ * inline styles, and those must keep the last word). */
+interface MermaidThemeDef {
+  theme: 'default' | 'dark' | 'forest' | 'neutral' | 'base'
+  themeVariables?: Record<string, string>
+  themeCSS?: string
+}
+
+/** Thicker outlines and links — the point of the `contrast` themes. */
+const THICK_STROKES = `
+  .node rect, .node circle, .node ellipse, .node polygon, .node path { stroke-width: 3px; }
+  .cluster rect { stroke-width: 2.5px; }
+  .edgePath .path, .flowchart-link, .messageLine0, .messageLine1, .relation,
+  .relationshipLine, .transition { stroke-width: 2.5px; }
+  .marker, .marker path { stroke-width: 1.5px; }
+`
+
+const MERMAID_THEMES = {
+  default: { theme: 'default' },
+  dark: { theme: 'dark' },
+  forest: { theme: 'forest' },
+  neutral: { theme: 'neutral' },
+  // Light blue, Crossover-flavoured: pale fills, a mid-blue outline and links.
+  blue: {
+    theme: 'base',
+    themeVariables: {
+      background: 'transparent',
+      primaryColor: '#e6f3fc',
+      primaryTextColor: '#0b3a5b',
+      primaryBorderColor: '#2f8fd4',
+      secondaryColor: '#cfe8f9',
+      secondaryTextColor: '#0b3a5b',
+      secondaryBorderColor: '#2f8fd4',
+      tertiaryColor: '#f7fbff',
+      tertiaryTextColor: '#0b3a5b',
+      tertiaryBorderColor: '#7fbde8',
+      mainBkg: '#e6f3fc',
+      nodeBorder: '#2f8fd4',
+      lineColor: '#2f8fd4',
+      textColor: '#0b3a5b',
+      titleColor: '#0b3a5b',
+      clusterBkg: '#f3f9fe',
+      clusterBorder: '#7fbde8',
+      edgeLabelBackground: '#ffffff'
+    }
+  },
+  // The same blue for a dark editor. It is not cosmetic: text that floats on the
+  // page rather than on a filled shape (a gantt title, its dates, a section
+  // label) is painted with `textColor` / `titleColor`, so the light palette left
+  // those navy-on-near-black and unreadable.
+  blueDark: {
+    theme: 'base',
+    themeVariables: {
+      darkMode: 'true',
+      background: 'transparent',
+      primaryColor: '#143a57',
+      primaryTextColor: '#e3f2ff',
+      primaryBorderColor: '#5cb0e8',
+      secondaryColor: '#1c4a6e',
+      secondaryTextColor: '#e3f2ff',
+      secondaryBorderColor: '#5cb0e8',
+      tertiaryColor: '#102a3d',
+      tertiaryTextColor: '#e3f2ff',
+      tertiaryBorderColor: '#4a94c8',
+      mainBkg: '#143a57',
+      nodeBorder: '#5cb0e8',
+      lineColor: '#5cb0e8',
+      textColor: '#d6ecff',
+      titleColor: '#9ed3f5',
+      clusterBkg: '#102a3d',
+      clusterBorder: '#4a94c8',
+      edgeLabelBackground: '#143a57'
+    }
+  },
+  // Near-white on thick near-black outlines: the one that survives a projector,
+  // a printout and a screenshot pasted into a document.
+  contrast: {
+    theme: 'base',
+    themeVariables: {
+      background: 'transparent',
+      primaryColor: '#f4f5f7',
+      primaryTextColor: '#111418',
+      primaryBorderColor: '#1b1f24',
+      secondaryColor: '#e6e8eb',
+      secondaryTextColor: '#111418',
+      secondaryBorderColor: '#1b1f24',
+      tertiaryColor: '#ffffff',
+      tertiaryTextColor: '#111418',
+      tertiaryBorderColor: '#1b1f24',
+      mainBkg: '#f4f5f7',
+      nodeBorder: '#1b1f24',
+      lineColor: '#1b1f24',
+      textColor: '#111418',
+      titleColor: '#111418',
+      clusterBkg: '#ffffff',
+      clusterBorder: '#1b1f24',
+      edgeLabelBackground: '#ffffff'
+    },
+    themeCSS: THICK_STROKES
+  },
+  // The same thick lines for a dark editor — `contrast` on dark is unreadable.
+  contrastDark: {
+    theme: 'base',
+    themeVariables: {
+      darkMode: 'true',
+      background: 'transparent',
+      primaryColor: '#2b3038',
+      primaryTextColor: '#f0f2f5',
+      primaryBorderColor: '#e6e8eb',
+      secondaryColor: '#3a4048',
+      secondaryTextColor: '#f0f2f5',
+      secondaryBorderColor: '#e6e8eb',
+      tertiaryColor: '#22262c',
+      tertiaryTextColor: '#f0f2f5',
+      tertiaryBorderColor: '#e6e8eb',
+      mainBkg: '#2b3038',
+      nodeBorder: '#e6e8eb',
+      lineColor: '#e6e8eb',
+      textColor: '#f0f2f5',
+      titleColor: '#f0f2f5',
+      clusterBkg: '#22262c',
+      clusterBorder: '#e6e8eb',
+      edgeLabelBackground: '#22262c'
+    },
+    themeCSS: THICK_STROKES
+  }
+} satisfies Record<string, MermaidThemeDef>
+
+type MermaidTheme = keyof typeof MERMAID_THEMES
+
+/** Our themes come in light/dark pairs: the setting names the light one and the
+ * editor picks the side. Asking the user to choose it by hand is how a diagram
+ * ends up black-on-black. */
+const DARK_TWIN: Partial<Record<MermaidTheme, MermaidTheme>> = {
+  blue: 'blueDark',
+  contrast: 'contrastDark'
+}
+
 let mermaidTheme: MermaidTheme = 'default'
 function prefersDark(): boolean {
   return Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+}
+/** The full mermaid config for the theme in force (re-read on every render). */
+function mermaidConfig(): object {
+  return { startOnLoad: false, securityLevel: 'loose', ...MERMAID_THEMES[mermaidTheme] }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let mermaidMod: any = null
@@ -61,27 +207,24 @@ async function getMermaid(): Promise<unknown> {
   if (!mermaidLoading) {
     mermaidLoading = import('mermaid').then((m) => {
       mermaidMod = m.default ?? m
-      mermaidMod.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
+      mermaidMod.initialize(mermaidConfig())
       return mermaidMod
     })
   }
   return mermaidLoading
 }
+/** Resolve the setting to a theme in the table: an unknown value (including
+ * `auto`) follows the editor, and a paired theme takes its dark side there. */
 export function setMermaidTheme(theme: string): boolean {
   const prev = mermaidTheme
-  mermaidTheme =
-    theme === 'dark'
+  const dark = prefersDark()
+  const named = theme in MERMAID_THEMES ? (theme as MermaidTheme) : null
+  mermaidTheme = named
+    ? (dark && DARK_TWIN[named]) || named
+    : dark
       ? 'dark'
-      : theme === 'forest'
-        ? 'forest'
-        : theme === 'neutral'
-          ? 'neutral'
-          : theme === 'default'
-            ? 'default'
-            : prefersDark()
-              ? 'dark'
-              : 'default'
-  if (mermaidMod) mermaidMod.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
+      : 'default'
+  if (mermaidMod) mermaidMod.initialize(mermaidConfig())
   return mermaidTheme !== prev
 }
 

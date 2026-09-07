@@ -120,6 +120,20 @@ so it round-trips for free unless noted.
   shows the raw source with a live "Aperçu" preview + `✓ Terminer` to leave).
   Mermaid parse-error orphan nodes are swept from `document.body` after each
   render (`sweepMermaidOrphans`).
+  **Themes** (`mdforge.mermaid.theme`) come from `MERMAID_THEMES`: mermaid's own
+  four (`default`/`dark`/`forest`/`neutral`) plus ours, built on **`base`** — the
+  only built-in theme meant to be re-coloured through `themeVariables`. `blue` is
+  a pale-blue palette, `contrast` near-white fills with **thick** outlines
+  (`THICK_STROKES` passed as `themeCSS`, which mermaid appends after the theme's
+  own rules inside the SVG's `<style>` — so a plain `stroke-width` wins on order
+  alone, deliberately without `!important`, which would also beat a diagram's own
+  `classDef`). Ours come in light/dark **pairs** (`DARK_TWIN`): the setting names
+  the light side and the editor picks. This is not cosmetic — text that floats on
+  the page instead of on a filled shape (a gantt title, its dates, a section
+  label) is painted with `textColor`/`titleColor`, and the light palette left
+  those navy-on-near-black. `mermaidConfig()` is the single source of the
+  `initialize()` payload, and a theme change must go through `setMermaidTheme` +
+  `redrawMermaid` (mermaid reads the theme only at render time).
 - **Code blocks**: fenced code is shown as styled source (highlighted via
   `codeLanguages`); a **language picker** (`LangWidget`, `<input list=datalist>`
   of `@codemirror/language-data` names + free text) floats top-right and rewrites

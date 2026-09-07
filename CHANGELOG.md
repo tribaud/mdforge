@@ -37,6 +37,13 @@ All notable changes to MDForge are documented here. The format follows
   the choice sticks across notes and reopens, and every open MDForge editor
   follows.
 
+- **Two more Mermaid themes**, on top of mermaid's own four: `blue` (pale blue
+  fills, mid-blue outlines and links) and `contrast` (near-white fills, near-black
+  **thick** outlines — the one that survives a projector, a printout or a
+  screenshot pasted into a document). Both follow the editor: each has a dark
+  palette used on a dark theme, because a title or a date drawn on the page rather
+  than inside a box would otherwise be navy on near-black.
+
 ### Fixed
 
 - **The toolbar no longer loses its last buttons in a narrow editor**: the full row
