@@ -31,6 +31,7 @@ import {
   setAssetsBase,
   setMermaidTheme,
   redrawMermaid,
+  refitMermaid,
   setWikilinkHandler,
   setEnableInProgress,
   setTagsRequester,
@@ -60,6 +61,7 @@ declare function acquireVsCodeApi(): {
 interface MdForgeConfig {
   fontSize?: number
   pageWidth?: 'comfortable' | 'full'
+  mermaidFitWidth?: boolean
   textAlign?: 'left' | 'justify'
   lineNumbers?: boolean
   assetsBaseUri?: string
@@ -471,6 +473,8 @@ function addHostButtons(bar: HTMLElement): void {
   spacer.className = 'cm-tb-spacer'
   bar.appendChild(spacer)
 
+  widthButton = mk(ICONS.widthFull, WIDTH_TIPS.comfortable, () => togglePageWidth())
+  applyPageWidth(pageWidth) // paints the button for the width already in force
   sourceButton = mk(ICONS.source, 'Afficher la source Markdown', () => toggleSource())
   debugButton = mk(ICONS.bug, 'Debug : afficher le presse-papiers collé (onglet)', () => toggleDebugPaste())
   mk(ICONS.textEditor, "Ouvrir dans l'éditeur de texte VS Code", post('openTextEditor'))
@@ -478,6 +482,41 @@ function addHostButtons(bar: HTMLElement): void {
   readOnlyButton = mk(ICONS.lockOpen, "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
   mk(ICONS.present, 'Mode présentation', () => togglePresentation())
   mk(ICONS.settings, 'Réglages MDForge', post('openSettings'))
+}
+
+/** Content width (`mdforge.pageWidth`): the centered readable column, or the
+ * full window. The button is a shortcut for the setting, not a second state —
+ * it writes the setting, and the host echoes the config back through
+ * `applyConfig`, so the choice sticks across notes and reopens. */
+type PageWidth = 'comfortable' | 'full'
+const WIDTH_TIPS: Record<PageWidth, string> = {
+  // Keyed by the width IN FORCE: each tooltip names what the click does next.
+  comfortable: 'Pleine largeur de la fenêtre',
+  full: 'Largeur confortable (marges à gauche et à droite)'
+}
+let pageWidth: PageWidth = 'comfortable'
+let widthButton: HTMLElement | null = null
+
+function applyPageWidth(value: PageWidth): void {
+  pageWidth = value
+  document.body.classList.toggle('mdforge-width-full', value === 'full')
+  if (widthButton) {
+    widthButton.innerHTML = value === 'full' ? ICONS.widthComfortable : ICONS.widthFull
+    widthButton.title = WIDTH_TIPS[value]
+    widthButton.setAttribute('data-tip', WIDTH_TIPS[value])
+    widthButton.classList.toggle('cm-tb-btn-active', value === 'full')
+  }
+  // A wider column re-scales every fitted diagram (whose ceiling is clamped to
+  // the column, so it has to be recomputed) and re-wraps every line, so the
+  // heights CodeMirror measured are stale.
+  refitMermaid(view)
+}
+
+function togglePageWidth(): void {
+  const next: PageWidth = pageWidth === 'full' ? 'comfortable' : 'full'
+  applyPageWidth(next) // instant feedback; the config echo confirms it
+  vscode.postMessage({ type: 'setPageWidth', value: next })
+  view.focus()
 }
 
 /** Toggle the raw-Markdown source view (live preview off). */
@@ -568,6 +607,11 @@ try {
             slashUpdate()
             tableUpdate()
           }
+          // The column can change width without a window resize (a side panel, a
+          // split). A fitted diagram's width is written in px, so re-derive it —
+          // `refitMermaid` writes nothing when the value is unchanged, so this
+          // cannot feed itself.
+          if (update.geometryChanged) refitMermaid(update.view)
           if (applyingRemote || !update.docChanged) return
           const text = update.state.doc.toString()
           if (text === currentText) return
@@ -848,18 +892,53 @@ function setLineNumbers(on: boolean): void {
   view.dispatch({ effects: gutters.reconfigure(on ? lineNumberGutter() : []) })
 }
 
+/** Last value of `mdforge.mermaid.theme`, replayed when the editor's theme kind
+ * changes: `auto` resolves against it, and VS Code changes the webview's theme
+ * class without sending any configuration event of its own. */
+let mermaidThemeSetting = 'auto'
+let themeKindWatched = false
+function watchThemeKind(): void {
+  if (themeKindWatched) return
+  themeKindWatched = true
+  const onKind = (): void => {
+    if (setMermaidTheme(mermaidThemeSetting)) redrawMermaid(view)
+  }
+  new MutationObserver(onKind).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-vscode-theme-kind', 'class']
+  })
+  new MutationObserver(onKind).observe(document.body, { attributes: true, attributeFilter: ['class'] })
+  // The fit ceiling is a fraction of the frame height (see fitMermaidSvg).
+  let pending = 0
+  window.addEventListener('resize', () => {
+    window.clearTimeout(pending)
+    pending = window.setTimeout(() => refitMermaid(view), 150)
+  })
+}
+
 function applyConfig(config: MdForgeConfig): void {
+  watchThemeKind()
   if (typeof config.fontSize === 'number') {
     document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   }
-  document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
+  if (config.pageWidth === 'comfortable' || config.pageWidth === 'full') applyPageWidth(config.pageWidth)
+  // Mermaid diagrams scaled up to the whole text column (see cm-theme.css). The
+  // ceiling is written on each <svg>, so turning the setting off has to re-fit
+  // what is already rendered rather than just flip the class.
+  if (typeof config.mermaidFitWidth === 'boolean') {
+    document.body.classList.toggle('mdforge-mermaid-fit', config.mermaidFitWidth)
+    refitMermaid(view)
+  }
   // Display-only justification: nothing is written to the Markdown. It shows on
   // wrapped lines, so a hard-wrapped paragraph needs `mdforge.format.paragraphs`
   // set to `oneLine` (the ¶ button) for it to have any visible effect.
   document.body.classList.toggle('mdforge-justify', config.textAlign === 'justify')
   if (typeof config.lineNumbers === 'boolean') setLineNumbers(config.lineNumbers)
   if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
-  if (config.mermaidTheme && setMermaidTheme(config.mermaidTheme)) redrawMermaid(view)
+  if (config.mermaidTheme) {
+    mermaidThemeSetting = config.mermaidTheme
+    if (setMermaidTheme(config.mermaidTheme)) redrawMermaid(view)
+  }
   if (typeof config.enableInProgress === 'boolean') setEnableInProgress(config.enableInProgress)
   if (typeof config.appendSource === 'boolean') appendSource = config.appendSource
   if (typeof config.sourceLabel === 'string' && config.sourceLabel) sourceLabel = config.sourceLabel

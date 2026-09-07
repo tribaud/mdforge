@@ -47,10 +47,188 @@ function resolveSrc(src: string): string {
 }
 
 /* ---------- mermaid (lazy-loaded so it can never block editor startup) ---------- */
-type MermaidTheme = 'default' | 'dark' | 'forest' | 'neutral'
+/* Four of these are mermaid's own themes; the rest are ours, built on `base` —
+ * the only built-in theme meant to be re-coloured through `themeVariables`
+ * (colouring `default` fights values it has already derived). `themeCSS` is
+ * appended after the theme's own rules inside the SVG's <style>, so a plain
+ * `stroke-width` there wins on order alone — deliberately without `!important`,
+ * which would also override a diagram's own `classDef` (mermaid writes those as
+ * inline styles, and those must keep the last word). */
+interface MermaidThemeDef {
+  theme: 'default' | 'dark' | 'forest' | 'neutral' | 'base'
+  themeVariables?: Record<string, string>
+  themeCSS?: string
+}
+
+/** Thick outlines and bold labels — the point of the `contrast` themes. Labels
+ * are `<text>` in some diagram kinds and a `foreignObject` span in others, hence
+ * both families of selectors. */
+const THICK_BOLD = `
+  .node rect, .node circle, .node ellipse, .node polygon, .node path { stroke-width: 3px; }
+  .cluster rect { stroke-width: 2.5px; }
+  .edgePath .path, .flowchart-link, .messageLine0, .messageLine1, .relation,
+  .relationshipLine, .transition { stroke-width: 2.5px; }
+  .marker, .marker path { stroke-width: 1.5px; }
+  text, tspan, .nodeLabel, .edgeLabel, .label, .cluster-label, .titleText,
+  .actor, .messageText, .loopText, .noteText, .taskText, .sectionTitle,
+  .classTitle, .stateLabel, .entityLabel, .relationshipLabel, .pieTitleText,
+  .slice, .legend text { font-weight: 700; }
+`
+
+/** Pie slices are the one place a deliberately monochrome palette breaks down:
+ * mermaid derives `pie1…` from primary/secondary/tertiary, so three near-white
+ * fills came out indistinguishable. Give each theme an explicit ramp (and drop
+ * the default 0.7 opacity, which washes it out again). */
+const pieRamp = (colors: string[], text: string, stroke: string): Record<string, string> => ({
+  pieOpacity: '1',
+  pieStrokeColor: stroke,
+  pieSectionTextColor: text,
+  pieTitleTextColor: text,
+  pieLegendTextColor: text,
+  ...Object.fromEntries(colors.map((c, i) => [`pie${i + 1}`, c]))
+})
+
+const BLUE_PIE = ['#f0f5fc', '#dce8f7', '#c3d5e8', '#aac2dd', '#97b5d5', '#85a8cd', '#dce8f7', '#c3d5e8']
+const BLUE_PIE_DARK = ['#1c3a5c', '#24486e', '#2d5680', '#366492', '#3f72a4', '#4880b6', '#24486e', '#2d5680']
+const GREY_PIE = ['#ffffff', '#ececec', '#d9d9d9', '#c6c6c6', '#b3b3b3', '#a0a0a0', '#ececec', '#d9d9d9']
+const GREY_PIE_DARK = ['#1c1c1c', '#2b2b2b', '#3a3a3a', '#494949', '#585858', '#676767', '#2b2b2b', '#3a3a3a']
+
+const MERMAID_THEMES = {
+  default: { theme: 'default' },
+  dark: { theme: 'dark' },
+  forest: { theme: 'forest' },
+  neutral: { theme: 'neutral' },
+  // The palette asked for: a light, cool blue — pale fills, a soft steel-blue
+  // outline, deep navy text. Deliberately NOT the saturated blue tried first,
+  // which read as too dark.
+  blue: {
+    theme: 'base',
+    themeVariables: {
+      background: 'transparent',
+      primaryColor: '#dce8f7',
+      primaryTextColor: '#12233d',
+      primaryBorderColor: '#7fa3cc',
+      secondaryColor: '#e8eef7',
+      secondaryTextColor: '#12233d',
+      secondaryBorderColor: '#7fa3cc',
+      tertiaryColor: '#fafcfe',
+      tertiaryTextColor: '#12233d',
+      tertiaryBorderColor: '#c3d5e8',
+      mainBkg: '#dce8f7',
+      nodeBorder: '#7fa3cc',
+      lineColor: '#5b7fa6',
+      textColor: '#12233d',
+      titleColor: '#12233d',
+      clusterBkg: '#fafcfe',
+      clusterBorder: '#c3d5e8',
+      edgeLabelBackground: '#eaf1f9',
+      ...pieRamp(BLUE_PIE, '#12233d', '#7fa3cc')
+    }
+  },
+  // The same blue for a dark editor. It is not cosmetic: text that floats on the
+  // page rather than on a filled shape (a gantt title, its dates, a section
+  // label) is painted with `textColor` / `titleColor`, so the light palette left
+  // those navy-on-near-black and unreadable.
+  'blue-dark': {
+    theme: 'base',
+    themeVariables: {
+      darkMode: 'true',
+      background: 'transparent',
+      primaryColor: '#1c3a5c',
+      primaryTextColor: '#dce8f7',
+      primaryBorderColor: '#7fa3cc',
+      secondaryColor: '#24405e',
+      secondaryTextColor: '#dce8f7',
+      secondaryBorderColor: '#7fa3cc',
+      tertiaryColor: '#16283c',
+      tertiaryTextColor: '#dce8f7',
+      tertiaryBorderColor: '#5b7fa6',
+      mainBkg: '#1c3a5c',
+      nodeBorder: '#7fa3cc',
+      lineColor: '#8fb4d8',
+      textColor: '#dce8f7',
+      titleColor: '#b9d2ea',
+      clusterBkg: '#16283c',
+      clusterBorder: '#5b7fa6',
+      edgeLabelBackground: '#1c3a5c',
+      ...pieRamp(BLUE_PIE_DARK, '#eaf2fb', '#7fa3cc')
+    }
+  },
+  // White (or barely grey) fills, BLACK thick outlines, near-black bold labels:
+  // the one that survives a projector, a printout and a screenshot pasted into a
+  // document.
+  contrast: {
+    theme: 'base',
+    themeVariables: {
+      background: 'transparent',
+      primaryColor: '#ffffff',
+      primaryTextColor: '#111111',
+      primaryBorderColor: '#000000',
+      secondaryColor: '#f2f3f5',
+      secondaryTextColor: '#111111',
+      secondaryBorderColor: '#000000',
+      tertiaryColor: '#ffffff',
+      tertiaryTextColor: '#111111',
+      tertiaryBorderColor: '#000000',
+      mainBkg: '#ffffff',
+      nodeBorder: '#000000',
+      lineColor: '#000000',
+      textColor: '#111111',
+      titleColor: '#000000',
+      clusterBkg: '#f6f7f8',
+      clusterBorder: '#000000',
+      edgeLabelBackground: '#ffffff',
+      ...pieRamp(GREY_PIE, '#111111', '#000000')
+    },
+    themeCSS: THICK_BOLD
+  },
+  // The same thick lines for a dark editor — `contrast` on dark is unreadable.
+  'contrast-dark': {
+    theme: 'base',
+    themeVariables: {
+      darkMode: 'true',
+      background: 'transparent',
+      primaryColor: '#1c1c1c',
+      primaryTextColor: '#ffffff',
+      primaryBorderColor: '#ffffff',
+      secondaryColor: '#2a2a2a',
+      secondaryTextColor: '#ffffff',
+      secondaryBorderColor: '#ffffff',
+      tertiaryColor: '#141414',
+      tertiaryTextColor: '#ffffff',
+      tertiaryBorderColor: '#ffffff',
+      mainBkg: '#1c1c1c',
+      nodeBorder: '#ffffff',
+      lineColor: '#ffffff',
+      textColor: '#ffffff',
+      titleColor: '#ffffff',
+      clusterBkg: '#141414',
+      clusterBorder: '#ffffff',
+      edgeLabelBackground: '#1c1c1c',
+      ...pieRamp(GREY_PIE_DARK, '#ffffff', '#ffffff')
+    },
+    themeCSS: THICK_BOLD
+  }
+} satisfies Record<string, MermaidThemeDef>
+
+type MermaidTheme = keyof typeof MERMAID_THEMES
+
+
 let mermaidTheme: MermaidTheme = 'default'
-function prefersDark(): boolean {
+/** Is the EDITOR dark? Not the same question as `prefers-color-scheme`, which in
+ * a webview reports the OS: a light VS Code theme on a dark macOS answered "dark"
+ * and `auto` drew dark diagrams on a white page. VS Code stamps its theme kind on
+ * the document (`data-vscode-theme-kind`, plus a `vscode-*` body class); the
+ * media query is only the fallback (the headless harness has neither). */
+function editorIsDark(): boolean {
+  const kind = `${document.documentElement.dataset.vscodeThemeKind ?? ''} ${document.body.className}`
+  if (/light/.test(kind)) return false // vscode-light, vscode-high-contrast-light
+  if (/dark|high-contrast/.test(kind)) return true
   return Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+}
+/** The full mermaid config for the theme in force (re-read on every render). */
+function mermaidConfig(): object {
+  return { startOnLoad: false, securityLevel: 'loose', ...MERMAID_THEMES[mermaidTheme] }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let mermaidMod: any = null
@@ -61,27 +239,23 @@ async function getMermaid(): Promise<unknown> {
   if (!mermaidLoading) {
     mermaidLoading = import('mermaid').then((m) => {
       mermaidMod = m.default ?? m
-      mermaidMod.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
+      mermaidMod.initialize(mermaidConfig())
       return mermaidMod
     })
   }
   return mermaidLoading
 }
+/** Resolve the setting to a theme in the table. A **named** theme is taken
+ * literally — `blue` is that light blue whatever the editor looks like. An
+ * earlier version auto-swapped it for its dark twin, which surprised: the
+ * dropdown said `blue` and the diagram came out navy. The dark palettes are
+ * offered under their own names (`blue-dark`, `contrast-dark`); only `auto` (and
+ * any unknown value) follows the editor. */
 export function setMermaidTheme(theme: string): boolean {
   const prev = mermaidTheme
   mermaidTheme =
-    theme === 'dark'
-      ? 'dark'
-      : theme === 'forest'
-        ? 'forest'
-        : theme === 'neutral'
-          ? 'neutral'
-          : theme === 'default'
-            ? 'default'
-            : prefersDark()
-              ? 'dark'
-              : 'default'
-  if (mermaidMod) mermaidMod.initialize({ startOnLoad: false, theme: mermaidTheme, securityLevel: 'loose' })
+    Object.hasOwn(MERMAID_THEMES, theme) ? (theme as MermaidTheme) : editorIsDark() ? 'dark' : 'default'
+  if (mermaidMod) mermaidMod.initialize(mermaidConfig())
   return mermaidTheme !== prev
 }
 
@@ -116,6 +290,62 @@ function sweepMermaidOrphans(): void {
 // 'firstChild')". Serialize every render through a single promise chain so a doc
 // with several diagrams (or a manual refresh) renders them one at a time. This is
 // why entering/leaving the source — an isolated single re-render — used to fix it.
+/* ---------- fitting a diagram to the text column ----------
+ * Mermaid gives the <svg> an inline `max-width: <natural>px`; fitting means
+ * raising that ceiling to the column width. It has to be done here, in px,
+ * rather than with a CSS height cap: capping the HEIGHT letterboxes a tall
+ * diagram — the box keeps the column width and the drawing shrinks inside it,
+ * ending up SMALLER than its natural size (a 200×1500 diagram in an 800px column
+ * measured 96×720). So the ceiling is the width at which the diagram would be
+ * `FIT_MAX_HEIGHT` of the frame tall, and never below the natural width.
+ *
+ * The ceiling is written in px, clamped to the column measured here — NOT as
+ * `min(…, 100%)`: with the fit off the target is shrink-to-fit, a percentage has
+ * no definite width to resolve against, and the <svg> fell back to the 300px
+ * default of a replaced element (a 543px-wide diagram rendered at 300). */
+const FIT_MAX_HEIGHT = 0.8
+
+/** Returns true when it actually changed the element (so callers can avoid a
+ * pointless re-measure, and a geometry-driven refit cannot loop). */
+function fitMermaidSvg(target: Element): boolean {
+  const svg = target.firstElementChild
+  if (!(svg instanceof SVGSVGElement)) return false
+  const box = svg.viewBox.baseVal
+  const natural = box.width || svg.getBoundingClientRect().width
+  if (!natural) return false
+  const fit = document.body.classList.contains('mdforge-mermaid-fit')
+  const ratio = box.height ? box.width / box.height : 0
+  const capped = ratio ? Math.max(natural, window.innerHeight * FIT_MAX_HEIGHT * ratio) : Infinity
+  const ceiling = fit ? capped : natural
+  // Available width of the block, padding excluded (0 before the first layout).
+  const block = target.parentElement
+  const cs = block ? getComputedStyle(block) : null
+  const avail = block
+    ? block.clientWidth - parseFloat(cs?.paddingLeft || '0') - parseFloat(cs?.paddingRight || '0')
+    : 0
+  const width = avail > 0 ? Math.min(ceiling, avail) : ceiling
+  if (!Number.isFinite(width)) return false
+  // An explicit px WIDTH, not just a ceiling: mermaid emits `width="100%"` with
+  // no height, and a percentage against a shrink-to-fit parent is indefinite —
+  // the <svg> then falls back to the 300px default of a replaced element. That
+  // is why a diagram wider than 300px came out at 300px with the fit off.
+  const px = `${Math.round(width)}px`
+  if (svg.style.width === px) return false
+  svg.style.width = px
+  svg.style.maxWidth = px
+  return true
+}
+
+/** Re-fit every diagram on screen — the fit depends on the frame height, so a
+ * resize (or turning the setting off) invalidates it without re-rendering. */
+export function refitMermaid(view: EditorView): void {
+  let changed = false
+  document.querySelectorAll('.cm-mermaid-target').forEach((t) => {
+    if (fitMermaidSvg(t)) changed = true
+  })
+  if (changed) view.requestMeasure()
+}
+
 let mermaidQueue: Promise<void> = Promise.resolve()
 function renderMermaid(view: EditorView, el: HTMLElement, code: string): void {
   mermaidQueue = mermaidQueue.then(() => renderMermaidOnce(view, el, code)).catch(() => {})
@@ -127,6 +357,7 @@ async function renderMermaidOnce(view: EditorView, el: HTMLElement, code: string
     const { svg } = await m.render(id, code)
     el.classList.remove('cm-mermaid-error')
     el.innerHTML = svg
+    fitMermaidSvg(el)
   } catch (error: unknown) {
     // A first render can still fail transiently (fonts/layout not ready); a
     // single retry usually succeeds, so try once more before showing the error.

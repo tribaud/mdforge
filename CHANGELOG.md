@@ -26,6 +26,44 @@ All notable changes to MDForge are documented here. The format follows
   revealed, like any other syntax, when the caret lands on it. It travels with its
   table when the block is dragged, is rewritten when a column is added or removed,
   and is deleted with the table.
+- **Mermaid diagrams take the whole text column** instead of their natural size,
+  which left a small diagram lost in the middle of the page. The scale-up keeps the
+  aspect ratio and stops where the diagram would be taller than 80% of the frame,
+  so a tall narrow flowchart is left at its natural size rather than turned into a
+  page-long strip — and is never made smaller than it was. Set
+  `mdforge.mermaid.fitWidth` to `false` to keep every diagram at its natural size.
+- **Content width toggle in the toolbar**: a new button switches between the
+  centred readable column and the full window width. It writes
+  `mdforge.pageWidth` — the setting that already existed but had no shortcut — so
+  the choice sticks across notes and reopens, and every open MDForge editor
+  follows.
+
+- **Two more Mermaid themes**, on top of mermaid's own four: `blue` (a light, cool
+  blue — pale fills, soft steel-blue outlines, deep navy text) and `contrast`
+  (white fills, **thick black** outlines, near-black **bold** labels — the one that
+  survives a projector, a printout or a screenshot pasted into a document). Both
+  come with a dark palette of their own, `blue-dark` and `contrast-dark`, worth
+  choosing on a dark editor: a title or a date drawn on the page rather than inside
+  a box would otherwise be navy on near-black. A named theme is otherwise used
+  **as-is** — only `auto` follows the editor — and a diagram's own `classDef` keeps
+  the last word over all of them.
+  Pie slices get an explicit ramp of tints per theme: derived from a monochrome
+  palette they came out as three indistinguishable near-white wedges.
+
+### Fixed
+
+- **A Mermaid diagram wider than 300px was drawn at 300px.** Mermaid emits
+  `width="100%"` on the `<svg>` and no height; against a shrink-to-fit container
+  that percentage has nothing to resolve against, and the browser fell back to the
+  300px default of a replaced element — which is why diagrams looked small even
+  with room to spare. Their width is now computed and written explicitly.
+- **`mdforge.mermaid.theme: auto` follows the editor, not the operating system.**
+  In a webview `prefers-color-scheme` reports the OS, so a light VS Code theme on a
+  dark macOS (or the reverse) drew dark diagrams on a white page. VS Code's own
+  theme kind is used now.
+- **The toolbar no longer loses its last buttons in a narrow editor**: the full row
+  needs ~1030px, and below that the presentation and settings buttons were clipped
+  off with nothing to scroll. It wraps onto a second row instead.
 
 ## [0.5.0]
 

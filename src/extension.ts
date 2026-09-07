@@ -786,6 +786,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           debugPasteHtml: config.get<boolean>('debug.pasteHtml', false),
           enableInProgress: config.get<boolean>('checkbox.enableInProgress', true),
           mermaidTheme: config.get<string>('mermaid.theme', 'auto'),
+          mermaidFitWidth: config.get<boolean>('mermaid.fitWidth', true),
           assetsBaseUri: webview
             .asWebviewUri(vscode.Uri.file(path.dirname(document.uri.fsPath)))
             .toString()
@@ -847,6 +848,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         name?: string
         path?: string
         quiet?: boolean
+        value?: string
         html?: string
         dump?: string
         refresh?: boolean
@@ -913,6 +915,26 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             void webview.postMessage({ type: 'tags', ...this.tagIndex.snapshot() })
             break
           }
+          case 'setPageWidth':
+            // The toolbar button is a shortcut for `mdforge.pageWidth`, and the
+            // config watcher echoes the new value to every open MDForge editor.
+            // Write it back at the level where it is already set: a plain Global
+            // write under a workspace value would be shadowed by it — the button
+            // would flip, the echo would snap it back, and the user's global
+            // preference would have changed behind their back. Default: Global,
+            // a reading width being a user preference, not a project's.
+            if (message.value === 'comfortable' || message.value === 'full') {
+              const cfg = vscode.workspace.getConfiguration('mdforge', document.uri)
+              const at = cfg.inspect<string>('pageWidth')
+              const target =
+                at?.workspaceFolderValue !== undefined
+                  ? vscode.ConfigurationTarget.WorkspaceFolder
+                  : at?.workspaceValue !== undefined
+                    ? vscode.ConfigurationTarget.Workspace
+                    : vscode.ConfigurationTarget.Global
+              await cfg.update('pageWidth', message.value, target)
+            }
+            break
           case 'openSettings':
             void vscode.commands.executeCommand(
               'workbench.action.openSettings',

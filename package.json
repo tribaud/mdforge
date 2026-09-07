@@ -218,6 +218,11 @@
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
         },
+        "mdforge.mermaid.fitWidth": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scale Mermaid diagrams up to the full width of the text column (off: keep the diagram's natural size, centered)."
+        },
         "mdforge.paste.appendSource": {
           "type": "boolean",
           "default": false,
@@ -270,7 +275,11 @@
             "default",
             "dark",
             "neutral",
-            "forest"
+            "forest",
+            "blue",
+            "blue-dark",
+            "contrast",
+            "contrast-dark"
           ],
           "default": "auto",
           "markdownEnumDescriptions": [
@@ -278,8 +287,13 @@
             "Mermaid 'default' theme (light).",
             "Mermaid 'dark' theme.",
             "Mermaid 'neutral' theme (grayscale, print-friendly).",
-            "Mermaid 'forest' theme (green)."
+            "Mermaid 'forest' theme (green).",
+            "MDForge 'blue': a light, cool blue — pale fills, soft steel-blue outlines, deep navy text.",
+            "MDForge 'blue-dark': the same blue inverted for a dark editor.",
+            "MDForge 'contrast': white fills, **thick black** outlines, near-black **bold** labels — survives a projector, a printout, a screenshot.",
+            "MDForge 'contrast-dark': the same thick, bold drawing inverted for a dark editor."
           ],
+          "markdownDescription": "Theme used to render Mermaid diagrams. A named theme is used as-is; only `auto` follows the editor.",
           "description": "Theme used to render Mermaid diagrams."
         },
         "mdforge.images.renameOnChange": {

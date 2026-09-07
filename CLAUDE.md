@@ -83,7 +83,7 @@ it fully before making changes.
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
   `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`, `tags`.
-  webview→host: `ready`, `edit`, `openWikilink`, `openExternal`, `insertImage`,
+  webview→host: `ready`, `edit`, `setPageWidth`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
   `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
   `debugPasteHtml`, `error`.
@@ -108,10 +108,56 @@ so it round-trips for free unless noted.
   in-progress `~` step is skipped when `mdforge.checkbox.enableInProgress` is off
   (`nextTaskState`). `[~]` is an MDForge convention (GFM only has `[ ]`/`[x]`).
 - **Mermaid & math** (`MermaidWidget`/`MathWidget`): rendered SVG/KaTeX as a block
-  widget; `✎ Éditer` drops the caret into the source (which, via reveal-on-edit,
+  widget. A diagram is scaled up to the **full text column**
+  (`mdforge.mermaid.fitWidth`, default on → body class `mdforge-mermaid-fit`), by
+  `fitMermaidSvg` — in **JS, in px**, not in CSS:
+  - mermaid emits `width="100%"` and `style="max-width:<natural>px"` on the `<svg>`
+    and no height. A percentage against the shrink-to-fit target has no definite
+    width to resolve against, so the browser fell back to the **300px** default of
+    a replaced element: that is the old bug that made every diagram wider than
+    300px look small. The width is therefore computed and written.
+  - the ceiling is the width at which the diagram would be `FIT_MAX_HEIGHT` (80%)
+    of the frame tall, floored at the natural width, clamped to the column.
+    **Never a CSS `max-height`**: that letterboxes a tall diagram — the box keeps
+    the column width and the drawing shrinks inside it, ending up *smaller* than
+    natural (a 200×1500 diagram in an 800px column measured 96×720).
+  - it is re-run on render, on `resize`, on `update.geometryChanged` (a split or a
+    side panel changes the column without a window resize) and on both toggles;
+    it writes nothing when the value is unchanged, so it cannot feed itself.
+  - the CSS selectors are `.cm-mermaid-target > svg`, never `.cm-mermaid svg`: the
+    ⤢ / ↻ / ✎ buttons sit in the same block and their icons are `<svg>` too — the
+    loose selector blew the zoom icon from 13px up to 22px.
+  `✎ Éditer` drops the caret into the source (which, via reveal-on-edit,
   shows the raw source with a live "Aperçu" preview + `✓ Terminer` to leave).
   Mermaid parse-error orphan nodes are swept from `document.body` after each
   render (`sweepMermaidOrphans`).
+  **Themes** (`mdforge.mermaid.theme`) come from `MERMAID_THEMES`: mermaid's own
+  four (`default`/`dark`/`forest`/`neutral`) plus ours, built on **`base`** — the
+  only built-in theme meant to be re-coloured through `themeVariables`. `blue` is
+  a light cool-blue palette, `contrast` white fills with **thick black** outlines
+  and **bold** labels (`THICK_BOLD` passed as `themeCSS`, which mermaid appends
+  after the theme's own rules inside the SVG's `<style>` — so plain
+  `stroke-width` / `font-weight` win on order alone, deliberately without
+  `!important`, which would also beat a diagram's own `classDef`; mermaid measures
+  labels with that style applied, so bold text does not overflow its box). Labels
+  are `<text>` in some diagram kinds and a `foreignObject` span in others, hence
+  both selector families. `pieRamp` gives each theme explicit `pie1…` tints (and
+  `pieOpacity: 1`): derived from a monochrome palette, slices came out as
+  indistinguishable near-white wedges. A **named theme is literal** — `blue`
+  is that light blue whatever the editor looks like; the dark palettes have their
+  own names (`blue-dark`, `contrast-dark`) and only `auto` follows the editor. An
+  earlier version auto-swapped a named theme for its dark twin and it surprised:
+  the dropdown said `blue`, the diagram came out navy. Prefer a dark palette on a
+  dark editor all the same — text that floats on the page rather than on a filled
+  shape (a gantt title, its dates, a section label) takes `textColor`/`titleColor`
+  and goes navy-on-near-black otherwise.
+  **`editorIsDark()`, not `prefers-color-scheme`.** In a webview that media query
+  reports the **OS**, so a light VS Code theme on a dark macOS answered "dark" and
+  `auto` drew dark diagrams on a white page. Read VS Code's own theme kind
+  (`data-vscode-theme-kind` / the `vscode-*` body class) and keep the media query
+  only as the fallback for the headless harness, which has neither. `mermaidConfig()` is the single source of the
+  `initialize()` payload, and a theme change must go through `setMermaidTheme` +
+  `redrawMermaid` (mermaid reads the theme only at render time).
 - **Code blocks**: fenced code is shown as styled source (highlighted via
   `codeLanguages`); a **language picker** (`LangWidget`, `<input list=datalist>`
   of `@codemirror/language-data` names + free text) floats top-right and rewrites
@@ -252,6 +298,18 @@ so it round-trips for free unless noted.
   number would be clipped mid-glyph); source view numbers every line. It is also
   called with a padding number PAST the last line to size the gutter — check
   `line <= state.doc.lines` first or it throws.
+- **Content width** (`mdforge.pageWidth`, toolbar `⇤⇥`): `comfortable` centres the
+  readable column, `full` lets `.cm-content` span the window
+  (`body.mdforge-width-full`). The button is a **shortcut for the setting**, not a
+  second state: it applies the class at once for feedback, then posts
+  `setPageWidth` so the host writes the setting **globally** (a reading width is
+  not per-workspace) and the config watcher echoes it back to every open editor —
+  `applyPageWidth` is the single place that paints class, icon and tooltip. Both
+  toggles call `refitMermaid()`: a wider column re-wraps every line and re-scales
+  every fitted diagram, so CodeMirror's measured heights go stale. The host writes
+  the setting back at the level where it is already defined (`inspect()`) — a plain
+  Global write under a workspace value is shadowed by it, the echo snaps the button
+  back, and the user's global preference changed for nothing.
 - **Justified text** (`mdforge.textAlign: justify`): display only, a
   `mdforge-justify` body class → `text-align: justify` on `.cm-line`, minus
   headings / code / frontmatter / blank lines. It only shows on **soft-wrapped**
