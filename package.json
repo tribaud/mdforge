@@ -277,7 +277,9 @@
             "neutral",
             "forest",
             "blue",
-            "contrast"
+            "blue-dark",
+            "contrast",
+            "contrast-dark"
           ],
           "default": "auto",
           "markdownEnumDescriptions": [
@@ -286,9 +288,12 @@
             "Mermaid 'dark' theme.",
             "Mermaid 'neutral' theme (grayscale, print-friendly).",
             "Mermaid 'forest' theme (green).",
-            "MDForge 'blue': pale blue fills, mid-blue outlines and links (follows the editor: deep blue fills on a dark theme).",
-            "MDForge 'contrast': near-white fills, near-black **thick** outlines and links (follows the editor: the palette is inverted on a dark theme, the line weight kept)."
+            "MDForge 'blue': a light, cool blue — pale fills, soft steel-blue outlines, deep navy text.",
+            "MDForge 'blue-dark': the same blue inverted for a dark editor.",
+            "MDForge 'contrast': white fills, **thick black** outlines, near-black **bold** labels — survives a projector, a printout, a screenshot.",
+            "MDForge 'contrast-dark': the same thick, bold drawing inverted for a dark editor."
           ],
+          "markdownDescription": "Theme used to render Mermaid diagrams. A named theme is used as-is; only `auto` follows the editor.",
           "description": "Theme used to render Mermaid diagrams."
         },
         "mdforge.images.renameOnChange": {

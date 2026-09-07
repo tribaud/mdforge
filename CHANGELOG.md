@@ -41,14 +41,20 @@ All notable changes to MDForge are documented here. The format follows
   blue — pale fills, soft steel-blue outlines, deep navy text) and `contrast`
   (white fills, **thick black** outlines, near-black **bold** labels — the one that
   survives a projector, a printout or a screenshot pasted into a document). Both
-  follow the editor: each has a dark palette used on a dark theme, because a title
-  or a date drawn on the page rather than inside a box would otherwise be navy on
-  near-black. A diagram's own `classDef` still has the last word over both.
+  come with a dark palette of their own, `blue-dark` and `contrast-dark`, worth
+  choosing on a dark editor: a title or a date drawn on the page rather than inside
+  a box would otherwise be navy on near-black. A named theme is otherwise used
+  **as-is** — only `auto` follows the editor — and a diagram's own `classDef` keeps
+  the last word over all of them.
   Pie slices get an explicit ramp of tints per theme: derived from a monochrome
   palette they came out as three indistinguishable near-white wedges.
 
 ### Fixed
 
+- **`mdforge.mermaid.theme: auto` follows the editor, not the operating system.**
+  In a webview `prefers-color-scheme` reports the OS, so a light VS Code theme on a
+  dark macOS (or the reverse) drew dark diagrams on a white page. VS Code's own
+  theme kind is used now.
 - **The toolbar no longer loses its last buttons in a narrow editor**: the full row
   needs ~1030px, and below that the presentation and settings buttons were clipped
   off with nothing to scroll. It wraps onto a second row instead.

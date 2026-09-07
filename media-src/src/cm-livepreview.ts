@@ -129,7 +129,7 @@ const MERMAID_THEMES = {
   // page rather than on a filled shape (a gantt title, its dates, a section
   // label) is painted with `textColor` / `titleColor`, so the light palette left
   // those navy-on-near-black and unreadable.
-  blueDark: {
+  'blue-dark': {
     theme: 'base',
     themeVariables: {
       darkMode: 'true',
@@ -183,7 +183,7 @@ const MERMAID_THEMES = {
     themeCSS: THICK_BOLD
   },
   // The same thick lines for a dark editor — `contrast` on dark is unreadable.
-  contrastDark: {
+  'contrast-dark': {
     theme: 'base',
     themeVariables: {
       darkMode: 'true',
@@ -213,16 +213,17 @@ const MERMAID_THEMES = {
 
 type MermaidTheme = keyof typeof MERMAID_THEMES
 
-/** Our themes come in light/dark pairs: the setting names the light one and the
- * editor picks the side. Asking the user to choose it by hand is how a diagram
- * ends up black-on-black. */
-const DARK_TWIN: Partial<Record<MermaidTheme, MermaidTheme>> = {
-  blue: 'blueDark',
-  contrast: 'contrastDark'
-}
 
 let mermaidTheme: MermaidTheme = 'default'
-function prefersDark(): boolean {
+/** Is the EDITOR dark? Not the same question as `prefers-color-scheme`, which in
+ * a webview reports the OS: a light VS Code theme on a dark macOS answered "dark"
+ * and `auto` drew dark diagrams on a white page. VS Code stamps its theme kind on
+ * the document (`data-vscode-theme-kind`, plus a `vscode-*` body class); the
+ * media query is only the fallback (the headless harness has neither). */
+function editorIsDark(): boolean {
+  const kind = `${document.documentElement.dataset.vscodeThemeKind ?? ''} ${document.body.className}`
+  if (/light/.test(kind)) return false // vscode-light, vscode-high-contrast-light
+  if (/dark|high-contrast/.test(kind)) return true
   return Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
 }
 /** The full mermaid config for the theme in force (re-read on every render). */
@@ -244,17 +245,16 @@ async function getMermaid(): Promise<unknown> {
   }
   return mermaidLoading
 }
-/** Resolve the setting to a theme in the table: an unknown value (including
- * `auto`) follows the editor, and a paired theme takes its dark side there. */
+/** Resolve the setting to a theme in the table. A **named** theme is taken
+ * literally — `blue` is that light blue whatever the editor looks like. An
+ * earlier version auto-swapped it for its dark twin, which surprised: the
+ * dropdown said `blue` and the diagram came out navy. The dark palettes are
+ * offered under their own names (`blue-dark`, `contrast-dark`); only `auto` (and
+ * any unknown value) follows the editor. */
 export function setMermaidTheme(theme: string): boolean {
   const prev = mermaidTheme
-  const dark = prefersDark()
-  const named = theme in MERMAID_THEMES ? (theme as MermaidTheme) : null
-  mermaidTheme = named
-    ? (dark && DARK_TWIN[named]) || named
-    : dark
-      ? 'dark'
-      : 'default'
+  mermaidTheme =
+    theme in MERMAID_THEMES ? (theme as MermaidTheme) : editorIsDark() ? 'dark' : 'default'
   if (mermaidMod) mermaidMod.initialize(mermaidConfig())
   return mermaidTheme !== prev
 }

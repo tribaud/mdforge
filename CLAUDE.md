@@ -132,11 +132,19 @@ so it round-trips for free unless noted.
   are `<text>` in some diagram kinds and a `foreignObject` span in others, hence
   both selector families. `pieRamp` gives each theme explicit `pie1…` tints (and
   `pieOpacity: 1`): derived from a monochrome palette, slices came out as
-  indistinguishable near-white wedges. Ours come in light/dark **pairs** (`DARK_TWIN`): the setting names
-  the light side and the editor picks. This is not cosmetic — text that floats on
-  the page instead of on a filled shape (a gantt title, its dates, a section
-  label) is painted with `textColor`/`titleColor`, and the light palette left
-  those navy-on-near-black. `mermaidConfig()` is the single source of the
+  indistinguishable near-white wedges. A **named theme is literal** — `blue`
+  is that light blue whatever the editor looks like; the dark palettes have their
+  own names (`blue-dark`, `contrast-dark`) and only `auto` follows the editor. An
+  earlier version auto-swapped a named theme for its dark twin and it surprised:
+  the dropdown said `blue`, the diagram came out navy. Prefer a dark palette on a
+  dark editor all the same — text that floats on the page rather than on a filled
+  shape (a gantt title, its dates, a section label) takes `textColor`/`titleColor`
+  and goes navy-on-near-black otherwise.
+  **`editorIsDark()`, not `prefers-color-scheme`.** In a webview that media query
+  reports the **OS**, so a light VS Code theme on a dark macOS answered "dark" and
+  `auto` drew dark diagrams on a white page. Read VS Code's own theme kind
+  (`data-vscode-theme-kind` / the `vscode-*` body class) and keep the media query
+  only as the fallback for the headless harness, which has neither. `mermaidConfig()` is the single source of the
   `initialize()` payload, and a theme change must go through `setMermaidTheme` +
   `redrawMermaid` (mermaid reads the theme only at render time).
 - **Code blocks**: fenced code is shown as styled source (highlighted via
