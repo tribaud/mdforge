@@ -4,6 +4,29 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Resizable table columns**: drag the border between two header cells and the
+  two columns share the space; drag the table's own right edge and the whole table
+  gets narrower or wider, shares untouched. Releasing the button writes the widths
+  into the Markdown as an HTML comment on the line above the table —
+  `<!--[10,60,15,15]-->`, one integer percentage per column. Every other Markdown
+  renderer ignores a comment, so the file stays portable; MDForge reads it back
+  and renders the table at those widths.
+  The percentages are of the **text width**, not of each other: their sum is the
+  table's own width. `[10,60,15,15]` fills the column, `[10,20,15]` is a table 45%
+  wide. Nothing is normalized behind your back, and a first drag writes down the
+  widths already on screen rather than resizing anything.
+- **Tables span the text width by default**: a three-cell table hugging the left
+  margin read as a mistake. Drag the right edge to bring one back in, which is
+  exactly the case a total below 100 records.
+- The widths comment is hidden in the editor (its line shown as a hairline) and
+  revealed, like any other syntax, when the caret lands on it. It travels with its
+  table when the block is dragged, is rewritten when a column is added or removed,
+  and is deleted with the table.
+
 ## [0.5.0]
 
 ### Added

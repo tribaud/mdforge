@@ -42,6 +42,7 @@ Survole n'importe quel paragraphe : une poignée `⠿` apparaît à gauche. Attr
 
 ## Tableau (les cellules rendent leur contenu)
 
+<!--[37,25,38]-->
 | Élément    | Formule    | Note        |
 | :--------- | :--------: | ----------: |
 | Cercle     | $\pi r^2$  | `area()`    |
@@ -49,6 +50,7 @@ Survole n'importe quel paragraphe : une poignée `⠿` apparaît à gauche. Attr
 
 Une cellule accepte tout ce qu'accepte une ligne de texte — **image**, Markdown imbriqué, HTML brut, maths, wikilink, et un pipe échappé `\|` :
 
+<!--[38,62]-->
 | Ce qu'on met      | Rendu attendu                                             |
 | :---------------- | :-------------------------------------------------------- |
 | Image locale      | ![Logo MDForge](assets/mdforge-icon.png)                  |

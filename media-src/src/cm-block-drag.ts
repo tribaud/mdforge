@@ -28,6 +28,7 @@ import { EditorView, ViewPlugin } from '@codemirror/view'
 import type { PluginValue, ViewUpdate } from '@codemirror/view'
 import { syntaxTree, foldable, foldEffect, unfoldEffect, foldedRanges } from '@codemirror/language'
 import type { EditorState } from '@codemirror/state'
+import { COLUMN_WIDTHS_RE } from './cm-livepreview'
 
 interface Span {
   from: number
@@ -56,8 +57,23 @@ function topBlockAt(state: EditorState, pos: number): Span {
   }
   while (node.parent && node.parent.parent) node = node.parent
   const doc = state.doc
-  const from = doc.lineAt(node.from).from
+  let from = doc.lineAt(node.from).from
   let to = doc.lineAt(Math.min(node.to, doc.length)).to
+
+  // A table's column-widths comment (`<!--[10,60,15,15]-->`) is bound to the
+  // line below it: the two travel together, or the widths stay behind and end up
+  // applying to whatever table follows.
+  if (node.name === 'Table') {
+    const first = doc.lineAt(from).number
+    if (first > 1 && COLUMN_WIDTHS_RE.test(doc.line(first - 1).text)) from = doc.line(first - 1).from
+  } else if (node.name === 'CommentBlock' && COLUMN_WIDTHS_RE.test(doc.lineAt(from).text)) {
+    const next = doc.lineAt(to).number + 1
+    if (next <= doc.lines) {
+      let below: typeof node = tree.resolve(doc.line(next).from, 1)
+      while (below.parent && below.parent.parent) below = below.parent
+      if (below.name === 'Table') to = doc.lineAt(Math.min(below.to, doc.length)).to
+    }
+  }
 
   const hm = /^ATXHeading([1-6])$/.exec(node.name)
   if (hm) {

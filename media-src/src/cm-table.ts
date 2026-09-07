@@ -8,6 +8,7 @@
  */
 import { EditorView } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
+import { columnWidthsAbove, fitWidths, roundWidths, scaleWidths } from './cm-livepreview'
 
 type Align = 'left' | 'center' | 'right' | 'none'
 
@@ -66,17 +67,41 @@ export function createTableToolbar(view: EditorView): { update: () => void } {
 
   let ctx: TableCtx | null = null
 
-  /** Rebuild the table text from cell rows and replace it in the document. */
-  const rewrite = (lines: string[][], caretRow: number, caretCol: number): void => {
+  /**
+   * The column-widths comment above the table (`<!--[10,60,15,15]-->`), fitted to
+   * the table's real column count — a comment can predate a column that was
+   * added or removed since it was written.
+   */
+  const widthsOf = (): { widths: number[]; from: number; to: number } | null => {
+    if (!ctx) return null
+    const cw = columnWidthsAbove(view.state, ctx.from)
+    return cw ? { from: cw.from, to: cw.to, widths: fitWidths(cw.widths, ctx.ncols) } : null
+  }
+
+  /** Rebuild the table text from cell rows and replace it in the document.
+   * `widths` — when a column was added or removed — rewrites the widths comment
+   * in the SAME transaction, so the comment never disagrees with the table. */
+  const rewrite = (lines: string[][], caretRow: number, caretCol: number, widths?: number[] | null): void => {
     if (!ctx) return
     const text = lines.map((cells) => `| ${cells.join(' | ')} |`).join('\n')
+    const changes: { from: number; to: number; insert: string }[] = []
+    // The comment sits BEFORE the table, so rewriting it shifts every offset
+    // below by the length it gained or lost.
+    let shift = 0
+    const cw = widths && widths.length ? widthsOf() : null
+    if (cw && widths) {
+      const insert = `<!--[${roundWidths(widths).join(',')}]-->`
+      changes.push({ from: cw.from, to: cw.to, insert })
+      shift = insert.length - (cw.to - cw.from)
+    }
+    changes.push({ from: ctx.from, to: ctx.to, insert: text })
     // Aim the caret at the start of the targeted cell in the rebuilt text.
-    let anchor = ctx.from
+    let anchor = ctx.from + shift
     for (let r = 0; r < caretRow && r < lines.length; r++) anchor += `| ${lines[r].join(' | ')} |\n`.length
     const row = lines[Math.min(caretRow, lines.length - 1)]
     anchor += 2 // "| "
     for (let c = 0; c < caretCol && c < row.length; c++) anchor += row[c].length + 3 // cell + " | "
-    view.dispatch({ changes: { from: ctx.from, to: ctx.to, insert: text }, selection: { anchor } })
+    view.dispatch({ changes, selection: { anchor } })
     view.focus()
   }
 
@@ -108,12 +133,31 @@ export function createTableToolbar(view: EditorView): { update: () => void } {
         c.splice(at, 0, i === 0 ? 'Colonne' : i === 1 ? '---' : ' ')
         return c
       })
-      rewrite(lines, ctx.rowIdx, at)
+      // The new column takes the average share and the others give it up pro
+      // rata, so the table keeps the width it had.
+      const cw = widthsOf()
+      let widths: number[] | null = null
+      if (cw) {
+        const total = cw.widths.reduce((a, b) => a + b, 0)
+        widths = cw.widths.slice()
+        widths.splice(at, 0, total / (widths.length || 1))
+        widths = scaleWidths(widths, total)
+      }
+      rewrite(lines, ctx.rowIdx, at, widths)
     },
     deleteCol(): void {
       if (!ctx || ctx.ncols <= 1) return
       const lines = ctx.lines.map((cells) => pad(cells, ctx!.ncols, ' ').filter((_, i) => i !== ctx!.colIdx))
-      rewrite(lines, ctx.rowIdx, Math.min(ctx.colIdx, ctx.ncols - 2))
+      // The removed column's share goes back to the others, pro rata — again,
+      // the table keeps its width.
+      const cw = widthsOf()
+      const widths = cw
+        ? scaleWidths(
+            cw.widths.filter((_, i) => i !== ctx!.colIdx),
+            cw.widths.reduce((a, b) => a + b, 0)
+          )
+        : null
+      rewrite(lines, ctx.rowIdx, Math.min(ctx.colIdx, ctx.ncols - 2), widths)
     },
     align(a: Align): void {
       if (!ctx) return
@@ -124,9 +168,11 @@ export function createTableToolbar(view: EditorView): { update: () => void } {
     },
     deleteTable(): void {
       if (!ctx) return
-      // Drop the table plus one trailing newline if present.
+      // Drop the table plus one trailing newline if present — and the widths
+      // comment above it, which would otherwise land on the next table.
       const end = view.state.doc.sliceString(ctx.to, ctx.to + 1) === '\n' ? ctx.to + 1 : ctx.to
-      view.dispatch({ changes: { from: ctx.from, to: end, insert: '' } })
+      const start = columnWidthsAbove(view.state, ctx.from)?.from ?? ctx.from
+      view.dispatch({ changes: { from: start, to: end, insert: '' } })
       view.focus()
     }
   }

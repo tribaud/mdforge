@@ -1130,6 +1130,10 @@ body.mdforge-presentation .cm-block-fold-all {
 }
 .cm-md-table {
   border-collapse: collapse;
+  /* Spread over the text column by default — a three-cell table hugging the left
+     margin reads as a mistake. A widths comment overrides this with its own
+     total (`<!--[10,20,15]-->` = a table 45% wide). */
+  width: 100%;
 }
 .cm-md-table th,
 .cm-md-table td {
@@ -1451,4 +1455,73 @@ body.mdforge-justify .cm-content .cm-line.cm-md-hr-editing {
 body.mdforge-justify .cm-md-table th,
 body.mdforge-justify .cm-md-table td {
   text-align: left;
+}
+
+/* --- Resizable table columns -----------------------------------------------
+   Widths live in an HTML comment above the table (`<!--[10,60,15,15]-->`), are
+   applied through a `colgroup`, and are dragged from a grip on each inner
+   column border of the header row. */
+/* Widths declared: the `col` shares are authoritative (and `width` is set
+   inline, from the total the comment declares). */
+.cm-md-table.cm-md-table-fixed {
+  table-layout: fixed;
+}
+/* A fixed column cannot grow for its content, so long words must break. */
+.cm-md-table-fixed th,
+.cm-md-table-fixed td {
+  overflow-wrap: anywhere;
+}
+/* One per column border of the header row. The last one is the table's own
+   right edge: dragging it changes the table's width, not a column's share. */
+.cm-col-grip {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  z-index: 3;
+  width: 6px;
+  cursor: col-resize;
+}
+/* Discreet until the pointer is on the table, solid on the grip itself. */
+.cm-md-table:hover .cm-col-grip::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--vscode-focusBorder, #007fd4);
+  opacity: 0.3;
+}
+.cm-col-grip:hover::after,
+.cm-col-grip.cm-col-grip-active::after {
+  opacity: 1;
+}
+/* The last border IS the wrap's right edge, so this one grip must sit entirely
+   INSIDE it: overhanging by the 3px the others use pushed `scrollWidth` past
+   `clientWidth` and put a horizontal scrollbar under every full-width table. */
+.cm-col-grip-last {
+  right: 0;
+}
+.cm-md-table:hover .cm-col-grip-last::after {
+  left: auto;
+  right: 1px;
+}
+/* The pointer leaves the grip during a drag — keep the cursor and kill the
+   text selection the drag would otherwise paint. */
+body.cm-col-resizing,
+body.cm-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+/* Nothing to drag in presentation mode. */
+body.mdforge-presentation .cm-col-grip {
+  display: none;
+}
+/* The widths comment: kept in the file, shown as a hairline. Full height and the
+   raw text come back when the caret lands on the line. */
+.cm-line.cm-md-colw {
+  line-height: 0.55em;
+  min-height: 0;
 }
