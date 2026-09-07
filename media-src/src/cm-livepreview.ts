@@ -843,6 +843,103 @@ function parseTableCells(source: string, base: number): Cell[][] {
   return rows
 }
 
+/* ---------- column widths ---------- */
+/**
+ * GFM has nowhere to put a column width, so MDForge keeps them in an HTML
+ * comment on the line just above the table — `<!--[10,60,15,15]-->`, one integer
+ * percentage of the text width per column. Every other Markdown renderer ignores
+ * a comment, and writing it is a plain text edit like everything else here.
+ *
+ * The percentages are of the TEXT WIDTH, not of each other: their SUM is the
+ * table's own width. `[10,60,15,15]` fills the column; `[10,20,15]` makes a
+ * table 45% wide. That is what makes the last column's right border draggable —
+ * it moves the table's total width — and it is why a first drag never resizes
+ * anything on its own: the widths written down are the ones already on screen.
+ */
+export const COLUMN_WIDTHS_RE = /^\s*<!--\s*\[\s*(\d+(?:\.\d+)?(?:\s*,\s*\d+(?:\.\d+)?)*)\s*\]\s*-->\s*$/
+
+export interface ColWidths {
+  widths: number[]
+  from: number
+  to: number
+}
+
+/** The widths comment sitting on the line above the table that starts at `tableFrom`. */
+export function columnWidthsAbove(state: EditorState, tableFrom: number): ColWidths | null {
+  const line = state.doc.lineAt(tableFrom)
+  if (line.number === 1) return null
+  const prev = state.doc.line(line.number - 1)
+  const m = COLUMN_WIDTHS_RE.exec(prev.text)
+  if (!m) return null
+  const widths = m[1].split(',').map((n) => parseFloat(n))
+  if (widths.some((n) => !isFinite(n) || n <= 0)) return null
+  return { widths, from: prev.from, to: prev.to }
+}
+
+/**
+ * Percentages as readable integers: each at least 1, the total never past 100
+ * (nothing can be wider than the text column). A total within 2 points of full
+ * width snaps to exactly 100 — pulling a table "to the edge" should write the
+ * clean `[10,60,15,15]`, not `[10,59,15,15]`.
+ */
+export function roundWidths(pcts: number[]): number[] {
+  const n = pcts.length
+  if (n === 0) return []
+  const ints = pcts.map((p) => Math.max(1, Math.round(p)))
+  const total = (): number => ints.reduce((a, b) => a + b, 0)
+  /** The column that can best give or take a point: the widest, or the narrowest. */
+  const pick = (giving: boolean): number => {
+    let idx = 0
+    for (let i = 1; i < n; i++) if (giving ? ints[i] > ints[idx] : ints[i] < ints[idx]) idx = i
+    return idx
+  }
+  while (total() > 100) {
+    const idx = pick(true)
+    if (ints[idx] <= 1) break
+    ints[idx]--
+  }
+  if (total() >= 98) while (total() < 100) ints[pick(false)]++
+  return ints
+}
+
+/** Rescale a list to a given total — used when a column is added or removed, so
+ * the table keeps the width it had. */
+export function scaleWidths(widths: number[], target: number): number[] {
+  const sum = widths.reduce((a, b) => a + b, 0)
+  if (sum <= 0) return roundWidths(widths.map(() => target / (widths.length || 1)))
+  return roundWidths(widths.map((w) => (w / sum) * target))
+}
+
+/** Adapt a stored list to the table's real column count — a column may have been
+ * added or removed since it was written. Extra entries go, missing ones take the
+ * average; the next resize rewrites the comment with the right count. */
+export function fitWidths(widths: number[], cols: number): number[] {
+  if (widths.length === cols) return widths
+  const avg = widths.reduce((a, b) => a + b, 0) / (widths.length || 1) || 1
+  const out = widths.slice(0, cols)
+  while (out.length < cols) out.push(avg)
+  return out
+}
+
+/**
+ * Persist the widths a drag just produced: rewrite the comment above the table,
+ * or insert one. `firstLine` is the table's first source line as the widget saw
+ * it — if the document moved under us (an outside edit, an undo), write nothing
+ * rather than over whatever now sits there.
+ */
+function writeWidths(view: EditorView, tableFrom: number, firstLine: string, pcts: number[]): void {
+  const state = view.state
+  if (state.doc.sliceString(tableFrom, tableFrom + firstLine.length) !== firstLine) return
+  const insert = `<!--[${roundWidths(pcts).join(',')}]-->`
+  const cur = columnWidthsAbove(state, tableFrom)
+  safeDispatch(
+    view,
+    cur
+      ? { changes: { from: cur.from, to: cur.to, insert } }
+      : { changes: { from: state.doc.lineAt(tableFrom).from, insert: insert + '\n' } }
+  )
+}
+
 /* ---------- single-cell editing ---------- */
 /**
  * Edit ONE cell without unfolding the whole table: the table stays rendered, the
@@ -862,6 +959,11 @@ let cellEditFocus = false
 /** Commit hook of the open field, so clicking another cell's ✎ doesn't lose it. */
 let flushCellEdit: (() => void) | null = null
 const cellEditEffect = StateEffect.define<CellEdit | null>()
+
+function sameWidths(a: number[] | null, b: number[] | null): boolean {
+  if (!a || !b) return a === b
+  return a.length === b.length && a.every((n, i) => n === b[i])
+}
 
 function sameCellEdit(a: CellEdit | null, b: CellEdit | null): boolean {
   if (!a || !b) return a === b
@@ -924,7 +1026,8 @@ class TableWidget extends WidgetType {
     readonly pos: number,
     readonly mode: BlockMode,
     readonly base: number,
-    readonly edit: CellEdit | null
+    readonly edit: CellEdit | null,
+    readonly widths: number[] | null
   ) {
     super()
   }
@@ -933,7 +1036,8 @@ class TableWidget extends WidgetType {
       other.source === this.source &&
       other.mode === this.mode &&
       other.base === this.base &&
-      sameCellEdit(other.edit, this.edit)
+      sameCellEdit(other.edit, this.edit) &&
+      sameWidths(other.widths, this.widths)
     )
   }
   get estimatedHeight(): number {
@@ -1059,6 +1163,98 @@ class TableWidget extends WidgetType {
     return bar
   }
 
+  /**
+   * A grip on every column border of the header row. An INNER border moves that
+   * one border: the pair keeps its combined width, so no other column shifts and
+   * the table's total width is unchanged. The LAST border is the table's own
+   * right edge: it scales every column at once, so the table gets narrower or
+   * wider without touching the shares — which is why a table need not fill the
+   * text width.
+   *
+   * Releasing the button writes the percentages into the comment above the
+   * table; during the drag nothing is dispatched, since a document change would
+   * rebuild this widget and drop the drag with it.
+   */
+  private addGrips(
+    view: EditorView,
+    table: HTMLTableElement,
+    htr: HTMLTableRowElement,
+    colEls: HTMLTableColElement[],
+    applyWidths: (pcts: number[]) => void
+  ): void {
+    const firstLine = this.source.split('\n', 1)[0]
+    const ths = Array.from(htr.children) as HTMLElement[]
+    if (ths.length === 0) return
+    const MIN = 32 // px: a column must stay wide enough to grab again
+
+    const start = (e: MouseEvent, i: number): void => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      // Percentages are of the TEXT width, so that is what everything is
+      // measured against — measuring against the table's own width would make a
+      // half-width table read as 100% and jump to the full width on first drag.
+      const box = (table.parentElement as HTMLElement | null)?.clientWidth || table.getBoundingClientRect().width
+      if (box <= 0) return
+      // The table may still be auto-sized: freeze what is on screen FIRST, then
+      // measure, so the drag deltas apply to the borders the user sees. The cell
+      // widths are scaled onto the TABLE's width, not just summed: with collapsed
+      // borders their total falls a couple of pixels short, and the table would
+      // visibly shrink on the first pixel of the drag.
+      const cells = ths.map((th) => th.getBoundingClientRect().width)
+      const spread = table.getBoundingClientRect().width / (cells.reduce((a, b) => a + b, 0) || 1)
+      applyWidths(cells.map((w) => ((w * spread) / box) * 100))
+      const w0 = ths.map((th) => th.getBoundingClientRect().width)
+      const total0 = w0.reduce((a, b) => a + b, 0)
+      const x0 = e.clientX
+      const lastBorder = i === ths.length - 1
+      let pcts = w0.map((w) => (w / box) * 100)
+      const grip = e.currentTarget as HTMLElement
+      grip.classList.add('cm-col-grip-active')
+      document.body.classList.add('cm-col-resizing')
+
+      const onMove = (ev: MouseEvent): void => {
+        let w = w0.slice()
+        if (lastBorder) {
+          // The table's own edge: every column scales, so the table changes width
+          // while the shares it was given stay exactly as they are. Stops when the
+          // narrowest column reaches MIN, or when the table fills the text width.
+          const narrowest = Math.min(...w0)
+          const fMin = Math.min(1, MIN / narrowest)
+          const fMax = Math.max(1, box / total0)
+          const f = Math.min(Math.max((total0 + (ev.clientX - x0)) / total0, fMin), fMax)
+          w = w0.map((x) => x * f)
+        } else {
+          const d = Math.min(Math.max(ev.clientX - x0, MIN - w0[i]), w0[i + 1] - MIN)
+          w[i] += d
+          w[i + 1] -= d
+        }
+        pcts = w.map((x) => (x / box) * 100)
+        applyWidths(pcts)
+      }
+      const onUp = (): void => {
+        document.removeEventListener('mousemove', onMove, true)
+        document.removeEventListener('mouseup', onUp, true)
+        document.body.classList.remove('cm-col-resizing')
+        grip.classList.remove('cm-col-grip-active')
+        writeWidths(view, this.base, firstLine, pcts)
+      }
+      document.addEventListener('mousemove', onMove, true)
+      document.addEventListener('mouseup', onUp, true)
+    }
+
+    ths.forEach((th, i) => {
+      if (!colEls[i]) return
+      const grip = document.createElement('div')
+      grip.className = i === ths.length - 1 ? 'cm-col-grip cm-col-grip-last' : 'cm-col-grip'
+      grip.title = i === ths.length - 1 ? 'Largeur du tableau (glisser)' : 'Redimensionner la colonne (glisser)'
+      grip.addEventListener('mousedown', (ev) => start(ev, i))
+      // A double-click here would open the cell editor behind the grip.
+      grip.addEventListener('dblclick', (ev) => ev.stopPropagation())
+      th.appendChild(grip)
+    })
+  }
+
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div')
     wrap.className = this.mode === 'preview' ? 'cm-md-table-wrap cm-block-preview' : 'cm-md-table-wrap'
@@ -1077,6 +1273,29 @@ class TableWidget extends WidgetType {
     })
     const table = document.createElement('table')
     table.className = 'cm-md-table'
+
+    // Column widths ride in a `colgroup` (percentages + `table-layout: fixed`),
+    // so a resize is one style write per column and never touches the cells.
+    const colgroup = document.createElement('colgroup')
+    const colEls = rows[0].map(() => {
+      const col = document.createElement('col')
+      colgroup.appendChild(col)
+      return col
+    })
+    table.appendChild(colgroup)
+    const applyWidths = (pcts: number[]): void => {
+      const sum = pcts.reduce((a, b) => a + b, 0)
+      if (sum <= 0) return
+      table.classList.add('cm-md-table-fixed')
+      // The sum is the table's share of the text width; each column's `col` gets
+      // its share OF THE TABLE. A sum past 100 (a stale comment, a column added)
+      // is clamped here rather than rewritten behind the user's back.
+      table.style.width = `${Math.min(100, Math.max(4, sum))}%`
+      pcts.forEach((p, i) => {
+        if (colEls[i]) colEls[i].style.width = `${(p / sum) * 100}%`
+      })
+    }
+    if (this.widths) applyWidths(fitWidths(this.widths, colEls.length))
 
     /** Build one cell: rendered content, alignment, and — in render mode — the
      * per-cell ✎ that opens the field above the table. */
@@ -1116,6 +1335,7 @@ class TableWidget extends WidgetType {
     })
     thead.appendChild(htr)
     table.appendChild(thead)
+    if (this.mode === 'render') this.addGrips(view, table, htr, colEls, applyWidths)
     const tbody = document.createElement('tbody')
     for (let i = 2; i < rows.length; i++) {
       const tr = document.createElement('tr')
@@ -2163,25 +2383,35 @@ function buildDecorations(state: EditorState): DecorationSet {
       // GFM table → rendered HTML table; raw source + live preview while editing.
       if (name === 'Table') {
         const src = doc.sliceString(from, to)
+        // Column widths, kept in an HTML comment on the line above. It is hidden
+        // (and its line compacted) unless the caret lands on it — it is
+        // bookkeeping, not content, but it stays reachable and deletable.
+        const cw = columnWidthsAbove(state, from)
+        if (cw && !editing(state, cw.from, cw.to)) {
+          deco.push(Decoration.replace({}).range(cw.from, cw.to))
+          deco.push(Decoration.line({ class: 'cm-md-colw' }).range(cw.from))
+        }
         if (!editing(state, from, to)) {
           // Edit button lands the caret inside the first header cell (from + 2),
           // not on the table boundary, so the table toolbar resolves the node.
           // A per-cell edit (the field above the table) keeps the table rendered.
           const edit = cellEdit && cellEdit.table === from ? cellEdit : null
           deco.push(
-            Decoration.replace({ widget: new TableWidget(src, from + 2, 'render', from, edit), block: true }).range(
-              from,
-              to
-            )
+            Decoration.replace({
+              widget: new TableWidget(src, from + 2, 'render', from, edit, cw?.widths ?? null),
+              block: true
+            }).range(from, to)
           )
         } else {
           // The caret is in the table source: that IS the full edit, so a
           // half-open cell field would just fight with it.
           if (cellEdit && cellEdit.table === from) cellEdit = null
           deco.push(
-            Decoration.widget({ widget: new TableWidget(src, from, 'preview', from, null), block: true, side: 1 }).range(
-              to
-            )
+            Decoration.widget({
+              widget: new TableWidget(src, from, 'preview', from, null, cw?.widths ?? null),
+              block: true,
+              side: 1
+            }).range(to)
           )
         }
         return false
