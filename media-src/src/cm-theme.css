@@ -28,6 +28,10 @@ body {
 .cm-topbar {
   flex: 0 0 auto;
   display: flex;
+  /* The full row needs ~1030px; a split pane is narrower than that and the last
+     buttons (presentation, settings) were simply clipped off — unreachable, with
+     nothing to scroll. Wrap onto a second row instead. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 4px 8px;
@@ -246,7 +250,8 @@ body {
   color: var(--vscode-editor-foreground);
 }
 
-/* Full-width toggle (config.pageWidth === 'full') */
+/* Full-width toggle (config.pageWidth === 'full', toolbar ⇤⇥ button): the text
+   column spans the window instead of the centered readable measure. */
 body.mdforge-width-full .cm-content {
   max-width: none !important;
 }
@@ -755,7 +760,12 @@ body.mdforge-presentation .cm-gutters {
   background: var(--vscode-editor-background);
 }
 
-/* Mermaid diagram widget */
+/* Mermaid diagram widget.
+   `mdforge.mermaid.fitWidth` (on by default) blows the diagram up to the whole
+   text column. Mermaid emits `style="max-width: <natural>px"` on the <svg>, so
+   only an `!important` override can widen it past its natural size, and
+   `height: auto` must beat the `height` attribute — otherwise the viewBox is
+   letterboxed inside the wider box instead of scaling with it. */
 .cm-mermaid {
   position: relative;
   display: flex;
@@ -763,9 +773,26 @@ body.mdforge-presentation .cm-gutters {
   margin: 0;
   padding: 12px 8px;
 }
+.cm-mermaid-target {
+  min-width: 0;
+}
 .cm-mermaid svg {
   max-width: 100%;
   height: auto;
+}
+body.mdforge-mermaid-fit .cm-mermaid-target {
+  flex: 1 1 auto;
+}
+body.mdforge-mermaid-fit .cm-mermaid svg {
+  width: 100%;
+  max-width: 100% !important;
+  /* Widening keeps the aspect ratio, so a tall narrow diagram would grow into a
+     page-long strip (a 4-node vertical chain measured 2138px). Cap the height at
+     most of the frame: the box still spans the column, and the SVG scales to the
+     capped height and sits centred in it (preserveAspectRatio, no distortion). So
+     wide diagrams take the whole width and tall ones stay readable — the ⤢ zoom
+     is there for a closer look. */
+  max-height: 80vh;
 }
 .cm-mermaid-error {
   display: block;

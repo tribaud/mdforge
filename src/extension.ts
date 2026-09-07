@@ -786,6 +786,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           debugPasteHtml: config.get<boolean>('debug.pasteHtml', false),
           enableInProgress: config.get<boolean>('checkbox.enableInProgress', true),
           mermaidTheme: config.get<string>('mermaid.theme', 'auto'),
+          mermaidFitWidth: config.get<boolean>('mermaid.fitWidth', true),
           assetsBaseUri: webview
             .asWebviewUri(vscode.Uri.file(path.dirname(document.uri.fsPath)))
             .toString()
@@ -847,6 +848,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         name?: string
         path?: string
         quiet?: boolean
+        value?: string
         html?: string
         dump?: string
         refresh?: boolean
@@ -913,6 +915,16 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             void webview.postMessage({ type: 'tags', ...this.tagIndex.snapshot() })
             break
           }
+          case 'setPageWidth':
+            // The toolbar button is a shortcut for `mdforge.pageWidth`: write it
+            // as a user preference (a reading width is not per-workspace), and
+            // the config watcher echoes it to every open MDForge editor.
+            if (message.value === 'comfortable' || message.value === 'full') {
+              await vscode.workspace
+                .getConfiguration('mdforge', document.uri)
+                .update('pageWidth', message.value, vscode.ConfigurationTarget.Global)
+            }
+            break
           case 'openSettings':
             void vscode.commands.executeCommand(
               'workbench.action.openSettings',

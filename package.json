@@ -218,6 +218,11 @@
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
         },
+        "mdforge.mermaid.fitWidth": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scale Mermaid diagrams up to the full width of the text column (off: keep the diagram's natural size, centered)."
+        },
         "mdforge.paste.appendSource": {
           "type": "boolean",
           "default": false,

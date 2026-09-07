@@ -60,6 +60,7 @@ declare function acquireVsCodeApi(): {
 interface MdForgeConfig {
   fontSize?: number
   pageWidth?: 'comfortable' | 'full'
+  mermaidFitWidth?: boolean
   textAlign?: 'left' | 'justify'
   lineNumbers?: boolean
   assetsBaseUri?: string
@@ -471,6 +472,8 @@ function addHostButtons(bar: HTMLElement): void {
   spacer.className = 'cm-tb-spacer'
   bar.appendChild(spacer)
 
+  widthButton = mk(ICONS.widthFull, WIDTH_TIPS.comfortable, () => togglePageWidth())
+  applyPageWidth(pageWidth) // paints the button for the width already in force
   sourceButton = mk(ICONS.source, 'Afficher la source Markdown', () => toggleSource())
   debugButton = mk(ICONS.bug, 'Debug : afficher le presse-papiers collé (onglet)', () => toggleDebugPaste())
   mk(ICONS.textEditor, "Ouvrir dans l'éditeur de texte VS Code", post('openTextEditor'))
@@ -478,6 +481,40 @@ function addHostButtons(bar: HTMLElement): void {
   readOnlyButton = mk(ICONS.lockOpen, "Lecture seule (bloquer l'édition)", () => toggleReadOnly())
   mk(ICONS.present, 'Mode présentation', () => togglePresentation())
   mk(ICONS.settings, 'Réglages MDForge', post('openSettings'))
+}
+
+/** Content width (`mdforge.pageWidth`): the centered readable column, or the
+ * full window. The button is a shortcut for the setting, not a second state —
+ * it writes the setting, and the host echoes the config back through
+ * `applyConfig`, so the choice sticks across notes and reopens. */
+type PageWidth = 'comfortable' | 'full'
+const WIDTH_TIPS: Record<PageWidth, string> = {
+  // Keyed by the width IN FORCE: each tooltip names what the click does next.
+  comfortable: 'Pleine largeur de la fenêtre',
+  full: 'Largeur confortable (marges à gauche et à droite)'
+}
+let pageWidth: PageWidth = 'comfortable'
+let widthButton: HTMLElement | null = null
+
+function applyPageWidth(value: PageWidth): void {
+  pageWidth = value
+  document.body.classList.toggle('mdforge-width-full', value === 'full')
+  if (widthButton) {
+    widthButton.innerHTML = value === 'full' ? ICONS.widthComfortable : ICONS.widthFull
+    widthButton.title = WIDTH_TIPS[value]
+    widthButton.setAttribute('data-tip', WIDTH_TIPS[value])
+    widthButton.classList.toggle('cm-tb-btn-active', value === 'full')
+  }
+  // A wider column re-scales every fitted diagram and re-wraps every line, so
+  // the heights CodeMirror measured are stale.
+  view.requestMeasure()
+}
+
+function togglePageWidth(): void {
+  const next: PageWidth = pageWidth === 'full' ? 'comfortable' : 'full'
+  applyPageWidth(next) // instant feedback; the config echo confirms it
+  vscode.postMessage({ type: 'setPageWidth', value: next })
+  view.focus()
 }
 
 /** Toggle the raw-Markdown source view (live preview off). */
@@ -852,7 +889,12 @@ function applyConfig(config: MdForgeConfig): void {
   if (typeof config.fontSize === 'number') {
     document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   }
-  document.body.classList.toggle('mdforge-width-full', config.pageWidth === 'full')
+  if (config.pageWidth === 'comfortable' || config.pageWidth === 'full') applyPageWidth(config.pageWidth)
+  // Mermaid diagrams scaled up to the whole text column (see cm-theme.css).
+  if (typeof config.mermaidFitWidth === 'boolean') {
+    document.body.classList.toggle('mdforge-mermaid-fit', config.mermaidFitWidth)
+    view.requestMeasure()
+  }
   // Display-only justification: nothing is written to the Markdown. It shows on
   // wrapped lines, so a hard-wrapped paragraph needs `mdforge.format.paragraphs`
   // set to `oneLine` (the ¶ button) for it to have any visible effect.

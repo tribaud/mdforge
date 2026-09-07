@@ -83,7 +83,7 @@ it fully before making changes.
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
   `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`, `tags`.
-  webview→host: `ready`, `edit`, `openWikilink`, `openExternal`, `insertImage`,
+  webview→host: `ready`, `edit`, `setPageWidth`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
   `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
   `debugPasteHtml`, `error`.
@@ -108,7 +108,15 @@ so it round-trips for free unless noted.
   in-progress `~` step is skipped when `mdforge.checkbox.enableInProgress` is off
   (`nextTaskState`). `[~]` is an MDForge convention (GFM only has `[ ]`/`[x]`).
 - **Mermaid & math** (`MermaidWidget`/`MathWidget`): rendered SVG/KaTeX as a block
-  widget; `✎ Éditer` drops the caret into the source (which, via reveal-on-edit,
+  widget. A diagram is scaled up to the **full text column**
+  (`mdforge.mermaid.fitWidth`, default on → body class `mdforge-mermaid-fit`):
+  mermaid writes `style="max-width:<natural>px"` on the `<svg>`, so only an
+  `!important` override widens it, and `height: auto` must beat its `height`
+  attribute or the viewBox is letterboxed instead of scaling. The upscale is capped
+  at `max-height: 80vh` — the ratio is preserved, so a tall narrow chain (a 4-node
+  `graph TD` measured 2138px once fitted) stays readable and centred instead of
+  becoming a page-long strip.
+  `✎ Éditer` drops the caret into the source (which, via reveal-on-edit,
   shows the raw source with a live "Aperçu" preview + `✓ Terminer` to leave).
   Mermaid parse-error orphan nodes are swept from `document.body` after each
   render (`sweepMermaidOrphans`).
@@ -252,6 +260,15 @@ so it round-trips for free unless noted.
   number would be clipped mid-glyph); source view numbers every line. It is also
   called with a padding number PAST the last line to size the gutter — check
   `line <= state.doc.lines` first or it throws.
+- **Content width** (`mdforge.pageWidth`, toolbar `⇤⇥`): `comfortable` centres the
+  readable column, `full` lets `.cm-content` span the window
+  (`body.mdforge-width-full`). The button is a **shortcut for the setting**, not a
+  second state: it applies the class at once for feedback, then posts
+  `setPageWidth` so the host writes the setting **globally** (a reading width is
+  not per-workspace) and the config watcher echoes it back to every open editor —
+  `applyPageWidth` is the single place that paints class, icon and tooltip. Both
+  toggles call `view.requestMeasure()`: a wider column re-wraps every line and
+  re-scales every fitted diagram, so CodeMirror's measured heights go stale.
 - **Justified text** (`mdforge.textAlign: justify`): display only, a
   `mdforge-justify` body class → `text-align: justify` on `.cm-line`, minus
   headings / code / frontmatter / blank lines. It only shows on **soft-wrapped**

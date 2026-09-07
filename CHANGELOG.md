@@ -26,6 +26,22 @@ All notable changes to MDForge are documented here. The format follows
   revealed, like any other syntax, when the caret lands on it. It travels with its
   table when the block is dragged, is rewritten when a column is added or removed,
   and is deleted with the table.
+- **Mermaid diagrams take the whole text column** instead of their natural size,
+  which left a small diagram lost in the middle of the page. The upscale keeps the
+  aspect ratio and is capped at 80% of the frame height, so a tall narrow flowchart
+  no longer becomes a page-long strip (it stays centred, just bigger). Set
+  `mdforge.mermaid.fitWidth` to `false` for the previous natural-size rendering.
+- **Content width toggle in the toolbar**: a new button switches between the
+  centred readable column and the full window width. It writes
+  `mdforge.pageWidth` — the setting that already existed but had no shortcut — so
+  the choice sticks across notes and reopens, and every open MDForge editor
+  follows.
+
+### Fixed
+
+- **The toolbar no longer loses its last buttons in a narrow editor**: the full row
+  needs ~1030px, and below that the presentation and settings buttons were clipped
+  off with nothing to scroll. It wraps onto a second row instead.
 
 ## [0.5.0]
 

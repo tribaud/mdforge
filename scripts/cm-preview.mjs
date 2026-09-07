@@ -111,7 +111,7 @@ await page.addInitScript(() => {
 
 await page.goto(`http://localhost:${port}/`, { waitUntil: 'load' })
 await page.evaluate((text) => {
-  window.dispatchEvent(new MessageEvent('message', { data: { type: 'config', config: { fontSize: 15, mermaidTheme: 'default' } } }))
+  window.dispatchEvent(new MessageEvent('message', { data: { type: 'config', config: { fontSize: 15, mermaidTheme: 'default', pageWidth: 'comfortable', mermaidFitWidth: true } } }))
   window.dispatchEvent(new MessageEvent('message', { data: { type: 'setContent', text } }))
 }, doc)
 
