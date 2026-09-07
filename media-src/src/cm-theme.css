@@ -301,14 +301,21 @@ body.mdforge-presentation .cm-gutters {
 }
 /* A deletion has no line of its own: a wedge points at the seam it left. It is
    wider than the 3px bars on purpose — at their width it read as a speck. */
-.cm-qd-deleted::after {
+.cm-qd-deleted::after,
+.cm-qd-deleted-end::after {
   content: '';
   position: absolute;
   left: 0;
-  top: -4px;
   border-left: 5px solid var(--vscode-editorGutter-deletedBackground, #f85149);
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
+}
+.cm-qd-deleted::after {
+  top: -4px;
+}
+/* Cut at the end of the document: the seam is below the last line, not above. */
+.cm-qd-deleted-end::after {
+  bottom: -4px;
 }
 .cm-foldPlaceholder {
   margin: 0 4px;

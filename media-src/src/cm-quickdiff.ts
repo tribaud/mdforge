@@ -28,7 +28,7 @@ export interface QuickDiffChange {
  * makes an empty 3px-wide gutter possible.
  */
 class DiffMarker extends GutterMarker {
-  public constructor(private readonly kind: QuickDiffChange['type']) {
+  public constructor(private readonly kind: string) {
     super()
     this.elementClass = `cm-qd cm-qd-${kind}`
   }
@@ -38,10 +38,13 @@ class DiffMarker extends GutterMarker {
   }
 }
 
-const MARKERS: Record<QuickDiffChange['type'], DiffMarker> = {
+const MARKERS = {
   added: new DiffMarker('added'),
   modified: new DiffMarker('modified'),
-  deleted: new DiffMarker('deleted')
+  deleted: new DiffMarker('deleted'),
+  /** A cut at the very end of the document: the seam is BELOW the last line, so
+   * the wedge has to hang off its bottom edge rather than its top one. */
+  deletedAtEnd: new DiffMarker('deleted-end')
 }
 
 const setQuickDiffEffect = StateEffect.define<RangeSet<GutterMarker>>()
@@ -73,17 +76,19 @@ export function setQuickDiff(view: EditorView, changes: QuickDiffChange[]): void
   const doc = view.state.doc
   const ranges: Array<Range<GutterMarker>> = []
   const seen = new Set<number>()
-  const add = (line: number, type: QuickDiffChange['type']): void => {
-    // Host line numbers are 0-based; a deletion at the end of the document
-    // clamps onto the last line, which is where its wedge belongs.
+  const add = (line: number, marker: DiffMarker): void => {
+    // Host line numbers are 0-based.
     const at = doc.line(Math.min(Math.max(line, 0), doc.lines - 1) + 1).from
     if (seen.has(at)) return
     seen.add(at)
-    ranges.push(MARKERS[type].range(at))
+    ranges.push(marker.range(at))
   }
   for (const change of changes) {
-    if (change.type === 'deleted') add(change.from, 'deleted')
-    else for (let line = change.from; line < change.to; line++) add(line, change.type)
+    if (change.type === 'deleted') {
+      add(change.from, change.from > doc.lines - 1 ? MARKERS.deletedAtEnd : MARKERS.deleted)
+    } else {
+      for (let line = change.from; line < change.to; line++) add(line, MARKERS[change.type])
+    }
   }
   // `sort`: the host emits ordered changes, but a clamped deletion can land on a
   // line an earlier change already claimed — cheaper to sort than to trust it.

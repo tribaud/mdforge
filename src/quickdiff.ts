@@ -106,8 +106,14 @@ export class QuickDiff {
     void this.attach()
   }
 
-  /** Recompute now — used on `ready`, once the webview can receive markers. */
+  /**
+   * Recompute AND re-post, used on `ready`. Forgetting the last post is the
+   * point: the first computation usually lands before the webview is listening,
+   * and its result would then be suppressed as a duplicate — leaving the margin
+   * empty until the next keystroke.
+   */
   public refresh(): void {
+    this.lastPosted = undefined
     this.schedule(0)
   }
 
