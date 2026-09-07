@@ -154,12 +154,20 @@ so it round-trips for free unless noted.
     table's width changes). That last grip sits INSIDE the wrap (`right: 0`, not
     the `-3px` overhang of the others): an absolutely positioned control hanging
     past a scroll container still counts in its `scrollWidth`, and those 2px put a
-    horizontal scrollbar under every full-width table. The drag dispatches NOTHING: a document change
+    horizontal scrollbar under every full-width table. The drag dispatches
+    NOTHING: a document change
     rebuilds the widget and would drop the drag with it, so only `mouseup` writes
     (`writeWidths`, which bails out if the table moved under it). It freezes what
     is on screen BEFORE measuring, scaling the cell widths onto the TABLE's
     measured width — with collapsed borders the cells total a couple of pixels
-    short, and the table visibly shrank on the first pixel of the drag.
+    short, and the table visibly shrank on the first pixel of the drag. The freeze
+    waits for 2px of travel, so a plain CLICK on a grip writes nothing into a table
+    that had none. A new comment takes the table's own indentation (at column 0 it
+    would close the list a nested table sits in), the inner-border clamp bounds
+    BOTH sides against 0 (a column already under MIN can be recovered, never made
+    worse), and the teardown also runs on a window `blur` or a `mousemove` with no
+    button held — a lost mouseup would otherwise leave `user-select: none` on the
+    body and a live listener.
     `roundWidths` keeps each column ≥ 1, the total ≤ 100, and snaps a total within
     2 points of full width to exactly 100 (pulling a table to the edge must write
     `[10,60,15,15]`, not `[10,59,15,15]`).
@@ -168,7 +176,9 @@ so it round-trips for free unless noted.
     in BOTH directions), is rewritten in the same transaction when a column is
     added or removed — at the table's current total, not renormalized to 100 —
     and is deleted with the table (`cm-table.ts`). A stale count is tolerated,
-    not trusted: `fitWidths` truncates extras and pads with the average.
+    not trusted: `fitWidths` truncates extras, pads with the average, and rescales
+    to the total the comment declared — dropping an entry must not shrink the
+    table (a 4-entry comment on a 3-column table rendered it at 75% width).
 - **GitHub alerts**: a per-blockquote type dropdown (`AlertSelectWidget`, "—
   Citation" = none) always shown on the first line; the `[!TYPE]` marker is hidden
   and the block styled as a callout.
