@@ -7,7 +7,7 @@
   "license": "MIT",
   "icon": "icon.png",
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.133.0"
   },
   "repository": {
     "type": "git",
@@ -52,7 +52,10 @@
             "filenamePattern": "*.markdown"
           }
         ],
-        "priority": "option"
+        "priority": {
+          "textEditor": "default",
+          "diffEditor": "explicit"
+        }
       }
     ],
     "commands": [
@@ -202,6 +205,11 @@
           "default": true,
           "description": "Show source line numbers in the gutter."
         },
+        "mdforge.quickDiff": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Mark the lines added, modified or deleted since the last commit in the left margin. Compares the editor's live text (including unsaved changes) against the staged version, falling back to `HEAD`. Needs the built-in Git extension; files outside a repository show nothing."
+        },
         "mdforge.fontSize": {
           "type": "number",
           "default": 15,
@@ -337,6 +345,7 @@
     "icon": "magick -background none -density 384 icon.svg -filter Lanczos -resize 128x128 -strip PNG32:icon.png",
     "test:fidelity": "npm run build:webview && node scripts/cm-fidelity.test.mjs",
     "test:paste": "npm run build:webview && node scripts/cm-paste.test.mjs",
+    "test:quickdiff": "npm run compile:ext && node scripts/quickdiff.test.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
   },

@@ -46,6 +46,8 @@ import { createSlashMenu } from './cm-slash'
 import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
+import { quickDiff, setQuickDiff } from './cm-quickdiff'
+import type { QuickDiffChange } from './cm-quickdiff'
 import { setDiagnostics, lintGutter } from '@codemirror/lint'
 import type { Diagnostic } from '@codemirror/lint'
 import { htmlToMarkdown, isRichHtml, htmlIsJustImage, describeHtmlStructure } from './cm-paste-html'
@@ -64,6 +66,7 @@ interface MdForgeConfig {
   mermaidFitWidth?: boolean
   textAlign?: 'left' | 'justify'
   lineNumbers?: boolean
+  quickDiff?: boolean
   assetsBaseUri?: string
   mermaidTheme?: string
   enableInProgress?: boolean
@@ -146,6 +149,10 @@ const preview = new Compartment()
 
 /** Wraps the line-number gutter so `mdforge.lineNumbers` can switch it off. */
 const gutters = new Compartment()
+
+/** Wraps the quick-diff margin so `mdforge.quickDiff` can switch it off — an
+ * empty gutter would still claim its width. */
+const quickDiffGutter = new Compartment()
 
 /** Source line numbers. Blank lines are compacted to a fixed small height in
  * live preview, which would clip their number mid-glyph — so they get none
@@ -593,6 +600,9 @@ try {
         // Source line numbers. Folding is NOT in the gutter: its arrows were too
         // discreet, so the chevron lives next to the ⠿ block handle instead.
         gutters.of(lineNumberGutter()),
+        // Added/modified/deleted bars, computed host-side against git. Placed
+        // after the line numbers so it sits against the text, as in VS Code.
+        quickDiffGutter.of(quickDiff),
         search({ top: true }),
         highlightSelectionMatches(),
         blockDrag,
@@ -892,6 +902,15 @@ function setLineNumbers(on: boolean): void {
   view.dispatch({ effects: gutters.reconfigure(on ? lineNumberGutter() : []) })
 }
 
+/** Quick-diff margin (mdforge.quickDiff). Off = the gutter goes away entirely;
+ * the host stops computing at the same time, so nothing is left running. */
+let quickDiffOn = true
+function setQuickDiffEnabled(on: boolean): void {
+  if (on === quickDiffOn) return
+  quickDiffOn = on
+  view.dispatch({ effects: quickDiffGutter.reconfigure(on ? quickDiff : []) })
+}
+
 /** Last value of `mdforge.mermaid.theme`, replayed when the editor's theme kind
  * changes: `auto` resolves against it, and VS Code changes the webview's theme
  * class without sending any configuration event of its own. */
@@ -934,6 +953,7 @@ function applyConfig(config: MdForgeConfig): void {
   // set to `oneLine` (the ¶ button) for it to have any visible effect.
   document.body.classList.toggle('mdforge-justify', config.textAlign === 'justify')
   if (typeof config.lineNumbers === 'boolean') setLineNumbers(config.lineNumbers)
+  if (typeof config.quickDiff === 'boolean') setQuickDiffEnabled(config.quickDiff)
   if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
   if (config.mermaidTheme) {
     mermaidThemeSetting = config.mermaidTheme
@@ -956,6 +976,7 @@ window.addEventListener('message', (event) => {
     linkStyle?: string
     error?: string
     items?: RawDiagnostic[]
+    changes?: QuickDiffChange[]
     tags?: string[]
     keys?: string[]
     scannedAt?: number
@@ -980,6 +1001,9 @@ window.addEventListener('message', (event) => {
       break
     case 'diagnostics':
       if (Array.isArray(msg.items)) applyDiagnostics(msg.items)
+      break
+    case 'quickDiff':
+      if (Array.isArray(msg.changes)) setQuickDiff(view, msg.changes)
       break
     case 'tags':
       if (Array.isArray(msg.tags)) {

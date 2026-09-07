@@ -1,6 +1,7 @@
 import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
+import { QuickDiff } from './quickdiff'
 
 const VIEW_TYPE = 'mdforge.editor'
 
@@ -787,6 +788,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           enableInProgress: config.get<boolean>('checkbox.enableInProgress', true),
           mermaidTheme: config.get<string>('mermaid.theme', 'auto'),
           mermaidFitWidth: config.get<boolean>('mermaid.fitWidth', true),
+          quickDiff: config.get<boolean>('quickDiff', true),
           assetsBaseUri: webview
             .asWebviewUri(vscode.Uri.file(path.dirname(document.uri.fsPath)))
             .toString()
@@ -818,6 +820,13 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
 
     const diagnosticsSubscription = vscode.languages.onDidChangeDiagnostics((event) => {
       if (event.uris.some((u) => u.toString() === document.uri.toString())) postDiagnostics()
+    })
+
+    // Added/modified/deleted markers in MDForge's own margin: a custom editor
+    // gets none of VS Code's gutter decorations, and the API that would let it
+    // render inside the diff editor is still proposed (CLAUDE.md §9).
+    const quickDiff = new QuickDiff(document, (changes) => {
+      void webview.postMessage({ type: 'quickDiff', changes })
     })
 
     // Auto-refresh rendered images when a co-located asset file changes on disk
@@ -862,6 +871,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             postConfig()
             postDocument()
             postDiagnostics()
+            quickDiff.refresh()
             break
           case 'edit':
             // NOT merged into the tag index here: this fires on every keystroke,
@@ -968,6 +978,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       viewStateSubscription.dispose()
       diagnosticsSubscription.dispose()
       assetWatcher.dispose()
+      quickDiff.dispose()
       this.outline.clear(document)
     })
   }
