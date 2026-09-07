@@ -910,15 +910,21 @@ export function scaleWidths(widths: number[], target: number): number[] {
   return roundWidths(widths.map((w) => (w / sum) * target))
 }
 
-/** Adapt a stored list to the table's real column count — a column may have been
- * added or removed since it was written. Extra entries go, missing ones take the
- * average; the next resize rewrites the comment with the right count. */
+/**
+ * Adapt a stored list to the table's real column count — a column may have been
+ * added or removed since it was written. Extras go, missing ones take the
+ * average, and the result is rescaled to the TOTAL the comment declared: dropping
+ * an entry must not shrink the table (a 4-entry comment on a 3-column table used
+ * to render it at 75% width). The next resize rewrites the comment properly.
+ */
 export function fitWidths(widths: number[], cols: number): number[] {
   if (widths.length === cols) return widths
-  const avg = widths.reduce((a, b) => a + b, 0) / (widths.length || 1) || 1
+  const total = widths.reduce((a, b) => a + b, 0)
+  const avg = total / (widths.length || 1) || 1
   const out = widths.slice(0, cols)
   while (out.length < cols) out.push(avg)
-  return out
+  const sum = out.reduce((a, b) => a + b, 0) || 1
+  return out.map((w) => (w / sum) * (total || sum))
 }
 
 /**
@@ -932,12 +938,16 @@ function writeWidths(view: EditorView, tableFrom: number, firstLine: string, pct
   if (state.doc.sliceString(tableFrom, tableFrom + firstLine.length) !== firstLine) return
   const insert = `<!--[${roundWidths(pcts).join(',')}]-->`
   const cur = columnWidthsAbove(state, tableFrom)
-  safeDispatch(
-    view,
-    cur
-      ? { changes: { from: cur.from, to: cur.to, insert } }
-      : { changes: { from: state.doc.lineAt(tableFrom).from, insert: insert + '\n' } }
-  )
+  if (cur) {
+    safeDispatch(view, { changes: { from: cur.from, to: cur.to, insert } })
+    return
+  }
+  // A new comment takes the table's own indentation: written at column 0 above a
+  // table nested in a list item, it would close the list and pull the table out
+  // of it.
+  const line = state.doc.lineAt(tableFrom)
+  const indent = /^[ \t]*/.exec(line.text)?.[0] ?? ''
+  safeDispatch(view, { changes: { from: line.from, insert: `${indent}${insert}\n` } })
 }
 
 /* ---------- single-cell editing ---------- */
@@ -1183,6 +1193,7 @@ class TableWidget extends WidgetType {
     applyWidths: (pcts: number[]) => void
   ): void {
     const firstLine = this.source.split('\n', 1)[0]
+    const tableFrom = this.base
     const ths = Array.from(htr.children) as HTMLElement[]
     if (ths.length === 0) return
     const MIN = 32 // px: a column must stay wide enough to grab again
@@ -1196,51 +1207,76 @@ class TableWidget extends WidgetType {
       // half-width table read as 100% and jump to the full width on first drag.
       const box = (table.parentElement as HTMLElement | null)?.clientWidth || table.getBoundingClientRect().width
       if (box <= 0) return
-      // The table may still be auto-sized: freeze what is on screen FIRST, then
-      // measure, so the drag deltas apply to the borders the user sees. The cell
-      // widths are scaled onto the TABLE's width, not just summed: with collapsed
-      // borders their total falls a couple of pixels short, and the table would
-      // visibly shrink on the first pixel of the drag.
-      const cells = ths.map((th) => th.getBoundingClientRect().width)
-      const spread = table.getBoundingClientRect().width / (cells.reduce((a, b) => a + b, 0) || 1)
-      applyWidths(cells.map((w) => ((w * spread) / box) * 100))
-      const w0 = ths.map((th) => th.getBoundingClientRect().width)
-      const total0 = w0.reduce((a, b) => a + b, 0)
       const x0 = e.clientX
       const lastBorder = i === ths.length - 1
-      let pcts = w0.map((w) => (w / box) * 100)
       const grip = e.currentTarget as HTMLElement
-      grip.classList.add('cm-col-grip-active')
-      document.body.classList.add('cm-col-resizing')
+      // Nothing happens until the pointer actually travels: a plain click on a
+      // grip must not write a widths comment into a table that had none.
+      let w0: number[] | null = null
+      let total0 = 0
+      let pcts: number[] | null = null
+
+      /** Freeze what is on screen, then measure it — the drag deltas apply to the
+       * borders the user sees. The cell widths are scaled onto the TABLE's width
+       * rather than just summed: with collapsed borders their total falls a couple
+       * of pixels short, and the table would shrink on the first pixel. */
+      const begin = (): void => {
+        const cells = ths.map((th) => th.getBoundingClientRect().width)
+        const spread = table.getBoundingClientRect().width / (cells.reduce((a, b) => a + b, 0) || 1)
+        applyWidths(cells.map((w) => ((w * spread) / box) * 100))
+        w0 = ths.map((th) => th.getBoundingClientRect().width)
+        total0 = w0.reduce((a, b) => a + b, 0)
+        grip.classList.add('cm-col-grip-active')
+        document.body.classList.add('cm-col-resizing')
+      }
 
       const onMove = (ev: MouseEvent): void => {
-        let w = w0.slice()
+        // The button was released outside the window: the mouseup never came.
+        if (ev.buttons === 0) {
+          onUp()
+          return
+        }
+        if (!w0) {
+          if (Math.abs(ev.clientX - x0) < 2) return
+          begin()
+        }
+        const frozen = w0 as number[]
+        let w = frozen.slice()
         if (lastBorder) {
           // The table's own edge: every column scales, so the table changes width
           // while the shares it was given stay exactly as they are. Stops when the
           // narrowest column reaches MIN, or when the table fills the text width.
-          const narrowest = Math.min(...w0)
-          const fMin = Math.min(1, MIN / narrowest)
+          const fMin = Math.min(1, MIN / Math.min(...frozen))
           const fMax = Math.max(1, box / total0)
           const f = Math.min(Math.max((total0 + (ev.clientX - x0)) / total0, fMin), fMax)
-          w = w0.map((x) => x * f)
+          w = frozen.map((x) => x * f)
         } else {
-          const d = Math.min(Math.max(ev.clientX - x0, MIN - w0[i]), w0[i + 1] - MIN)
+          // Both bounds are clamped against 0 so a column already under MIN (a
+          // hand-written comment, a narrower window) can only be recovered, never
+          // made worse: the move is allowed in the direction that helps, and
+          // refused in the other.
+          const lo = Math.min(0, MIN - frozen[i])
+          const hi = Math.max(0, frozen[i + 1] - MIN)
+          const d = Math.min(Math.max(ev.clientX - x0, lo), hi)
           w[i] += d
           w[i + 1] -= d
         }
         pcts = w.map((x) => (x / box) * 100)
         applyWidths(pcts)
       }
-      const onUp = (): void => {
+      function onUp(): void {
         document.removeEventListener('mousemove', onMove, true)
         document.removeEventListener('mouseup', onUp, true)
+        window.removeEventListener('blur', onUp)
         document.body.classList.remove('cm-col-resizing')
         grip.classList.remove('cm-col-grip-active')
-        writeWidths(view, this.base, firstLine, pcts)
+        if (pcts) writeWidths(view, tableFrom, firstLine, pcts)
       }
       document.addEventListener('mousemove', onMove, true)
       document.addEventListener('mouseup', onUp, true)
+      // A lost mouseup (released outside the window, an alert stealing the focus)
+      // would otherwise leave `user-select: none` on the body and a live listener.
+      window.addEventListener('blur', onUp)
     }
 
     ths.forEach((th, i) => {
