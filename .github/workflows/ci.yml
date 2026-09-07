@@ -28,5 +28,8 @@ jobs:
       - name: Type-check webview
         run: npx tsc -p media-src --noEmit
 
+      - name: Line-diff tests (quick diff)
+        run: node scripts/quickdiff.test.mjs
+
       - name: Bundle webview (esbuild)
         run: npm run build:webview
