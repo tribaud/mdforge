@@ -916,13 +916,23 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           }
           case 'setPageWidth':
-            // The toolbar button is a shortcut for `mdforge.pageWidth`: write it
-            // as a user preference (a reading width is not per-workspace), and
-            // the config watcher echoes it to every open MDForge editor.
+            // The toolbar button is a shortcut for `mdforge.pageWidth`, and the
+            // config watcher echoes the new value to every open MDForge editor.
+            // Write it back at the level where it is already set: a plain Global
+            // write under a workspace value would be shadowed by it — the button
+            // would flip, the echo would snap it back, and the user's global
+            // preference would have changed behind their back. Default: Global,
+            // a reading width being a user preference, not a project's.
             if (message.value === 'comfortable' || message.value === 'full') {
-              await vscode.workspace
-                .getConfiguration('mdforge', document.uri)
-                .update('pageWidth', message.value, vscode.ConfigurationTarget.Global)
+              const cfg = vscode.workspace.getConfiguration('mdforge', document.uri)
+              const at = cfg.inspect<string>('pageWidth')
+              const target =
+                at?.workspaceFolderValue !== undefined
+                  ? vscode.ConfigurationTarget.WorkspaceFolder
+                  : at?.workspaceValue !== undefined
+                    ? vscode.ConfigurationTarget.Workspace
+                    : vscode.ConfigurationTarget.Global
+              await cfg.update('pageWidth', message.value, target)
             }
             break
           case 'openSettings':

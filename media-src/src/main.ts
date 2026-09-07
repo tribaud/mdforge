@@ -31,6 +31,7 @@ import {
   setAssetsBase,
   setMermaidTheme,
   redrawMermaid,
+  refitMermaid,
   setWikilinkHandler,
   setEnableInProgress,
   setTagsRequester,
@@ -505,9 +506,10 @@ function applyPageWidth(value: PageWidth): void {
     widthButton.setAttribute('data-tip', WIDTH_TIPS[value])
     widthButton.classList.toggle('cm-tb-btn-active', value === 'full')
   }
-  // A wider column re-scales every fitted diagram and re-wraps every line, so
-  // the heights CodeMirror measured are stale.
-  view.requestMeasure()
+  // A wider column re-scales every fitted diagram (whose ceiling is clamped to
+  // the column, so it has to be recomputed) and re-wraps every line, so the
+  // heights CodeMirror measured are stale.
+  refitMermaid(view)
 }
 
 function togglePageWidth(): void {
@@ -605,6 +607,11 @@ try {
             slashUpdate()
             tableUpdate()
           }
+          // The column can change width without a window resize (a side panel, a
+          // split). A fitted diagram's width is written in px, so re-derive it —
+          // `refitMermaid` writes nothing when the value is unchanged, so this
+          // cannot feed itself.
+          if (update.geometryChanged) refitMermaid(update.view)
           if (applyingRemote || !update.docChanged) return
           const text = update.state.doc.toString()
           if (text === currentText) return
@@ -885,15 +892,42 @@ function setLineNumbers(on: boolean): void {
   view.dispatch({ effects: gutters.reconfigure(on ? lineNumberGutter() : []) })
 }
 
+/** Last value of `mdforge.mermaid.theme`, replayed when the editor's theme kind
+ * changes: `auto` resolves against it, and VS Code changes the webview's theme
+ * class without sending any configuration event of its own. */
+let mermaidThemeSetting = 'auto'
+let themeKindWatched = false
+function watchThemeKind(): void {
+  if (themeKindWatched) return
+  themeKindWatched = true
+  const onKind = (): void => {
+    if (setMermaidTheme(mermaidThemeSetting)) redrawMermaid(view)
+  }
+  new MutationObserver(onKind).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-vscode-theme-kind', 'class']
+  })
+  new MutationObserver(onKind).observe(document.body, { attributes: true, attributeFilter: ['class'] })
+  // The fit ceiling is a fraction of the frame height (see fitMermaidSvg).
+  let pending = 0
+  window.addEventListener('resize', () => {
+    window.clearTimeout(pending)
+    pending = window.setTimeout(() => refitMermaid(view), 150)
+  })
+}
+
 function applyConfig(config: MdForgeConfig): void {
+  watchThemeKind()
   if (typeof config.fontSize === 'number') {
     document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   }
   if (config.pageWidth === 'comfortable' || config.pageWidth === 'full') applyPageWidth(config.pageWidth)
-  // Mermaid diagrams scaled up to the whole text column (see cm-theme.css).
+  // Mermaid diagrams scaled up to the whole text column (see cm-theme.css). The
+  // ceiling is written on each <svg>, so turning the setting off has to re-fit
+  // what is already rendered rather than just flip the class.
   if (typeof config.mermaidFitWidth === 'boolean') {
     document.body.classList.toggle('mdforge-mermaid-fit', config.mermaidFitWidth)
-    view.requestMeasure()
+    refitMermaid(view)
   }
   // Display-only justification: nothing is written to the Markdown. It shows on
   // wrapped lines, so a hard-wrapped paragraph needs `mdforge.format.paragraphs`
@@ -901,7 +935,10 @@ function applyConfig(config: MdForgeConfig): void {
   document.body.classList.toggle('mdforge-justify', config.textAlign === 'justify')
   if (typeof config.lineNumbers === 'boolean') setLineNumbers(config.lineNumbers)
   if (config.assetsBaseUri) setAssetsBase(config.assetsBaseUri)
-  if (config.mermaidTheme && setMermaidTheme(config.mermaidTheme)) redrawMermaid(view)
+  if (config.mermaidTheme) {
+    mermaidThemeSetting = config.mermaidTheme
+    if (setMermaidTheme(config.mermaidTheme)) redrawMermaid(view)
+  }
   if (typeof config.enableInProgress === 'boolean') setEnableInProgress(config.enableInProgress)
   if (typeof config.appendSource === 'boolean') appendSource = config.appendSource
   if (typeof config.sourceLabel === 'string' && config.sourceLabel) sourceLabel = config.sourceLabel

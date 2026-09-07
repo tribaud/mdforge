@@ -776,23 +776,15 @@ body.mdforge-presentation .cm-gutters {
 .cm-mermaid-target {
   min-width: 0;
 }
-.cm-mermaid svg {
+/* `> svg` on the TARGET, never `.cm-mermaid svg`: the ⤢ / ↻ / ✎ buttons live in
+   the same block and their icons are <svg> too — the loose selector blew the
+   zoom icon up from 13px to 22px inside its 24px button. */
+.cm-mermaid-target > svg {
   max-width: 100%;
   height: auto;
 }
 body.mdforge-mermaid-fit .cm-mermaid-target {
   flex: 1 1 auto;
-}
-body.mdforge-mermaid-fit .cm-mermaid svg {
-  width: 100%;
-  max-width: 100% !important;
-  /* Widening keeps the aspect ratio, so a tall narrow diagram would grow into a
-     page-long strip (a 4-node vertical chain measured 2138px). Cap the height at
-     most of the frame: the box still spans the column, and the SVG scales to the
-     capped height and sits centred in it (preserveAspectRatio, no distortion). So
-     wide diagrams take the whole width and tall ones stay readable — the ⤢ zoom
-     is there for a closer look. */
-  max-height: 80vh;
 }
 .cm-mermaid-error {
   display: block;

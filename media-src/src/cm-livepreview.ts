@@ -254,7 +254,7 @@ async function getMermaid(): Promise<unknown> {
 export function setMermaidTheme(theme: string): boolean {
   const prev = mermaidTheme
   mermaidTheme =
-    theme in MERMAID_THEMES ? (theme as MermaidTheme) : editorIsDark() ? 'dark' : 'default'
+    Object.hasOwn(MERMAID_THEMES, theme) ? (theme as MermaidTheme) : editorIsDark() ? 'dark' : 'default'
   if (mermaidMod) mermaidMod.initialize(mermaidConfig())
   return mermaidTheme !== prev
 }
@@ -290,6 +290,62 @@ function sweepMermaidOrphans(): void {
 // 'firstChild')". Serialize every render through a single promise chain so a doc
 // with several diagrams (or a manual refresh) renders them one at a time. This is
 // why entering/leaving the source — an isolated single re-render — used to fix it.
+/* ---------- fitting a diagram to the text column ----------
+ * Mermaid gives the <svg> an inline `max-width: <natural>px`; fitting means
+ * raising that ceiling to the column width. It has to be done here, in px,
+ * rather than with a CSS height cap: capping the HEIGHT letterboxes a tall
+ * diagram — the box keeps the column width and the drawing shrinks inside it,
+ * ending up SMALLER than its natural size (a 200×1500 diagram in an 800px column
+ * measured 96×720). So the ceiling is the width at which the diagram would be
+ * `FIT_MAX_HEIGHT` of the frame tall, and never below the natural width.
+ *
+ * The ceiling is written in px, clamped to the column measured here — NOT as
+ * `min(…, 100%)`: with the fit off the target is shrink-to-fit, a percentage has
+ * no definite width to resolve against, and the <svg> fell back to the 300px
+ * default of a replaced element (a 543px-wide diagram rendered at 300). */
+const FIT_MAX_HEIGHT = 0.8
+
+/** Returns true when it actually changed the element (so callers can avoid a
+ * pointless re-measure, and a geometry-driven refit cannot loop). */
+function fitMermaidSvg(target: Element): boolean {
+  const svg = target.firstElementChild
+  if (!(svg instanceof SVGSVGElement)) return false
+  const box = svg.viewBox.baseVal
+  const natural = box.width || svg.getBoundingClientRect().width
+  if (!natural) return false
+  const fit = document.body.classList.contains('mdforge-mermaid-fit')
+  const ratio = box.height ? box.width / box.height : 0
+  const capped = ratio ? Math.max(natural, window.innerHeight * FIT_MAX_HEIGHT * ratio) : Infinity
+  const ceiling = fit ? capped : natural
+  // Available width of the block, padding excluded (0 before the first layout).
+  const block = target.parentElement
+  const cs = block ? getComputedStyle(block) : null
+  const avail = block
+    ? block.clientWidth - parseFloat(cs?.paddingLeft || '0') - parseFloat(cs?.paddingRight || '0')
+    : 0
+  const width = avail > 0 ? Math.min(ceiling, avail) : ceiling
+  if (!Number.isFinite(width)) return false
+  // An explicit px WIDTH, not just a ceiling: mermaid emits `width="100%"` with
+  // no height, and a percentage against a shrink-to-fit parent is indefinite —
+  // the <svg> then falls back to the 300px default of a replaced element. That
+  // is why a diagram wider than 300px came out at 300px with the fit off.
+  const px = `${Math.round(width)}px`
+  if (svg.style.width === px) return false
+  svg.style.width = px
+  svg.style.maxWidth = px
+  return true
+}
+
+/** Re-fit every diagram on screen — the fit depends on the frame height, so a
+ * resize (or turning the setting off) invalidates it without re-rendering. */
+export function refitMermaid(view: EditorView): void {
+  let changed = false
+  document.querySelectorAll('.cm-mermaid-target').forEach((t) => {
+    if (fitMermaidSvg(t)) changed = true
+  })
+  if (changed) view.requestMeasure()
+}
+
 let mermaidQueue: Promise<void> = Promise.resolve()
 function renderMermaid(view: EditorView, el: HTMLElement, code: string): void {
   mermaidQueue = mermaidQueue.then(() => renderMermaidOnce(view, el, code)).catch(() => {})
@@ -301,6 +357,7 @@ async function renderMermaidOnce(view: EditorView, el: HTMLElement, code: string
     const { svg } = await m.render(id, code)
     el.classList.remove('cm-mermaid-error')
     el.innerHTML = svg
+    fitMermaidSvg(el)
   } catch (error: unknown) {
     // A first render can still fail transiently (fonts/layout not ready); a
     // single retry usually succeeds, so try once more before showing the error.

@@ -109,13 +109,24 @@ so it round-trips for free unless noted.
   (`nextTaskState`). `[~]` is an MDForge convention (GFM only has `[ ]`/`[x]`).
 - **Mermaid & math** (`MermaidWidget`/`MathWidget`): rendered SVG/KaTeX as a block
   widget. A diagram is scaled up to the **full text column**
-  (`mdforge.mermaid.fitWidth`, default on → body class `mdforge-mermaid-fit`):
-  mermaid writes `style="max-width:<natural>px"` on the `<svg>`, so only an
-  `!important` override widens it, and `height: auto` must beat its `height`
-  attribute or the viewBox is letterboxed instead of scaling. The upscale is capped
-  at `max-height: 80vh` — the ratio is preserved, so a tall narrow chain (a 4-node
-  `graph TD` measured 2138px once fitted) stays readable and centred instead of
-  becoming a page-long strip.
+  (`mdforge.mermaid.fitWidth`, default on → body class `mdforge-mermaid-fit`), by
+  `fitMermaidSvg` — in **JS, in px**, not in CSS:
+  - mermaid emits `width="100%"` and `style="max-width:<natural>px"` on the `<svg>`
+    and no height. A percentage against the shrink-to-fit target has no definite
+    width to resolve against, so the browser fell back to the **300px** default of
+    a replaced element: that is the old bug that made every diagram wider than
+    300px look small. The width is therefore computed and written.
+  - the ceiling is the width at which the diagram would be `FIT_MAX_HEIGHT` (80%)
+    of the frame tall, floored at the natural width, clamped to the column.
+    **Never a CSS `max-height`**: that letterboxes a tall diagram — the box keeps
+    the column width and the drawing shrinks inside it, ending up *smaller* than
+    natural (a 200×1500 diagram in an 800px column measured 96×720).
+  - it is re-run on render, on `resize`, on `update.geometryChanged` (a split or a
+    side panel changes the column without a window resize) and on both toggles;
+    it writes nothing when the value is unchanged, so it cannot feed itself.
+  - the CSS selectors are `.cm-mermaid-target > svg`, never `.cm-mermaid svg`: the
+    ⤢ / ↻ / ✎ buttons sit in the same block and their icons are `<svg>` too — the
+    loose selector blew the zoom icon from 13px up to 22px.
   `✎ Éditer` drops the caret into the source (which, via reveal-on-edit,
   shows the raw source with a live "Aperçu" preview + `✓ Terminer` to leave).
   Mermaid parse-error orphan nodes are swept from `document.body` after each
@@ -294,8 +305,11 @@ so it round-trips for free unless noted.
   `setPageWidth` so the host writes the setting **globally** (a reading width is
   not per-workspace) and the config watcher echoes it back to every open editor —
   `applyPageWidth` is the single place that paints class, icon and tooltip. Both
-  toggles call `view.requestMeasure()`: a wider column re-wraps every line and
-  re-scales every fitted diagram, so CodeMirror's measured heights go stale.
+  toggles call `refitMermaid()`: a wider column re-wraps every line and re-scales
+  every fitted diagram, so CodeMirror's measured heights go stale. The host writes
+  the setting back at the level where it is already defined (`inspect()`) — a plain
+  Global write under a workspace value is shadowed by it, the echo snaps the button
+  back, and the user's global preference changed for nothing.
 - **Justified text** (`mdforge.textAlign: justify`): display only, a
   `mdforge-justify` body class → `text-align: justify` on `.cm-line`, minus
   headings / code / frontmatter / blank lines. It only shows on **soft-wrapped**
