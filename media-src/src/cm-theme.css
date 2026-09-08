@@ -282,6 +282,41 @@ body.mdforge-presentation .cm-gutters {
   cursor: pointer;
   padding: 0 4px;
 }
+
+/* --- Quick diff: what changed since git, in MDForge's own margin.
+   The bars ARE the gutter elements (the markers carry no DOM), so a line's bar
+   is exactly as tall as the line — including a compacted blank one. */
+.cm-quickdiff-gutter {
+  width: 3px;
+  margin-right: 5px;
+}
+.cm-quickdiff-gutter .cm-gutterElement {
+  position: relative;
+}
+.cm-qd-added {
+  background: var(--vscode-editorGutter-addedBackground, #2ea043);
+}
+.cm-qd-modified {
+  background: var(--vscode-editorGutter-modifiedBackground, #0c7d9d);
+}
+/* A deletion has no line of its own: a wedge points at the seam it left. It is
+   wider than the 3px bars on purpose — at their width it read as a speck. */
+.cm-qd-deleted::after,
+.cm-qd-deleted-end::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  border-left: 5px solid var(--vscode-editorGutter-deletedBackground, #f85149);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.cm-qd-deleted::after {
+  top: -4px;
+}
+/* Cut at the end of the document: the seam is below the last line, not above. */
+.cm-qd-deleted-end::after {
+  bottom: -4px;
+}
 .cm-foldPlaceholder {
   margin: 0 4px;
   padding: 0 6px;

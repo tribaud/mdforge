@@ -46,35 +46,50 @@ it fully before making changes.
 | Path | Role |
 | --- | --- |
 | `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
+| `src/quickdiff.ts` | **Quick diff**, host side: resolves the built-in `vscode.git` API, reads the base blob (index → `HEAD`), watches doc/repo/setting, posts the line changes. |
+| `src/linediff.ts` | `diffLines` — the patience line diff behind the quick-diff margin. Imports nothing, so it is testable (`npm run test:quickdiff`). |
 | `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
 | `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
 | `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble; `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
 | `media-src/src/cm-slash.ts` | `/` slash command menu (`createSlashMenu(view).update`). |
 | `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
 | `media-src/src/cm-block-drag.ts` | Left-margin block controls: draggable `⠿` handle (reorders top-level blocks / heading sections, click = select the block) and the `▾`/`▸` fold chevron. |
+| `media-src/src/cm-quickdiff.ts` | Quick-diff margin: a CodeMirror `gutter()` whose markers are the added/modified/deleted bars the host computed. |
 | `media-src/src/cm-paste-html.ts` | Paste HTML→Markdown (turndown+GFM, escaping OFF, MathML→LaTeX, footnote rewrite + per-section renumber). |
 | `media-src/src/cm-theme.css` | All styling, VS Code light/dark aware. |
 | `media-src/src/turndown-plugin-gfm.d.ts` | Type shim for `turndown-plugin-gfm`. |
 | `esbuild.mjs` | Bundles the webview (ESM + code splitting) to `media/dist/`. |
 | `scripts/cm-preview.mjs` | Headless preview harness (`npm run preview`). |
+| `scripts/quickdiff.test.mjs` | Line-diff tests (`npm run test:quickdiff`). |
 | `SPEC.md` | Feature roadmap. |
 
 ## 3. How it fits together
 
 - The extension registers a `CustomTextEditorProvider` for `*.md`/`*.markdown`
-  at `priority: "option"` (**opt-in**, not the default editor). For each document
-  it creates a webview whose HTML loads `media/dist/main.js` under a strict CSP
-  (nonce + `webview.cspSource`, plus `wasm-unsafe-eval`, `worker-src blob:`,
-  `connect-src` for Mermaid/KaTeX).
-- **Why opt-in, not default (the diff constraint).** A custom editor (webview)
-  *cannot* render inside VS Code's diff editor: each side is handed to a separate
-  webview that only receives its own version — never the counterpart or VS Code's
-  computed diff — so red/green is impossible. Making MDForge the default therefore
-  breaks **every** git comparison. Keeping the native text editor as the default
-  preserves all of those. Users switch per file via the **`editor/title` buttons**
-  (book icon → `mdforge.openEditor`; code icon → `mdforge.openWithTextEditor`) or
-  `Ctrl/Cmd+Shift+Alt+M`. (Same reason VS Code's own Markdown preview is a side
-  panel.)
+  at `priority: { "textEditor": "default", "diffEditor": "explicit" }` — the
+  **default** editor for notes, and never the one used for a diff. For each
+  document it creates a webview whose HTML loads `media/dist/main.js` under a
+  strict CSP (nonce + `webview.cspSource`, plus `wasm-unsafe-eval`,
+  `worker-src blob:`, `connect-src` for Mermaid/KaTeX).
+- **Why per-editor-kind priority (the diff constraint, and how it was lifted).**
+  A custom editor (webview) *cannot* render inside VS Code's diff editor: each
+  side is handed to a separate webview that only receives its own version — never
+  the counterpart or VS Code's computed diff — so red/green is impossible. That
+  is still true (§9). Until VS Code 1.129 it also made MDForge unusable as the
+  default editor, because one `priority` string governed the normal editor AND
+  the diff slot: `"default"` meant **every** git comparison opened in MDForge,
+  i.e. broke. So MDForge shipped `"option"` (opt-in) through 0.5.x.
+  **1.133 finalized per-kind priority** (microsoft/vscode#292379), and since
+  1.129 the diff priority no longer inherits from the editor one — it defaults to
+  `explicit`, so a custom editor is left out of diffs unless it opts in
+  (`contributedCustomEditors.ts`, `getPriorityFromContribution`). MDForge states
+  both halves explicitly: default for notes, never for diffs. **This is what
+  `engines.vscode: ^1.133.0` buys** — on an older VS Code the object form is not
+  understood and `default` would hijack the diff editor again, so the engine
+  floor is the safety, not a formality. Users still switch per file via the
+  **`editor/title` buttons** (book icon → `mdforge.openEditor`; code icon →
+  `mdforge.openWithTextEditor`) or `Ctrl/Cmd+Shift+Alt+M`, and can put the text
+  editor back for good with `workbench.editorAssociations`.
 - **Sync**: host → webview posts `setContent` on external changes; webview → host
   posts `edit` with the new Markdown (whole-document replace via `WorkspaceEdit`).
   A `syncedText`/`applyingRemote` guard avoids echo loops. Because the CM document
@@ -82,7 +97,8 @@ it fully before making changes.
   perfect diffs.** On the first `setContent` the caret is placed past any
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
-  `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`, `tags`.
+  `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`,
+  `quickDiff`, `tags`.
   webview→host: `ready`, `edit`, `setPageWidth`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
   `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
@@ -322,6 +338,35 @@ so it round-trips for free unless noted.
   The action posts `requestQuickFix` → host `runQuickFix` runs
   `executeCodeActionProvider` + a `showQuickPick` + applies the chosen edit/command
   (no webview lightbulb).
+- **Quick diff** (`mdforge.quickDiff`, default on): what changed since git, in
+  MDForge's own margin — the single-file half of the diff story the native diff
+  editor cannot give us (§9), and it needs no proposed API. Host side, `QuickDiff`
+  (`src/quickdiff.ts`) resolves the built-in **`vscode.git`** extension's API
+  (a local structural interface — the Git extension's `git.d.ts` ships inside VS
+  Code, not as a package, and MDForge has **zero runtime dependencies**), reads
+  the base with `repository.show(ref, fsPath)` — `''` (the index) then `HEAD`,
+  the same base as VS Code's own quick diff — and diffs it against
+  `document.getText()`, i.e. the **live** text, unsaved edits included. It
+  recomputes on doc change (debounced 300ms — the webview posts an `edit` per
+  keystroke), on `repository.state.onDidChange` (commit, stage, branch switch)
+  and on the setting; a `generation` counter drops a stale `show()`, and an
+  identical result is not re-posted. Untracked file, no repository, Git disabled
+  → empty, never an error.
+  `diffLines` lives apart in **`src/linediff.ts`**, which imports nothing, so
+  `npm run test:quickdiff` can exercise it outside an Extension Host. It is a
+  **patience diff**: trim the common prefix/suffix, anchor on lines occurring
+  exactly once on each side, recurse between anchors, and only fall back to an
+  exact LCS inside an anchorless region (one rewritten paragraph). The anchors
+  are not an optimization — with the plain quadratic LCS, two edits far apart in
+  a 3000-line note blew the cell budget and painted the WHOLE file as modified.
+  Webview side (`cm-quickdiff.ts`): a real CodeMirror **`gutter()`**, not a
+  marker placed against `view.dom` — CM then owns the vertical layout, so the
+  bars follow folding, compacted blank lines and scrolling with none of the
+  re-placement gotchas the `⠿` handle has (§5). The markers carry no DOM at all,
+  only `elementClass`, so a bar IS the gutter element and is exactly as tall as
+  its line. Between two host posts they are mapped through the user's edits.
+  A deletion has no line of its own: it is one wedge at the seam, clamped onto
+  the last line when the cut is at the end of the document.
 - **Reformatting** (host-side, pure, in `extension.ts`): `formatMarkdown(text,
   joinParas)` = the optional paragraph unwrap, then the blank-line pass.
   - `normalizeBlankLines`: MD012 collapse dupes / MD022 around headings / MD031
@@ -441,10 +486,13 @@ so it round-trips for free unless noted.
 npm install
 npm run build                 # tsc (extension) + esbuild (webview) → media/dist
 npx tsc -p media-src --noEmit # webview type-check (also in CI)
+npm run test:quickdiff        # the line diff behind the quick-diff margin
 ```
 
-- Press **F5** to open an Extension Development Host, then right-click a `.md` →
-  **Open with MDForge** (or `Ctrl/Cmd+Shift+Alt+M`).
+- MDForge is now the **default** editor for `.md`/`.markdown`, so opening one is
+  enough; the code icon (or `Ctrl/Cmd+Shift+Alt+M`) goes back to the text editor.
+  A **git diff still opens natively** — that is `diffEditor: "explicit"` doing its
+  job, and it is the first thing to check after touching `contributes.customEditors`.
 - The headless harness ships a built-in sample; feed your own document with
   `node scripts/cm-preview.mjs <file.md>` to exercise a specific case.
 - **Headless preview** (stand-in for F5 when there's no GUI): `npm run preview`
@@ -494,25 +542,42 @@ directly.
 - Justification is a **view** preference: nothing is written into the Markdown. It
   needs `mdforge.format.paragraphs: oneLine` + one reformat to be visible on
   hard-wrapped prose.
+- The **quick-diff margin** marks lines, and stops there: no inline word diff, no
+  "revert this hunk", no peek of the previous version — those are the diff
+  editor's job, and the diff editor is still out of reach (below). It also needs
+  the built-in Git extension enabled; SCMs other than git show nothing.
 - **Perf**: `buildDecorations` re-scans the whole document on every selection
   change. Fine for normal notes; add a viewport limit before very large files.
 - Bundle size: mermaid (many diagram chunks), KaTeX fonts and the
   `@codemirror/language-data` grammars dominate `media/dist`.
 
-### Native diff editor — blocked on proposed API (watch actively)
+### Native diff editor — still blocked on a proposed API (watch actively)
 
 MDForge **cannot** render inside VS Code's native diff editor. A
 `CustomTextEditorProvider` webview only ever receives its own side, never the
-counterpart or the computed diff — so red/green is impossible. VS Code's own
-experimental Markdown editor gets native diffs only via **proposed APIs**
-(`customEditorDiffs` — `resolveCustomTextEditorInlineDiff(documents:{original,
-modified}, singleWebview)` — and `customEditorPriority`), which are stripped for
-Marketplace extensions. **Watch for these to graduate to stable** (track
-microsoft/vscode#292379). When stable, implement
-`resolveCustomTextEditorInlineDiff` and drop the opt-in-only stance. Interim: the
-diff editor's title bar carries two buttons (`mdforge.openDiffOriginal` /
-`openDiffModified`) to open either side in MDForge as a normal editor. Full audit
-in repo memory (`mdforge-vscode-diff-audit`).
+counterpart or the computed diff — so red/green is impossible. The API that
+would fix it, **`customEditorDiffs`**, is still proposed on `main` (checked
+2026-09, VS Code 1.138) and has grown to four entry points —
+`resolveCustomTextEditor{Inline,SideBySide}Diff` plus the two
+`CustomReadonlyEditorProvider` equivalents. It is hard-gated:
+`extHostCustomEditors.ts` computes `supportsInlineDiff` / `supportsSideBySideDiff`
+through `isProposedApiEnabled(extension, 'customEditorDiffs')`, which is false for
+anything off the Marketplace. Opting into the diff slot **without** the proposal
+falls back to two independent MDForge webviews side by side (`customEditors.ts`,
+`createDiffEditorInput`), each holding only its own version — no red/green, no
+synced scroll. Not worth shipping; hence `diffEditor: "explicit"`.
+
+**Watch**: microsoft/vscode#333400 (finalization asked 2026-08-30, no milestone,
+no answer yet) and #315174 (*Enable using the markdown preview in the diff view*,
+On Deck). When it lands, implement `resolveCustomTextEditorInlineDiff` (+ the
+side-by-side variant) and flip `diffEditor` to `option`. What already graduated —
+per-kind `priority`, #292379, VS Code 1.133 — is what let MDForge become the
+default editor (§3); do not confuse the two.
+
+Interim, and shipped: the diff editor's title bar carries two buttons
+(`mdforge.openDiffOriginal` / `openDiffModified`) to open either side in MDForge
+as a normal editor, and the **quick-diff margin** (§4) covers the single-file
+case with stable API. Full audit in repo memory (`mdforge-vscode-diff-audit`).
 
 ## 10. Publishing
 

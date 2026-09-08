@@ -17,7 +17,13 @@ built against [`SPEC.md`](./SPEC.md).
 
 Working now:
 
-- Custom editor for `.md` / `.markdown` (opt-in) with two-way sync to the file.
+- Custom editor for `.md` / `.markdown`, two-way synced with the file. It is the
+  **default** editor for Markdown; the code icon in the title bar (or
+  `Ctrl/Cmd+Shift+Alt+M`) opens the plain text editor instead, and
+  `workbench.editorAssociations` makes that choice permanent. **Git comparisons
+  keep opening in VS Code's native diff editor**, red/green intact.
+- **Quick diff**: the lines added, changed or removed since the last commit are
+  marked in the left margin, live as you type (`mdforge.quickDiff`).
 - WYSIWYG editing: headings, bold/italic/strikethrough, quotes, lists, links,
   images, code blocks, GFM tables.
 - **Clickable task lists** (`- [ ]` / `- [x]`).
@@ -34,9 +40,10 @@ npm install
 npm run build      # compiles the extension (tsc) + bundles the webview (esbuild)
 ```
 
-Then press `F5` in VS Code to launch an Extension Development Host, open a
-Markdown file, right-click it and choose **Open with MDForge** (or run the
-command **MDForge: Open with MDForge**, or press `Ctrl/Cmd+Shift+Alt+M`).
+Then press `F5` in VS Code to launch an Extension Development Host and open a
+Markdown file — MDForge is the default editor for those. To go back to the plain
+text editor, use the code icon in the title bar, the command **MDForge: Reopen
+with Text Editor**, or `Ctrl/Cmd+Shift+Alt+M`.
 
 Watch mode during development:
 
@@ -50,6 +57,7 @@ npm run watch:webview  # webview bundle
 | Part | Path | Role |
 | --- | --- | --- |
 | Extension host | `src/extension.ts` | `CustomTextEditorProvider`, webview wiring, file ↔ webview sync |
+| Quick diff | `src/quickdiff.ts` + `src/linediff.ts` | Reads the committed text through the built-in Git extension and diffs it against the live one |
 | Webview app | `media-src/src/main.ts` + `cm-*.ts` | CodeMirror 6 live-preview editor |
 | Theme | `media-src/src/cm-theme.css` | GitHub-style CSS, VS Code theme-aware |
 | Build | `esbuild.mjs` | Bundles the webview to `media/dist/` |

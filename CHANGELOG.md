@@ -49,6 +49,34 @@ All notable changes to MDForge are documented here. The format follows
   the last word over all of them.
   Pie slices get an explicit ramp of tints per theme: derived from a monochrome
   palette they came out as three indistinguishable near-white wedges.
+- **Quick diff in the margin**: the lines you added, changed or removed since the
+  last commit are marked in MDForge's own left margin — green for an addition,
+  blue for a change, a red wedge where something was cut. It follows the **live**
+  text, so an unsaved edit shows up immediately, and it updates on its own when
+  you commit, stage or switch branch. The comparison base is the staged version
+  of the file, falling back to `HEAD` — the same one VS Code's own gutter uses.
+  Switch it off with `mdforge.quickDiff`. A file outside a repository, or one git
+  has never seen, simply shows nothing.
+
+### Changed
+
+- **MDForge is now the default editor for `.md` / `.markdown`** — opening a note
+  opens MDForge, no more "Open with". **Git comparisons are unaffected**: a diff
+  still opens in VS Code's native diff editor, red/green intact. This was the one
+  thing that kept MDForge opt-in, and VS Code 1.133 lifted it by letting an editor
+  state its priority per editor kind (`textEditor` / `diffEditor`) instead of one
+  value governing both. The code icon in the title bar, or
+  `Ctrl/Cmd+Shift+Alt+M`, still opens any note in the plain text editor, and
+  `workbench.editorAssociations` puts it back as the default for good.
+  **If you already have an association for `*.md`, it wins and nothing changes
+  for you** — a user setting always overrides what an extension declares. That
+  entry is easy to have acquired without meaning to: VS Code writes it whenever
+  you pick "Reopen Editor With… → Configure default editor". Look for
+  `"workbench.editorAssociations": { "*.md": "default" }` in your settings and
+  drop it, or point it at `"mdforge.editor"`.
+- **Requires VS Code 1.133 or later** (was 1.90). The per-kind priority above does
+  not exist before it, and on an older VS Code MDForge would take over the diff
+  editor as well — which is exactly what it must not do.
 
 ### Fixed
 
