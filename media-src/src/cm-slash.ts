@@ -30,6 +30,7 @@ const ITEMS: SlashItem[] = [
   { label: 'Titre 1', hint: 'Grand titre', keywords: 'h1 heading titre 1', insert: '# ' },
   { label: 'Titre 2', hint: 'Sous-titre', keywords: 'h2 heading titre 2', insert: '## ' },
   { label: 'Titre 3', hint: 'Sous-sous-titre', keywords: 'h3 heading titre 3', insert: '### ' },
+  { label: 'Titre 4', hint: 'Quatrième niveau', keywords: 'h4 heading titre 4', insert: '#### ' },
   { label: 'Liste à puces', hint: '- élément', keywords: 'bullet list puces ul', insert: '- ' },
   { label: 'Liste numérotée', hint: '1. élément', keywords: 'ordered numbered ol numero', insert: '1. ' },
   { label: 'Case à cocher', hint: '- [ ] tâche', keywords: 'task todo checkbox case', insert: '- [ ] ' },
