@@ -986,6 +986,8 @@ window.addEventListener('message', (event) => {
     items?: RawDiagnostic[]
     changes?: QuickDiffChange[]
     matches?: SearchMatch[]
+    query?: string
+    caseSensitive?: boolean
     tags?: string[]
     keys?: string[]
     scannedAt?: number
@@ -1015,7 +1017,7 @@ window.addEventListener('message', (event) => {
       if (Array.isArray(msg.changes)) setQuickDiff(view, msg.changes)
       break
     case 'searchMatches':
-      if (Array.isArray(msg.matches)) showSearchMatches(view, msg.matches)
+      if (Array.isArray(msg.matches)) showSearchMatches(view, msg.matches, msg.query, msg.caseSensitive)
       break
     case 'tags':
       if (Array.isArray(msg.tags)) {

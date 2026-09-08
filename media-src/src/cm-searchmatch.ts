@@ -25,6 +25,8 @@ export interface SearchMatch {
 
 const HIT = Decoration.line({ class: 'cm-search-hit' })
 const HIT_CURRENT = Decoration.line({ class: 'cm-search-hit cm-search-hit-current' })
+const WORD = Decoration.mark({ class: 'cm-search-word' })
+const WORD_CURRENT = Decoration.mark({ class: 'cm-search-word cm-search-word-current' })
 
 /**
  * What is currently marked: the line decorations, and the match offsets that
@@ -35,9 +37,11 @@ const HIT_CURRENT = Decoration.line({ class: 'cm-search-hit cm-search-hit-curren
 interface Marked {
   marks: DecorationSet
   offsets: number[]
+  /** Length of the term when it could be deduced, 0 when only lines are marked. */
+  length: number
 }
 
-const EMPTY: Marked = { marks: Decoration.none, offsets: [] }
+const EMPTY: Marked = { marks: Decoration.none, offsets: [], length: 0 }
 
 const setMatchesEffect = StateEffect.define<Marked>()
 
@@ -64,13 +68,27 @@ function offsetOf(view: EditorView, match: SearchMatch): number {
   return Math.min(line.from + Math.max(match.column - 1, 0), line.to)
 }
 
-/** Rebuild the marks, the current match's line carrying the brighter class. */
-function marksFor(view: EditorView, offsets: number[], current: number): DecorationSet {
+/**
+ * Rebuild the marks: the line of every match, plus the term itself when the
+ * host could deduce it — that is the "the word I searched for, highlighted"
+ * half, and the line stays underneath it so the eye finds the place first.
+ */
+function marksFor(view: EditorView, offsets: number[], current: number, length: number): DecorationSet {
   const doc = view.state.doc
   const currentLine = doc.lineAt(offsets[current]).from
-  // Two matches on the same line are one highlight.
+  // Two matches on the same line are one line highlight.
   const lines = [...new Set(offsets.map((offset) => doc.lineAt(offset).from))].sort((a, b) => a - b)
-  return Decoration.set(lines.map((from) => (from === currentLine ? HIT_CURRENT : HIT).range(from)))
+  const ranges = lines.map((from) => (from === currentLine ? HIT_CURRENT : HIT).range(from))
+  if (length > 0) {
+    for (let index = 0; index < offsets.length; index++) {
+      const from = offsets[index]
+      const to = Math.min(from + length, doc.lineAt(from).to)
+      if (to > from) ranges.push((index === current ? WORD_CURRENT : WORD).range(from, to))
+    }
+  }
+  // `true`: line and mark decorations interleave, and CodeMirror wants them
+  // sorted — cheaper to let it sort than to merge two ordered lists by hand.
+  return Decoration.set(ranges, true)
 }
 
 /**
@@ -79,12 +97,12 @@ function marksFor(view: EditorView, offsets: number[], current: number): Decorat
  * diagrams, KaTeX and images all land after CodeMirror measured, and a target
  * chosen before they did ends up off-screen.
  */
-function goTo(view: EditorView, offsets: number[], index: number): void {
+function goTo(view: EditorView, offsets: number[], index: number, length: number): void {
   const anchor = offsets[index]
   view.dispatch({
     selection: { anchor },
     effects: [
-      setMatchesEffect.of({ marks: marksFor(view, offsets, index), offsets }),
+      setMatchesEffect.of({ marks: marksFor(view, offsets, index, length), offsets, length }),
       EditorView.scrollIntoView(anchor, { y: 'center' })
     ]
   })
@@ -108,13 +126,58 @@ function settle(view: EditorView, anchor: number, attempt = 0): void {
   )
 }
 
-/** Show what the search found in this note, caret on the first match. */
-export function showSearchMatches(view: EditorView, matches: SearchMatch[]): void {
+/**
+ * Which occurrence to land on, given where the search said its first match was.
+ * The occurrence on that LINE if there is one — the column can have drifted, or
+ * the term may be a shorter guess than what was searched — and otherwise the
+ * nearest one, because the results can date from before the last few edits.
+ */
+function landing(view: EditorView, offsets: number[], reported: number): number {
+  const line = view.state.doc.lineAt(Math.min(reported, view.state.doc.length))
+  const onLine = offsets.findIndex((offset) => offset >= line.from && offset <= line.to)
+  if (onLine !== -1) return onLine
+  let best = 0
+  for (let index = 1; index < offsets.length; index++) {
+    if (Math.abs(offsets[index] - reported) < Math.abs(offsets[best] - reported)) best = index
+  }
+  return best
+}
+
+/** Every occurrence of the term in the note, in document order. */
+function occurrences(view: EditorView, query: string, caseSensitive: boolean): number[] {
+  const text = view.state.doc.toString()
+  const haystack = caseSensitive ? text : text.toLowerCase()
+  const needle = caseSensitive ? query : query.toLowerCase()
+  const found: number[] = []
+  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + 1)) {
+    found.push(at)
+  }
+  return found
+}
+
+/**
+ * Show what the search found in this note.
+ *
+ * With a term, the note's OWN occurrences are what gets marked and walked: they
+ * are read from the text in front of us, so they hold even if the file moved on
+ * since the search ran, and there are usually more of them than the search
+ * reported (a whole-word or case-sensitive search is narrower) — which is what
+ * `Ctrl+F` would have shown anyway. The line/column the search gave still
+ * decides WHERE to land: the first occurrence at or after its first match.
+ * Without a term, the reported positions are all there is, and the mark is the
+ * whole line.
+ */
+export function showSearchMatches(
+  view: EditorView,
+  matches: SearchMatch[],
+  query?: string,
+  caseSensitive = false
+): void {
   if (!view.state.field(matchesField, false) || matches.length === 0) return
-  // Sorted: `F8` walks them in document order, and the host's order is only as
-  // trustworthy as the text it parsed.
-  const offsets = [...new Set(matches.map((match) => offsetOf(view, match)))].sort((a, b) => a - b)
-  goTo(view, offsets, 0)
+  const reported = [...new Set(matches.map((match) => offsetOf(view, match)))].sort((a, b) => a - b)
+  const hits = query ? occurrences(view, query, caseSensitive) : []
+  const offsets = hits.length > 0 ? hits : reported
+  goTo(view, offsets, landing(view, offsets, reported[0]), hits.length > 0 ? query!.length : 0)
   // Take the keyboard only if the webview already has it — otherwise the user
   // is still walking the result list with the arrows, and stealing focus would
   // end that walk on its first step. `F8` needs the editor focused to work.
@@ -142,6 +205,6 @@ export function nextSearchMatch(view: EditorView, direction: 1 | -1): boolean {
     while (index >= 0 && offsets[index] >= head) index--
     if (index < 0) index = offsets.length - 1
   }
-  goTo(view, offsets, index)
+  goTo(view, offsets, index, marked.length)
   return true
 }

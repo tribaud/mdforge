@@ -29,6 +29,8 @@
 export interface SearchMatch {
   line: number
   column: number
+  /** The line as the search view printed it — what the query is deduced from. */
+  text?: string
 }
 
 /** Every match the search view currently holds for one file. */
@@ -65,7 +67,14 @@ export function parseSearchResults(text: string): FileMatches[] {
     if (match) {
       // A match before any path means the output is not what we think it is;
       // dropping it is the safe read.
-      current?.matches.push({ line: Number(match[1]), column: Number(match[2]) })
+      current?.matches.push({
+        line: Number(match[1]),
+        column: Number(match[2]),
+        // `<indent><line>,<col>: ` — the alignment padding VS Code inserts after
+        // the colon is only ever used on the FURTHER lines of a multi-line
+        // match, never on this one (its own prefix is always the longest).
+        text: line.slice(match[0].length + 1)
+      })
       continue
     }
     if (CONTINUATION_LINE.test(line)) continue
@@ -115,4 +124,67 @@ export function matchesForFile(
     (match, index) =>
       index === 0 || match.line !== found[index - 1].line || match.column !== found[index - 1].column
   )
+}
+
+/** Every match in the results EXCEPT those of one file — the corroborating samples. */
+export function otherMatches(text: string, fsPath: string, options: MatchOptions = {}): SearchMatch[] {
+  const wanted = normalize(fsPath, options)
+  const others: SearchMatch[] = []
+  for (const file of parseSearchResults(text)) {
+    const path = normalize(file.path, options)
+    const same = isAbsolute(path) ? path === wanted : wanted.endsWith('/' + path)
+    if (!same) others.push(...file.matches)
+  }
+  return others
+}
+
+/** Longest common prefix, compared without case. The first slice gives the case. */
+function commonPrefix(slices: string[]): string {
+  let length = Math.min(...slices.map((slice) => slice.length))
+  for (let index = 0; index < length; index++) {
+    const reference = slices[0][index].toLowerCase()
+    if (slices.some((slice) => slice[index].toLowerCase() !== reference)) {
+      length = index
+      break
+    }
+  }
+  return slices[0].slice(0, length)
+}
+
+/** A search term long enough to be worth highlighting, and not a whole line. */
+const MAX_QUERY = 120
+
+/**
+ * What the user typed in the search box — deduced, because the search view does
+ * not hand it over any more than it hands over the clicked result.
+ *
+ * Every match starts, by definition, with the term. So take the text of each
+ * matched line from its match column on, and keep what they all share: with two
+ * matches in different contexts, that common prefix IS the term. It can only
+ * ever come out too LONG (every match happening to be followed by the same
+ * word), never too short, which is why one lone match is not enough to guess
+ * from — `undefined` then, and the caller falls back to marking whole lines.
+ *
+ * The slices of the note being opened are taken from the note itself; the ones
+ * from other files can only come from the search view's preview text, which is
+ * trimmed for very long lines — a trimmed sample shortens the guess, it never
+ * corrupts it.
+ */
+export function deriveQuery(ours: SearchMatch[], samples: SearchMatch[], lineText: (line: number) => string | undefined): string | undefined {
+  const slices: string[] = []
+  for (const match of ours) {
+    const line = lineText(match.line)
+    if (line !== undefined && match.column - 1 < line.length) slices.push(line.slice(match.column - 1))
+  }
+  for (const match of samples) {
+    if (match.text !== undefined && match.column - 1 < match.text.length) {
+      slices.push(match.text.slice(match.column - 1))
+    }
+  }
+  if (slices.length < 2) return undefined
+  // Trailing whitespace is dropped: when every match is followed by a space,
+  // the common prefix runs one character past the term, and highlighting that
+  // space would look like a bug.
+  const query = commonPrefix(slices).slice(0, MAX_QUERY).replace(/\s+$/, '')
+  return query.length > 0 ? query : undefined
 }

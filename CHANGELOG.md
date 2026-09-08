@@ -13,15 +13,17 @@ All notable changes to MDForge are documented here. The format follows
   top, with nothing to say where the match was — VS Code does not pass the
   position to an editor like this one
   ([vscode#289785](https://github.com/microsoft/vscode/issues/289785)). MDForge
-  now recovers it from the Search view itself: the caret lands on the matching
-  line, the other matching lines in the note are marked, and `F8` /
-  `Shift+F8` walk them. Two honest limits: it is the **line** that is
-  highlighted, not the word (the match's length is nowhere to be found), and
-  when a note holds several matches you land on the first one rather than the
-  one you clicked. For the same reason MDForge cannot tell that a note was
-  opened *from* a result: with the Search view on screen, reaching a matching
-  note by `Ctrl+P` also lands on a match. Set `mdforge.revealSearchMatch` to
-  `false` to switch it off.
+  now recovers it from the Search view itself: the caret lands on the match and
+  **the term you searched for is highlighted everywhere in the note**, with
+  `F8` / `Shift+F8` to walk the occurrences. The term is not given either — it
+  is deduced from what the matches have in common — so a note holding a single
+  match, or a regex search, marks the whole line instead of the word. Two other
+  honest limits: with several matches you land on the first, not on the one you
+  clicked, and MDForge cannot tell that a note was opened *from* a result —
+  with the Search view on screen, reaching a matching note by `Ctrl+P` also
+  lands on a match. Set `mdforge.revealSearchMatch` to `false` to switch it
+  off. **`MDForge: Debug search reveal`** reports what the Search view answered
+  when nothing happens.
 
 ## [0.6.0]
 

@@ -101,6 +101,10 @@
         "command": "mdforge.normalizeBlankLines",
         "title": "MDForge: Reformat document (blank lines, paragraphs)",
         "category": "MDForge"
+      },
+      {
+        "command": "mdforge.debugSearchReveal",
+        "title": "MDForge: Debug search reveal"
       }
     ],
     "views": {
@@ -213,7 +217,7 @@
         "mdforge.revealSearchMatch": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "When a note is opened while the Search view is showing its results, go to the first match in that note and mark the other matching lines (`F8` / `Shift+F8` walk them). VS Code does not tell a custom editor which result was clicked ([microsoft/vscode#289785](https://github.com/microsoft/vscode/issues/289785)), so MDForge recovers the positions from the Search view itself — the line is highlighted, not the word."
+          "markdownDescription": "When a note is opened while the Search view is showing its results, go to the match and highlight the searched term everywhere in the note (`F8` / `Shift+F8` walk the occurrences). VS Code hands a custom editor neither the result that was clicked nor the query ([microsoft/vscode#289785](https://github.com/microsoft/vscode/issues/289785)); MDForge recovers what it can from the Search view, so a note with a single match — or a regex search — marks the line rather than the word. `MDForge: Debug search reveal` reports what the Search view answered."
         },
         "mdforge.fontSize": {
           "type": "number",

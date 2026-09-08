@@ -48,8 +48,8 @@ it fully before making changes.
 | `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
 | `src/quickdiff.ts` | **Quick diff**, host side: resolves the built-in `vscode.git` API, reads the base blob (index → `HEAD`), watches doc/repo/setting, posts the line changes. |
 | `src/linediff.ts` | `diffLines` — the patience line diff behind the quick-diff margin. Imports nothing, so it is testable (`npm run test:quickdiff`). |
-| `src/searchreveal.ts` | **Search reveal**, host side: calls the internal `search.action.getSearchResults` and posts the match positions for the note being opened. |
-| `src/searchmatches.ts` | `matchesForFile` — parses the search view's result text. Imports nothing, so it is testable (`npm run test:search`). |
+| `src/searchreveal.ts` | **Search reveal**, host side: calls the internal `search.action.getSearchResults`, deduces the term, and posts what the note being opened matched. |
+| `src/searchmatches.ts` | `matchesForFile` / `deriveQuery` — parses the search view's result text and deduces the search term from it. Imports nothing, so it is testable (`npm run test:search`). |
 | `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
 | `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
 | `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble; `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
@@ -385,14 +385,39 @@ so it round-trips for free unless noted.
   Consequences, all deliberate:
   - We learn **every** match in the file, never which one was clicked. MDForge
     goes to the first, marks the others, and `F8` / `Shift+F8` walk them.
-  - The match's **length is not in that output**, so the **line** is
-    highlighted, not the word (`.cm-search-hit`, and `-current` for the one the
-    caret is on — TWO classes, because the current match is also the active
-    line and CodeMirror's own `.cm-activeLine` background wins at equal
-    specificity).
+  - **The term itself is deduced** (`deriveQuery`), since the search view hands
+    it over no more than it hands over the click. Every match starts, by
+    definition, with the term: take each matched line from its match column on
+    and keep what they all share. With two matches in different contexts that
+    common prefix IS the term; it can only ever come out too LONG (every match
+    followed by the same word — hence the trailing whitespace trim), never too
+    short, so ONE lone match is not enough and the term is then left undeduced.
+    The note's own slices are read from the document, not from the search
+    view's preview text, which is trimmed on very long lines.
+    With a term, the note's OWN occurrences are what gets marked
+    (`.cm-search-word`, `-current` on the one under the caret) and walked —
+    read from the text in front of us, so they hold even if the file moved on,
+    and usually more numerous than what the search reported (a whole-word or
+    case-sensitive search is narrower), which is exactly what `Ctrl+F` would
+    have shown. Case sensitivity is inferred from a count discrepancy: more
+    occurrences ignoring case than the search found, and the same number with
+    it, means the case mattered.
+    Without a term, the mark is the whole **line** (`.cm-search-hit`, and
+    `-current` — TWO classes, because the current match is also the active line
+    and CodeMirror's own `.cm-activeLine` background wins at equal specificity).
+  - **A note that is already open answers no `ready`** — the webview is kept
+    (`retainContextWhenHidden`), so a result pointing at it only brings its tab
+    forward. The reveal therefore also runs from `onDidChangeViewState`, and a
+    per-note signature of `[query, matches]` (`remember`) keeps that from
+    re-jumping on every tab switch: the same note, for the same results, is
+    revealed once. A new webview forgets it (`forgetReveal`).
   - The command is **internal**. It is feature-detected once
     (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
-    "no matches": the note simply opens as it always did.
+    "no matches": the note simply opens as it always did. **`MDForge: Debug
+    search reveal`** (`mdforge.debugSearchReveal`) dumps what the search view
+    answered, what was parsed from it and what the active note matched — the
+    only way to tell "the format changed" from "the search view said nothing"
+    without a debugger.
   - **Nothing says the note was opened FROM a result.** `getSearchView` only
     requires the search view to be the ACTIVE view of its container — enough to
     rule out the Explorer, not a `Ctrl+P` with the results still on screen, and
@@ -605,7 +630,9 @@ directly.
   the built-in Git extension enabled; SCMs other than git show nothing.
 - **Search reveal knows every match in the note, never the one that was
   clicked** — VS Code drops the range (§4). The first match is where you land,
-  `F8` does the rest, and the highlight is a line, not a word. It cannot tell
+  and `F8` does the rest. The term is **deduced**, not given, so a note holding
+  a single match (and no other file to corroborate it) is marked by the line
+  rather than by the word, and a regex search deduces nothing. It cannot tell
   either that the note was opened FROM a result: with the search view on screen,
   a `Ctrl+P` to a matching note also lands on a match. It also leans on
   an internal command: if `search.action.getSearchResults` ever changes shape,

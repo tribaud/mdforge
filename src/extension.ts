@@ -2,7 +2,8 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { QuickDiff } from './quickdiff'
-import { searchMatches, suppressReveal } from './searchreveal'
+import { searchMatches, suppressReveal, forgetReveal, rawSearchResults } from './searchreveal'
+import { parseSearchResults } from './searchmatches'
 
 const VIEW_TYPE = 'mdforge.editor'
 
@@ -70,6 +71,55 @@ export function activate(context: vscode.ExtensionContext): void {
         suppressReveal(input.modified)
         await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
       }
+    }),
+    /*
+     * Why the reveal did or did not fire. The whole feature rests on an
+     * internal command and on a text format that is nobody's contract, so
+     * "nothing happened" has to be diagnosable without a debugger: this dumps
+     * what the search view answered, what was parsed out of it, and what the
+     * note being looked at matched.
+     */
+    vscode.commands.registerCommand('mdforge.debugSearchReveal', async () => {
+      const active = outline.active
+      const results = await rawSearchResults()
+      const lines: string[] = ['# MDForge — search reveal, diagnostic', '']
+      lines.push(`- Command available: **${results === undefined ? 'no' : 'yes'}**`)
+      lines.push(`- Results returned: **${results === undefined ? '—' : `${results.length} chars`}**`)
+      lines.push(
+        `- MDForge editor active: **${active ? vscode.workspace.asRelativePath(active.document.uri) : 'none'}**`
+      )
+      if (active) {
+        const enabled = vscode.workspace
+          .getConfiguration('mdforge', active.document.uri)
+          .get<boolean>('revealSearchMatch', true)
+        lines.push(`- \`mdforge.revealSearchMatch\`: **${enabled}**`)
+        const target = await searchMatches(active.document)
+        lines.push(`- Matches found for it: **${target.matches.length}**`)
+        lines.push(`- Term deduced: **${target.query === undefined ? 'none' : `\`${target.query}\``}**`)
+        lines.push(`- Case-sensitive: **${target.caseSensitive === true}**`)
+        lines.push(`- Path compared: \`${active.document.uri.fsPath}\``)
+      }
+      if (results !== undefined) {
+        const files = parseSearchResults(results)
+        lines.push('', '## Files the search view listed', '')
+        for (const file of files.slice(0, 40)) {
+          lines.push(`- \`${file.path}\` — ${file.matches.length} match(es)`)
+        }
+        if (files.length > 40) lines.push(`- … and ${files.length - 40} more`)
+        lines.push('', '## Raw answer (first 4000 chars)', '', '```text', results.slice(0, 4000), '```')
+      } else {
+        lines.push(
+          '',
+          'The search view answered nothing. It only answers while **the Search view is',
+          'the one showing in its container** — run a search, leave the results on screen,',
+          'then run this command again.'
+        )
+      }
+      const doc = await vscode.workspace.openTextDocument({
+        content: lines.join('\n'),
+        language: 'markdown'
+      })
+      await vscode.window.showTextDocument(doc, { preview: false })
     }),
     // On-demand reformat of the active note (blank lines + paragraphs).
     vscode.commands.registerCommand('mdforge.normalizeBlankLines', async () => {
@@ -819,7 +869,12 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     // Track which MDForge editor is active so the outline follows it.
     if (webviewPanel.active) this.outline.setActive(document, webview)
     const viewStateSubscription = webviewPanel.onDidChangeViewState(() => {
-      if (webviewPanel.active) this.outline.setActive(document, webview)
+      if (!webviewPanel.active) return
+      this.outline.setActive(document, webview)
+      // A search result pointing at a note that is ALREADY open only brings its
+      // tab forward — the webview is kept alive, so there is no second `ready`
+      // to hang the reveal on. Hence here too, once per set of results.
+      void revealSearchMatch()
     })
 
     const configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -867,8 +922,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       // tabs it shows, and a note reopened in the background has no business
       // jumping to a match.
       if (!enabled || !webviewPanel.active) return
-      const matches = await searchMatches(document.uri)
-      if (matches.length > 0) void webview.postMessage({ type: 'searchMatches', matches })
+      const target = await searchMatches(document)
+      if (target.matches.length > 0) void webview.postMessage({ type: 'searchMatches', ...target })
     }
 
     webview.onDidReceiveMessage(
@@ -898,6 +953,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             postDocument()
             postDiagnostics()
             quickDiff.refresh()
+            // A new webview shows nothing of what the previous one revealed.
+            forgetReveal(document.uri)
             void revealSearchMatch()
             break
           case 'edit':
