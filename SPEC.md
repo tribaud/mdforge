@@ -26,8 +26,8 @@
 - [x] Synchro bidirectionnelle avec le fichier et l'éditeur texte VS Code
 - [x] Titres H1–H6, gras, italique, barré, citations
 - [x] Listes ordonnées / non ordonnées, liens, images, règles horizontales *(insertion d'images : coller / glisser / parcourir + popup d'édition chemin & alt)*
-- [x] Blocs de code avec coloration selon le langage *(Shiki, thèmes GitHub)*
-- [x] Tables GFM (rendu + édition)
+- [x] Blocs de code avec coloration selon le langage *(`@lezer/highlight` + grammaires `@codemirror/language-data`, sélecteur de langage flottant)*
+- [x] Tables GFM (rendu + édition) *(cellules riches : images, Markdown imbriqué, HTML filtré ; édition d'une cellule sans ouvrir la table ; largeurs de colonnes redimensionnables, stockées en commentaire HTML)*
 - [x] **Task lists cliquables** `[ ]` / `[x]`
 - [x] **Mermaid** (rendu + édition avec coloration du source)
 - [x] **Thème GitHub** clair/sombre suivant VS Code
@@ -41,8 +41,13 @@
 - [x] Panneau Outline (arborescence **repliable**)
 - [x] En-têtes repliables *(outline repliable + pliage in-document via chevron)*
 - [x] Notes de bas de page (footnotes) *(clic référence → définition)*
-- [x] Frontmatter (barre discrète + édition YAML, `title` → H1)
-- [x] Réglages : police, taille, largeur de page ; **thème Mermaid dédié** (auto / default / dark / neutral / forest) ; images (dossier, nommage, hash, style de lien)
+- [x] Frontmatter (carte : `title` → H1, autres clés en pastilles ; édition propriété par propriété, complétion des tags depuis l'atelier, ajout de clé ; `✎` → YAML brut)
+- [x] Réglages : police, taille, largeur de page *(bascule dans la barre d'outils)* ; **thème Mermaid dédié** (auto / default / dark / neutral / forest / blue / blue-dark / contrast / contrast-dark) ; images (dossier, nommage, hash, style de lien)
+- [x] **Éditeur par défaut** des `.md` / `.markdown` — priorité déclarée par type d'éditeur, les comparaisons git restent dans le diff natif (VS Code 1.133+)
+- [x] **Marge « quick diff »** : lignes ajoutées / modifiées / supprimées depuis git (index puis `HEAD`), sur le texte vivant
+- [x] Diagnostics du linter dans l'éditeur (soulignement, bulle, « Corrections rapides… »)
+- [x] Reformatage **à la demande** (lignes vides MD012/MD022/MD031/MD047 + paragraphes sur une ligne) ou à la sauvegarde
+- [x] Numéros de ligne, justification du texte, diagrammes Mermaid à la largeur du texte
 
 ### P2 — Confort / avancé
 - [x] Wikilinks `[[...]]` *(cliquables ; brackets encore visibles en édition)*
@@ -57,7 +62,9 @@
 ### Idées suivantes (backlog)
 - [ ] Masquer les marqueurs `[[ ]]` des wikilinks en édition/lecture
 - [ ] Réduire le clignotement de la barre d'outils
-- [ ] Alléger le bundle Shiki (liste de langages)
+- [ ] Alléger le bundle (mermaid, polices KaTeX, grammaires `language-data`)
+- [ ] Limiter la construction des décorations au viewport (très gros documents)
+- [ ] Rendu dans le diff natif de VS Code — bloqué sur l'API proposée `customEditorDiffs`
 - [ ] Alertes : marqueur `[!TYPE]` sur sa propre ligne (parité GitHub stricte)
 
 ## 4. Cases à cocher — états personnalisés

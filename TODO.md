@@ -13,5 +13,7 @@ par priorité). Statut : `[~]` partiel · `[ ]` à faire.
 
 - [ ] Masquer les marqueurs `[[ ]]` des wikilinks en édition/lecture.
 - [ ] Réduire le clignotement de la barre d'outils de sélection.
-- [ ] Alléger le bundle Shiki (trimmer la liste de langages).
+- [ ] Alléger le bundle (mermaid, polices KaTeX, grammaires `language-data`).
+- [ ] Limiter la construction des décorations au viewport (très gros documents).
+- [ ] Rendu dans le diff natif de VS Code — bloqué sur l'API proposée `customEditorDiffs`.
 - [ ] Alertes : marqueur `[!TYPE]` sur sa propre ligne (parité GitHub stricte).
