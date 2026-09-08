@@ -2,6 +2,7 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { QuickDiff } from './quickdiff'
+import { searchMatches } from './searchreveal'
 
 const VIEW_TYPE = 'mdforge.editor'
 
@@ -845,6 +846,21 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     assetWatcher.onDidCreate(postRefresh)
     assetWatcher.onDidDelete(postRefresh)
 
+    /*
+     * A click on a workspace-search result opens MDForge with no idea of where
+     * the match was: VS Code drops the range for a custom editor. The positions
+     * are dug back out of the search view itself (src/searchreveal.ts), once,
+     * when the editor opens.
+     */
+    const revealSearchMatch = async (): Promise<void> => {
+      const enabled = vscode.workspace
+        .getConfiguration('mdforge', document.uri)
+        .get<boolean>('revealSearchMatch', true)
+      if (!enabled) return
+      const matches = await searchMatches(document.uri)
+      if (matches.length > 0) void webview.postMessage({ type: 'searchMatches', matches })
+    }
+
     webview.onDidReceiveMessage(
       async (message: {
         type: string
@@ -872,6 +888,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             postDocument()
             postDiagnostics()
             quickDiff.refresh()
+            void revealSearchMatch()
             break
           case 'edit':
             // NOT merged into the tag index here: this fires on every keystroke,

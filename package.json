@@ -210,6 +210,11 @@
           "default": true,
           "markdownDescription": "Mark the lines added, modified or deleted since the last commit in the left margin. Compares the editor's live text (including unsaved changes) against the staged version, falling back to `HEAD`. Needs the built-in Git extension; files outside a repository show nothing."
         },
+        "mdforge.revealSearchMatch": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When a note is opened while the Search view is showing its results, go to the first match in that note and mark the other matching lines (`F8` / `Shift+F8` walk them). VS Code does not tell a custom editor which result was clicked ([microsoft/vscode#289785](https://github.com/microsoft/vscode/issues/289785)), so MDForge recovers the positions from the Search view itself — the line is highlighted, not the word."
+        },
         "mdforge.fontSize": {
           "type": "number",
           "default": 15,
@@ -346,6 +351,7 @@
     "test:fidelity": "npm run build:webview && node scripts/cm-fidelity.test.mjs",
     "test:paste": "npm run build:webview && node scripts/cm-paste.test.mjs",
     "test:quickdiff": "npm run compile:ext && node scripts/quickdiff.test.mjs",
+    "test:search": "npm run compile:ext && node scripts/searchmatch.test.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
   },

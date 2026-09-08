@@ -24,6 +24,12 @@ Working now:
   keep opening in VS Code's native diff editor**, red/green intact.
 - **Quick diff**: the lines added, changed or removed since the last commit are
   marked in the left margin, live as you type (`mdforge.quickDiff`).
+- **Workspace-search results land on the match**: clicking a result in the
+  Search view goes to the matching line and marks the others (`F8` walks them).
+  VS Code does not hand a custom editor the position it was aiming at
+  ([vscode#289785](https://github.com/microsoft/vscode/issues/289785)), so
+  MDForge recovers it from the Search view itself — the line is highlighted,
+  not the word (`mdforge.revealSearchMatch`).
 - WYSIWYG editing: headings, bold/italic/strikethrough, quotes, lists, links,
   images, code blocks, GFM tables.
 - **Clickable task lists** (`- [ ]` / `- [x]`).
@@ -58,6 +64,7 @@ npm run watch:webview  # webview bundle
 | --- | --- | --- |
 | Extension host | `src/extension.ts` | `CustomTextEditorProvider`, webview wiring, file ↔ webview sync |
 | Quick diff | `src/quickdiff.ts` + `src/linediff.ts` | Reads the committed text through the built-in Git extension and diffs it against the live one |
+| Search reveal | `src/searchreveal.ts` + `src/searchmatches.ts` | Recovers the match positions VS Code drops when a search result opens a custom editor |
 | Webview app | `media-src/src/main.ts` + `cm-*.ts` | CodeMirror 6 live-preview editor |
 | Theme | `media-src/src/cm-theme.css` | GitHub-style CSS, VS Code theme-aware |
 | Build | `esbuild.mjs` | Bundles the webview to `media/dist/` |

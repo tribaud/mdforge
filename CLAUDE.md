@@ -48,6 +48,8 @@ it fully before making changes.
 | `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
 | `src/quickdiff.ts` | **Quick diff**, host side: resolves the built-in `vscode.git` API, reads the base blob (index → `HEAD`), watches doc/repo/setting, posts the line changes. |
 | `src/linediff.ts` | `diffLines` — the patience line diff behind the quick-diff margin. Imports nothing, so it is testable (`npm run test:quickdiff`). |
+| `src/searchreveal.ts` | **Search reveal**, host side: calls the internal `search.action.getSearchResults` and posts the match positions for the note being opened. |
+| `src/searchmatches.ts` | `matchesForFile` — parses the search view's result text. Imports nothing, so it is testable (`npm run test:search`). |
 | `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
 | `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
 | `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble; `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
@@ -55,6 +57,7 @@ it fully before making changes.
 | `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
 | `media-src/src/cm-block-drag.ts` | Left-margin block controls: draggable `⠿` handle (reorders top-level blocks / heading sections, click = select the block) and the `▾`/`▸` fold chevron. |
 | `media-src/src/cm-quickdiff.ts` | Quick-diff margin: a CodeMirror `gutter()` whose markers are the added/modified/deleted bars the host computed. |
+| `media-src/src/cm-searchmatch.ts` | Search reveal, webview side: marks the matching lines, scrolls to one, and walks them (`F8` / `Shift+F8`). |
 | `media-src/src/cm-paste-html.ts` | Paste HTML→Markdown (turndown+GFM, escaping OFF, MathML→LaTeX, footnote rewrite + per-section renumber). |
 | `media-src/src/cm-theme.css` | All styling, VS Code light/dark aware. |
 | `media-src/src/turndown-plugin-gfm.d.ts` | Type shim for `turndown-plugin-gfm`. |
@@ -98,7 +101,7 @@ it fully before making changes.
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
   `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`,
-  `quickDiff`, `tags`.
+  `quickDiff`, `tags`, `searchMatches`.
   webview→host: `ready`, `edit`, `setPageWidth`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
   `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
@@ -367,6 +370,42 @@ so it round-trips for free unless noted.
   its line. Between two host posts they are mapped through the user's edits.
   A deletion has no line of its own: it is one wedge at the seam, clamped onto
   the last line when the cut is at the end of the document.
+- **Search reveal** (`mdforge.revealSearchMatch`, default on): a click on a
+  workspace-search (`Ctrl/Cmd+Shift+F`) result opens the note **at the match**,
+  which VS Code does not do on its own — when the target resolves to a custom
+  editor the range is dropped on the way, and `resolveCustomTextEditor` gets the
+  document and nothing else (microsoft/vscode#289785, open; #301887 and #211351
+  closed as *not planned*; nothing in `src/vscode-dts` proposes it either). The
+  positions are therefore read back out of the **search view**, through the
+  internal `search.action.getSearchResults`, which returns what "Copy All" would
+  copy: an unindented, tildified path per file, then `  <line>,<col>: <text>`
+  per match (`  <line>:` for the further lines of a multi-line one).
+  `searchmatches.ts` parses that and nothing else — it imports nothing, so
+  `npm run test:search` pins the format down outside an Extension Host.
+  Consequences, all deliberate:
+  - We learn **every** match in the file, never which one was clicked. MDForge
+    goes to the first, marks the others, and `F8` / `Shift+F8` walk them.
+  - The match's **length is not in that output**, so the **line** is
+    highlighted, not the word (`.cm-search-hit`, and `-current` for the one the
+    caret is on — TWO classes, because the current match is also the active
+    line and CodeMirror's own `.cm-activeLine` background wins at equal
+    specificity).
+  - The command is **internal**. It is feature-detected once
+    (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
+    "no matches": the note simply opens as it always did.
+  - The gate against firing at the wrong moment is free: the command is served
+    by `getSearchView`, which reads the **active** view of the sidebar. Open a
+    note from the Explorer and there is nothing to return.
+  Webview side (`cm-searchmatch.ts`): a `StateField` of line decorations, so an
+  edit maps them; they are dropped on the first document change (they answer
+  "here is what you were looking for", which stops being true once you type).
+  The scroll is re-issued up to three times over ~1s (`settle`) — mermaid,
+  KaTeX and images all land after CodeMirror measured, and a target centred
+  before they did ends up off-screen; it stops as soon as the line is visible,
+  or if the caret moved (the user's scroll is theirs). Focus is taken **only if
+  the webview already has it** (`document.hasFocus()`): with VS Code's
+  preview-on-arrow, focus stays in the result list, and stealing it would end
+  the walk on its first step.
 - **Reformatting** (host-side, pure, in `extension.ts`): `formatMarkdown(text,
   joinParas)` = the optional paragraph unwrap, then the blank-line pass.
   - `normalizeBlankLines`: MD012 collapse dupes / MD022 around headings / MD031
@@ -487,6 +526,7 @@ npm install
 npm run build                 # tsc (extension) + esbuild (webview) → media/dist
 npx tsc -p media-src --noEmit # webview type-check (also in CI)
 npm run test:quickdiff        # the line diff behind the quick-diff margin
+npm run test:search           # parsing of the search view's result text
 ```
 
 - MDForge is now the **default** editor for `.md`/`.markdown`, so opening one is
@@ -546,6 +586,14 @@ directly.
   "revert this hunk", no peek of the previous version — those are the diff
   editor's job, and the diff editor is still out of reach (below). It also needs
   the built-in Git extension enabled; SCMs other than git show nothing.
+- **Search reveal knows every match in the note, never the one that was
+  clicked** — VS Code drops the range (§4). The first match is where you land,
+  `F8` does the rest, and the highlight is a line, not a word. It also leans on
+  an internal command: if `search.action.getSearchResults` ever changes shape,
+  the feature goes quiet rather than wrong. Watch microsoft/vscode#289785 — a
+  `selection` on the custom-editor context would replace the whole mechanism.
+  The same loss hits the Problems panel, Go to Definition and `Ctrl+P file:42`,
+  which are NOT covered.
 - **Perf**: `buildDecorations` re-scans the whole document on every selection
   change. Fine for normal notes; add a viewport limit before very large files.
 - Bundle size: mermaid (many diagram chunks), KaTeX fonts and the
