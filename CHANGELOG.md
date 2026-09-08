@@ -8,6 +8,15 @@ All notable changes to MDForge are documented here. The format follows
 
 ### Added
 
+- **`H4` in the toolbar** — the heading buttons stopped at `H3`, in the top bar
+  and in the selection bubble alike, so a fourth-level heading had to be typed
+  by hand. The `/` menu gained *Titre 4* for the same reason: a level reachable
+  from one place and not the other is its own little trap.
+
+## [0.6.0]
+
+### Added
+
 - **Resizable table columns**: drag the border between two header cells and the
   two columns share the space; drag the table's own right edge and the whole table
   gets narrower or wider, shares untouched. Releasing the button writes the widths
