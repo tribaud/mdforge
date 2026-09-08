@@ -393,12 +393,29 @@ so it round-trips for free unless noted.
   - The command is **internal**. It is feature-detected once
     (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
     "no matches": the note simply opens as it always did.
-  - The gate against firing at the wrong moment is free: the command is served
-    by `getSearchView`, which reads the **active** view of the sidebar. Open a
-    note from the Explorer and there is nothing to return.
-  Webview side (`cm-searchmatch.ts`): a `StateField` of line decorations, so an
-  edit maps them; they are dropped on the first document change (they answer
-  "here is what you were looking for", which stops being true once you type).
+  - **Nothing says the note was opened FROM a result.** `getSearchView` only
+    requires the search view to be the ACTIVE view of its container — enough to
+    rule out the Explorer, not a `Ctrl+P` with the results still on screen, and
+    not a search view docked in the panel next to an active Explorer. Three
+    guards narrow it: the opens MDForge performs itself are suppressed
+    explicitly (`suppressReveal`, called on the wikilink jump, the rename
+    re-open, the diff-side buttons and `mdforge.openEditor`), the editor has to
+    be `webviewPanel.active` (restoring a window must not make background tabs
+    jump), and the setting switches the lot off. What remains is landing on a
+    line that genuinely matches the search you still have open — a small
+    surprise, against the reported bug of landing at the top of the file.
+  - The results are cached for 500ms: the command renders EVERY match of the
+    workspace to a string (`search.maxResults` defaults to 20000) and ships it
+    over RPC, which several editors resolving at once must not pay for twice.
+  Webview side (`cm-searchmatch.ts`): a `StateField` holding the line
+  decorations AND the match offsets — a decoration only remembers the line it
+  marks, so `F8` would lose the column on its first hop and two matches on one
+  line would collapse into one. The whole set is dropped on the first document
+  change rather than mapped through it (it answers "here is what you were
+  looking for", which stops being true once you type), and `F8` / `Shift+F8`
+  take the next match AFTER the caret, or the previous one before it, wrapping
+  at either end — relative to the caret, so they keep working after a click
+  somewhere else in the note.
   The scroll is re-issued up to three times over ~1s (`settle`) — mermaid,
   KaTeX and images all land after CodeMirror measured, and a target centred
   before they did ends up off-screen; it stops as soon as the line is visible,
@@ -588,7 +605,9 @@ directly.
   the built-in Git extension enabled; SCMs other than git show nothing.
 - **Search reveal knows every match in the note, never the one that was
   clicked** — VS Code drops the range (§4). The first match is where you land,
-  `F8` does the rest, and the highlight is a line, not a word. It also leans on
+  `F8` does the rest, and the highlight is a line, not a word. It cannot tell
+  either that the note was opened FROM a result: with the search view on screen,
+  a `Ctrl+P` to a matching note also lands on a match. It also leans on
   an internal command: if `search.action.getSearchResults` ever changes shape,
   the feature goes quiet rather than wrong. Watch microsoft/vscode#289785 — a
   `selection` on the custom-editor context would replace the whole mechanism.

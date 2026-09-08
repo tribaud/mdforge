@@ -18,7 +18,10 @@ All notable changes to MDForge are documented here. The format follows
   `Shift+F8` walk them. Two honest limits: it is the **line** that is
   highlighted, not the word (the match's length is nowhere to be found), and
   when a note holds several matches you land on the first one rather than the
-  one you clicked. Set `mdforge.revealSearchMatch` to `false` to switch it off.
+  one you clicked. For the same reason MDForge cannot tell that a note was
+  opened *from* a result: with the Search view on screen, reaching a matching
+  note by `Ctrl+P` also lands on a match. Set `mdforge.revealSearchMatch` to
+  `false` to switch it off.
 
 ## [0.6.0]
 

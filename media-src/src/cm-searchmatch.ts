@@ -26,23 +26,33 @@ export interface SearchMatch {
 const HIT = Decoration.line({ class: 'cm-search-hit' })
 const HIT_CURRENT = Decoration.line({ class: 'cm-search-hit cm-search-hit-current' })
 
-const setMatchesEffect = StateEffect.define<DecorationSet>()
+/**
+ * What is currently marked: the line decorations, and the match offsets that
+ * produced them. The offsets are kept because a decoration only remembers the
+ * LINE it marks — walking the matches with `F8` would otherwise lose the
+ * column on the first hop, and two matches on one line would become one.
+ */
+interface Marked {
+  marks: DecorationSet
+  offsets: number[]
+}
 
-const matchesField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(marks, transaction) {
-    // Typing answers the question the marks were asking; let them go rather
-    // than leave stale highlights behind the caret.
-    if (transaction.docChanged && !transaction.effects.some((e) => e.is(setMatchesEffect))) {
-      return Decoration.none
-    }
-    marks = marks.map(transaction.changes)
+const EMPTY: Marked = { marks: Decoration.none, offsets: [] }
+
+const setMatchesEffect = StateEffect.define<Marked>()
+
+const matchesField = StateField.define<Marked>({
+  create: () => EMPTY,
+  update(marked, transaction) {
     for (const effect of transaction.effects) {
-      if (effect.is(setMatchesEffect)) marks = effect.value
+      if (effect.is(setMatchesEffect)) return effect.value
     }
-    return marks
+    // Dropped on the first edit rather than mapped through it: the marks answer
+    // "here is what you were looking for", which stops being true as soon as
+    // the note is being written in.
+    return transaction.docChanged ? EMPTY : marked
   },
-  provide: (field) => EditorView.decorations.from(field)
+  provide: (field) => EditorView.decorations.from(field, (marked) => marked.marks)
 })
 
 export const searchMatchMarks: Extension = [matchesField]
@@ -52,16 +62,6 @@ function offsetOf(view: EditorView, match: SearchMatch): number {
   const doc = view.state.doc
   const line = doc.line(Math.min(Math.max(match.line, 1), doc.lines))
   return Math.min(line.from + Math.max(match.column - 1, 0), line.to)
-}
-
-/** The marked lines, in document order, read back from the field. */
-function markedLines(view: EditorView): number[] {
-  const positions: number[] = []
-  const marks = view.state.field(matchesField, false)
-  marks?.between(0, view.state.doc.length, (from) => {
-    positions.push(from)
-  })
-  return positions
 }
 
 /** Rebuild the marks, the current match's line carrying the brighter class. */
@@ -84,7 +84,7 @@ function goTo(view: EditorView, offsets: number[], index: number): void {
   view.dispatch({
     selection: { anchor },
     effects: [
-      setMatchesEffect.of(marksFor(view, offsets, index)),
+      setMatchesEffect.of({ marks: marksFor(view, offsets, index), offsets }),
       EditorView.scrollIntoView(anchor, { y: 'center' })
     ]
   })
@@ -111,7 +111,9 @@ function settle(view: EditorView, anchor: number, attempt = 0): void {
 /** Show what the search found in this note, caret on the first match. */
 export function showSearchMatches(view: EditorView, matches: SearchMatch[]): void {
   if (!view.state.field(matchesField, false) || matches.length === 0) return
-  const offsets = matches.map((match) => offsetOf(view, match))
+  // Sorted: `F8` walks them in document order, and the host's order is only as
+  // trustworthy as the text it parsed.
+  const offsets = [...new Set(matches.map((match) => offsetOf(view, match)))].sort((a, b) => a - b)
   goTo(view, offsets, 0)
   // Take the keyboard only if the webview already has it — otherwise the user
   // is still walking the result list with the arrows, and stealing focus would
@@ -120,16 +122,26 @@ export function showSearchMatches(view: EditorView, matches: SearchMatch[]): voi
 }
 
 /**
- * Walk the marked matches (`F8` / `Shift+F8`). Returns false when there are
- * none, so the key falls through to whatever else is bound to it.
+ * Walk the marked matches (`F8` / `Shift+F8`): the next one AFTER the caret, or
+ * the previous one before it, wrapping at either end. Relative to the caret and
+ * not to the last match visited, so it keeps working after a click somewhere
+ * else in the note. Returns false when there is nothing marked, so the key
+ * falls through to whatever else is bound to it.
  */
 export function nextSearchMatch(view: EditorView, direction: 1 | -1): boolean {
-  const offsets = markedLines(view)
-  if (offsets.length === 0) return false
+  const marked = view.state.field(matchesField, false)
+  if (!marked || marked.offsets.length === 0) return false
+  const offsets = marked.offsets
   const head = view.state.selection.main.head
-  const line = view.state.doc.lineAt(head).from
-  const at = offsets.indexOf(line)
-  const index = at === -1 ? (direction === 1 ? 0 : offsets.length - 1) : (at + direction + offsets.length) % offsets.length
+  let index: number
+  if (direction === 1) {
+    index = offsets.findIndex((offset) => offset > head)
+    if (index === -1) index = 0
+  } else {
+    index = offsets.length - 1
+    while (index >= 0 && offsets[index] >= head) index--
+    if (index < 0) index = offsets.length - 1
+  }
   goTo(view, offsets, index)
   return true
 }

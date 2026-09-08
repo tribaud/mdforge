@@ -2,7 +2,7 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { QuickDiff } from './quickdiff'
-import { searchMatches } from './searchreveal'
+import { searchMatches, suppressReveal } from './searchreveal'
 
 const VIEW_TYPE = 'mdforge.editor'
 
@@ -43,6 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showInformationMessage('Open a Markdown file first.')
         return
       }
+      suppressReveal(target)
       await vscode.commands.executeCommand('vscode.openWith', target, VIEW_TYPE)
     }),
     vscode.commands.registerCommand('mdforge.openWithTextEditor', async (uri?: vscode.Uri) => {
@@ -58,11 +59,17 @@ export function activate(context: vscode.ExtensionContext): void {
     // resource (view-only); the modified side is the working file.
     vscode.commands.registerCommand('mdforge.openDiffOriginal', async () => {
       const input = activeDiffInput()
-      if (input) await vscode.commands.executeCommand('vscode.openWith', input.original, VIEW_TYPE)
+      if (input) {
+        suppressReveal(input.original)
+        await vscode.commands.executeCommand('vscode.openWith', input.original, VIEW_TYPE)
+      }
     }),
     vscode.commands.registerCommand('mdforge.openDiffModified', async () => {
       const input = activeDiffInput()
-      if (input) await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
+      if (input) {
+        suppressReveal(input.modified)
+        await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
+      }
     }),
     // On-demand reformat of the active note (blank lines + paragraphs).
     vscode.commands.registerCommand('mdforge.normalizeBlankLines', async () => {
@@ -856,7 +863,10 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       const enabled = vscode.workspace
         .getConfiguration('mdforge', document.uri)
         .get<boolean>('revealSearchMatch', true)
-      if (!enabled) return
+      // Only the editor the user is looking at: restoring a window resolves the
+      // tabs it shows, and a note reopened in the background has no business
+      // jumping to a match.
+      if (!enabled || !webviewPanel.active) return
       const matches = await searchMatches(document.uri)
       if (matches.length > 0) void webview.postMessage({ type: 'searchMatches', matches })
     }
@@ -1583,6 +1593,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       // Re-open fresh at the new location so the webview rebinds its asset base
       // URI + local-resource root to the destination folder (images resolve).
       await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+      suppressReveal(newUri)
       await vscode.commands.executeCommand('vscode.openWith', newUri, VIEW_TYPE)
 
       void vscode.window.showInformationMessage(
@@ -1696,6 +1707,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       const uri = vscode.Uri.file(path.resolve(dir, relative))
       try {
         await vscode.workspace.fs.stat(uri)
+        suppressReveal(uri)
         await vscode.commands.executeCommand('vscode.open', uri)
         return
       } catch {
