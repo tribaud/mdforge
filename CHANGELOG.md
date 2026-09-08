@@ -68,6 +68,12 @@ All notable changes to MDForge are documented here. The format follows
   value governing both. The code icon in the title bar, or
   `Ctrl/Cmd+Shift+Alt+M`, still opens any note in the plain text editor, and
   `workbench.editorAssociations` puts it back as the default for good.
+  **If you already have an association for `*.md`, it wins and nothing changes
+  for you** — a user setting always overrides what an extension declares. That
+  entry is easy to have acquired without meaning to: VS Code writes it whenever
+  you pick "Reopen Editor With… → Configure default editor". Look for
+  `"workbench.editorAssociations": { "*.md": "default" }` in your settings and
+  drop it, or point it at `"mdforge.editor"`.
 - **Requires VS Code 1.133 or later** (was 1.90). The per-kind priority above does
   not exist before it, and on an older VS Code MDForge would take over the diff
   editor as well — which is exactly what it must not do.
