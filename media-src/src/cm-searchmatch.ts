@@ -13,6 +13,7 @@
  * which stops being true as soon as the note is being written in.
  */
 import { EditorView, Decoration } from '@codemirror/view'
+import { openSearchPanel, setSearchQuery, SearchQuery } from '@codemirror/search'
 import type { DecorationSet } from '@codemirror/view'
 import { StateEffect, StateField } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
@@ -39,9 +40,16 @@ interface Marked {
   offsets: number[]
   /** Length of the term when it could be deduced, 0 when only lines are marked. */
   length: number
+  /**
+   * Whether WE paint the term. False once the search panel is doing it:
+   * `@codemirror/search` highlights every match — in the very same VS Code
+   * colours — but only while its panel is open, and two backgrounds with alpha
+   * stacked on one range come out darker than either.
+   */
+  ownMarks: boolean
 }
 
-const EMPTY: Marked = { marks: Decoration.none, offsets: [], length: 0 }
+const EMPTY: Marked = { marks: Decoration.none, offsets: [], length: 0, ownMarks: true }
 
 const setMatchesEffect = StateEffect.define<Marked>()
 
@@ -73,13 +81,19 @@ function offsetOf(view: EditorView, match: SearchMatch): number {
  * host could deduce it — that is the "the word I searched for, highlighted"
  * half, and the line stays underneath it so the eye finds the place first.
  */
-function marksFor(view: EditorView, offsets: number[], current: number, length: number): DecorationSet {
+function marksFor(
+  view: EditorView,
+  offsets: number[],
+  current: number,
+  length: number,
+  ownMarks: boolean
+): DecorationSet {
   const doc = view.state.doc
   const currentLine = doc.lineAt(offsets[current]).from
   // Two matches on the same line are one line highlight.
   const lines = [...new Set(offsets.map((offset) => doc.lineAt(offset).from))].sort((a, b) => a - b)
   const ranges = lines.map((from) => (from === currentLine ? HIT_CURRENT : HIT).range(from))
-  if (length > 0) {
+  if (length > 0 && ownMarks) {
     for (let index = 0; index < offsets.length; index++) {
       const from = offsets[index]
       const to = Math.min(from + length, doc.lineAt(from).to)
@@ -97,12 +111,29 @@ function marksFor(view: EditorView, offsets: number[], current: number, length: 
  * diagrams, KaTeX and images all land after CodeMirror measured, and a target
  * chosen before they did ends up off-screen.
  */
-function goTo(view: EditorView, offsets: number[], index: number, length: number): void {
+function goTo(
+  view: EditorView,
+  offsets: number[],
+  index: number,
+  length: number,
+  ownMarks: boolean
+): void {
   const anchor = offsets[index]
+  // When the panel does the highlighting, the term is SELECTED rather than
+  // pointed at: that is what makes `@codemirror/search` mark it as the current
+  // match, and what makes its Enter / next start from here. The bubble that
+  // normally follows a selection stays away — focus is in the panel's field, so
+  // `view.hasFocus` is false.
+  const head = ownMarks ? anchor : Math.min(anchor + length, view.state.doc.lineAt(anchor).to)
   view.dispatch({
-    selection: { anchor },
+    selection: { anchor, head },
     effects: [
-      setMatchesEffect.of({ marks: marksFor(view, offsets, index, length), offsets, length }),
+      setMatchesEffect.of({
+        marks: marksFor(view, offsets, index, length, ownMarks),
+        offsets,
+        length,
+        ownMarks
+      }),
       EditorView.scrollIntoView(anchor, { y: 'center' })
     ]
   })
@@ -115,7 +146,7 @@ function settle(view: EditorView, anchor: number, attempt = 0): void {
   setTimeout(
     () => {
       // The user moved on: their caret, their scroll position.
-      if (view.state.selection.main.head !== anchor) return
+      if (view.state.selection.main.from !== anchor) return
       const coords = view.coordsAtPos(anchor)
       const frame = view.scrollDOM.getBoundingClientRect()
       if (coords && coords.top >= frame.top && coords.bottom <= frame.bottom) return
@@ -177,11 +208,27 @@ export function showSearchMatches(
   const reported = [...new Set(matches.map((match) => offsetOf(view, match)))].sort((a, b) => a - b)
   const hits = query ? occurrences(view, query, caseSensitive) : []
   const offsets = hits.length > 0 ? hits : reported
-  goTo(view, offsets, landing(view, offsets, reported[0]), hits.length > 0 ? query!.length : 0)
-  // Take the keyboard only if the webview already has it — otherwise the user
-  // is still walking the result list with the arrows, and stealing focus would
-  // end that walk on its first step. `F8` needs the editor focused to work.
-  if (document.hasFocus() && !view.hasFocus) view.focus()
+  const length = hits.length > 0 ? query!.length : 0
+
+  // The keyboard is only taken if the webview already has it — otherwise the
+  // user is still walking the result list with the arrows, and stealing focus
+  // would end that walk on its first step.
+  const focused = document.hasFocus()
+  // With a term and the focus, hand the search over to MDForge's own panel: the
+  // term goes in its field, every occurrence lights up, and Enter / the next
+  // button walk them exactly as `Ctrl+F` does. Without the focus there is no
+  // panel to open without stealing it, so we paint the occurrences ourselves.
+  const panel = length > 0 && focused
+  goTo(view, offsets, landing(view, offsets, reported[0]), length, !panel)
+
+  if (panel) {
+    view.dispatch({
+      effects: setSearchQuery.of(new SearchQuery({ search: query!, caseSensitive }))
+    })
+    openSearchPanel(view)
+  } else if (focused && !view.hasFocus) {
+    view.focus()
+  }
 }
 
 /**
@@ -205,6 +252,6 @@ export function nextSearchMatch(view: EditorView, direction: 1 | -1): boolean {
     while (index >= 0 && offsets[index] >= head) index--
     if (index < 0) index = offsets.length - 1
   }
-  goTo(view, offsets, index, marked.length)
+  goTo(view, offsets, index, marked.length, marked.ownMarks)
   return true
 }

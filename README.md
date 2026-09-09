@@ -25,8 +25,9 @@ Working now:
 - **Quick diff**: the lines added, changed or removed since the last commit are
   marked in the left margin, live as you type (`mdforge.quickDiff`).
 - **Workspace-search results land on the match**: clicking a result in the
-  Search view goes to it and highlights the searched term everywhere in the
-  note (`F8` / `Shift+F8` walk the occurrences). VS Code hands a custom editor
+  Search view goes to it and opens MDForge's search panel on the term, so every
+  occurrence is highlighted and `Entrée` / *next* walk them as usual (`F8` /
+  `Shift+F8` too). VS Code hands a custom editor
   neither the position it was aiming at nor the query
   ([vscode#289785](https://github.com/microsoft/vscode/issues/289785)), so
   MDForge recovers both from the Search view itself

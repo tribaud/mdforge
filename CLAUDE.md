@@ -394,7 +394,17 @@ so it round-trips for free unless noted.
     short, so ONE lone match is not enough and the term is then left undeduced.
     The note's own slices are read from the document, not from the search
     view's preview text, which is trimmed on very long lines.
-    With a term, the note's OWN occurrences are what gets marked
+    With a term AND the focus, the search is handed over to **MDForge's own
+    search panel**: the term goes into its field, `@codemirror/search`
+    highlights every occurrence, and `Entrée` / *next* walk them exactly as
+    `Ctrl+F` does. Its highlighter paints only while its panel is open, in the
+    very same VS Code colours as ours, so our word marks step aside then
+    (`ownMarks`) — two alpha backgrounds on one range come out darker than
+    either. The landing occurrence is SELECTED rather than pointed at: that is
+    what makes it the panel's current match, and the selection bubble stays
+    away because the focus is in the panel's field (`view.hasFocus` false).
+    Without the focus there is no panel to open without stealing it, so the
+    note's OWN occurrences are marked
     (`.cm-search-word`, `-current` on the one under the caret) and walked —
     read from the text in front of us, so they hold even if the file moved on,
     and usually more numerous than what the search reported (a whole-word or

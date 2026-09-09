@@ -13,9 +13,10 @@ All notable changes to MDForge are documented here. The format follows
   top, with nothing to say where the match was — VS Code does not pass the
   position to an editor like this one
   ([vscode#289785](https://github.com/microsoft/vscode/issues/289785)). MDForge
-  now recovers it from the Search view itself: the caret lands on the match and
-  **the term you searched for is highlighted everywhere in the note**, with
-  `F8` / `Shift+F8` to walk the occurrences. The term is not given either — it
+  now recovers it from the Search view itself: the note opens on the match,
+  and **MDForge's own search panel opens on the term you searched for** — every
+  occurrence highlighted, `Entrée` / *next* to walk them, `Échap` to put the
+  panel away (`F8` / `Shift+F8` work too). The term is not given either — it
   is deduced from what the matches have in common — so a note holding a single
   match, or a regex search, marks the whole line instead of the word. Two other
   honest limits: with several matches you land on the first, not on the one you
