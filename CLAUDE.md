@@ -597,6 +597,17 @@ npm run test:quickdiff        # the line diff behind the quick-diff margin
 npm run test:search           # parsing of the search view's result text
 ```
 
+- **Two launch configurations** (`.vscode/launch.json`): the plain one, and
+  *(no other extensions)* which adds `--disable-extensions` — the development
+  extension still loads, everything else does not. Prefer it when something
+  smells like interference: a profile full of extensions is also a profile full
+  of extensions that can take the extension host down with them.
+  Symptom seen for real: the child window dies ~2s in, its renderer log stops
+  before *"Started local extension host"*, no `exthost/` directory is written
+  at all, and `main.log` says `[UtilityProcess type: extensionHost]: crashed
+  with code 6`. Nothing of ours has run at that point — relaunch, let the build
+  task finish first (two F5 in ten seconds means the second host starts while
+  `out/` and `media/dist` are being rewritten under it).
 - MDForge is now the **default** editor for `.md`/`.markdown`, so opening one is
   enough; the code icon (or `Ctrl/Cmd+Shift+Alt+M`) goes back to the text editor.
   A **git diff still opens natively** — that is `diffEditor: "explicit"` doing its
