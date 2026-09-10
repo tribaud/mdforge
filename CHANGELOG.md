@@ -14,9 +14,9 @@ All notable changes to MDForge are documented here. The format follows
   position to an editor like this one
   ([vscode#289785](https://github.com/microsoft/vscode/issues/289785)). MDForge
   now recovers it from the Search view itself: the note opens on the match,
-  and **MDForge's own search panel opens on the term you searched for** — every
-  occurrence highlighted, `Entrée` / *next* to walk them, `Échap` to put the
-  panel away (`F8` / `Shift+F8` work too). The term is not given either — it
+  and **MDForge's own search opens on the term you searched for** — every
+  occurrence highlighted, `F3` / `Maj+F3`, `Entrée` or *next* to walk them,
+  `Échap` to put the panel away. The term is not given either — it
   is deduced from what the matches have in common — so a note holding a single
   match, or a regex search, marks the whole line instead of the word. Two other
   honest limits: with several matches you land on the first, not on the one you

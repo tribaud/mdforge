@@ -209,26 +209,69 @@ export function showSearchMatches(
   const hits = query ? occurrences(view, query, caseSensitive) : []
   const offsets = hits.length > 0 ? hits : reported
   const length = hits.length > 0 ? query!.length : 0
-
-  // The keyboard is only taken if the webview already has it — otherwise the
-  // user is still walking the result list with the arrows, and stealing focus
-  // would end that walk on its first step.
   const focused = document.hasFocus()
-  // With a term and the focus, hand the search over to MDForge's own panel: the
-  // term goes in its field, every occurrence lights up, and Enter / the next
-  // button walk them exactly as `Ctrl+F` does. Without the focus there is no
-  // panel to open without stealing it, so we paint the occurrences ourselves.
-  const panel = length > 0 && focused
-  goTo(view, offsets, landing(view, offsets, reported[0]), length, !panel)
 
-  if (panel) {
-    view.dispatch({
-      effects: setSearchQuery.of(new SearchQuery({ search: query!, caseSensitive }))
-    })
-    openSearchPanel(view)
-  } else if (focused && !view.hasFocus) {
-    view.focus()
+  goTo(view, offsets, landing(view, offsets, reported[0]), length, !(length > 0 && focused))
+
+  if (length === 0) {
+    // No term: nothing to hand over, just take the keyboard if it is already
+    // in the webview (see `armPanel` for why it is never taken otherwise).
+    if (focused && !view.hasFocus) view.focus()
+    return
   }
+
+  // The term goes into the editor's search state right away, panel or no panel:
+  // that is what makes `F3` / `Maj+F3` (and `Ctrl/⌘G`) walk the occurrences
+  // without anything else being opened first.
+  view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: query!, caseSensitive })) })
+
+  if (focused) {
+    openSearchPanel(view)
+  } else {
+    // The focus is on its way — VS Code moves it into the webview's inner frame
+    // a beat after the click, and a reveal that came from `ready` runs before
+    // that. Arm the panel instead of dropping it.
+    armPanel(view)
+  }
+}
+
+interface Pending {
+  view: EditorView
+  at: number
+}
+
+let pending: Pending | undefined
+let listening = false
+/** A focus that comes long after the search is somebody else's business. */
+const PENDING_MS = 60_000
+
+/**
+ * Open the panel on the next focus rather than now.
+ *
+ * The panel is never opened into an unfocused webview: while results are walked
+ * with the arrows VS Code previews each one here and keeps the keyboard in the
+ * result list, and `openSearchPanel` would end that walk on its first step. So
+ * the term waits for the focus to actually arrive — which is what a click on a
+ * result does, and also what the plain click into the note does a moment later.
+ * The term itself is already set by then, so `F3` works without waiting.
+ */
+function armPanel(view: EditorView): void {
+  pending = { view, at: Date.now() }
+  if (listening) return
+  listening = true
+  window.addEventListener('focus', () => {
+    const armed = pending
+    pending = undefined
+    if (!armed || Date.now() - armed.at > PENDING_MS) return
+    const marked = armed.view.state.field(matchesField, false)
+    // Gone with an edit: the question the marks were asking has moved on.
+    if (!marked || marked.offsets.length === 0) return
+    // Hand the highlighting over to the panel — ours would double it.
+    const head = armed.view.state.selection.main.from
+    const index = Math.max(marked.offsets.indexOf(head), 0)
+    goTo(armed.view, marked.offsets, index, marked.length, false)
+    openSearchPanel(armed.view)
+  })
 }
 
 /**

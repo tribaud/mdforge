@@ -394,10 +394,19 @@ so it round-trips for free unless noted.
     short, so ONE lone match is not enough and the term is then left undeduced.
     The note's own slices are read from the document, not from the search
     view's preview text, which is trimmed on very long lines.
-    With a term AND the focus, the search is handed over to **MDForge's own
-    search panel**: the term goes into its field, `@codemirror/search`
-    highlights every occurrence, and `Entrée` / *next* walk them exactly as
-    `Ctrl+F` does. Its highlighter paints only while its panel is open, in the
+    With a term, the search is handed over to **MDForge's own search state**:
+    the term is set right away — that alone makes `F3` / `Maj+F3` (and
+    `Ctrl/⌘G`) walk the occurrences, panel or no panel — and the panel is
+    opened on it, so `@codemirror/search` highlights every occurrence and
+    `Entrée` / *next* work as they do for `Ctrl+F`. The panel is only opened
+    into a webview that HAS the keyboard: while results are walked with the
+    arrows VS Code previews each one here and keeps the focus in the result
+    list, and `openSearchPanel` would end that walk on its first step. But the
+    focus also arrives a beat AFTER the click — VS Code moves it into the inner
+    frame asynchronously, so `document.hasFocus()` is still false when a reveal
+    from `ready` runs. Hence `armPanel`: the panel waits for the next `focus`
+    event rather than being dropped, and hands the highlighting over when it
+    opens. Its highlighter paints only while its panel is open, in the
     very same VS Code colours as ours, so our word marks step aside then
     (`ownMarks`) — two alpha backgrounds on one range come out darker than
     either. The landing occurrence is SELECTED rather than pointed at: that is
