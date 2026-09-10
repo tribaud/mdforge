@@ -47,6 +47,8 @@ import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
 import { quickDiff, setQuickDiff } from './cm-quickdiff'
+import { searchMatchMarks, showSearchMatches, nextSearchMatch } from './cm-searchmatch'
+import type { SearchMatch } from './cm-searchmatch'
 import type { QuickDiffChange } from './cm-quickdiff'
 import { setDiagnostics, lintGutter } from '@codemirror/lint'
 import type { Diagnostic } from '@codemirror/lint'
@@ -582,6 +584,10 @@ try {
           // removes an empty marker — all before the generic bindings so they win.
           { key: 'Tab', run: indentList },
           { key: 'Shift-Tab', run: outdentList },
+          // Walk what a workspace-search result brought us to (the host can
+          // only say WHERE the matches are, never which one was clicked).
+          { key: 'F8', run: (v) => nextSearchMatch(v, 1) },
+          { key: 'Shift-F8', run: (v) => nextSearchMatch(v, -1) },
           ...markdownKeymap,
           ...searchKeymap,
           ...foldKeymap,
@@ -603,6 +609,8 @@ try {
         // Added/modified/deleted bars, computed host-side against git. Placed
         // after the line numbers so it sits against the text, as in VS Code.
         quickDiffGutter.of(quickDiff),
+        // Lines a workspace-search result points at, marked until the next edit.
+        searchMatchMarks,
         search({ top: true }),
         highlightSelectionMatches(),
         blockDrag,
@@ -977,6 +985,9 @@ window.addEventListener('message', (event) => {
     error?: string
     items?: RawDiagnostic[]
     changes?: QuickDiffChange[]
+    matches?: SearchMatch[]
+    query?: string
+    caseSensitive?: boolean
     tags?: string[]
     keys?: string[]
     scannedAt?: number
@@ -1005,6 +1016,9 @@ window.addEventListener('message', (event) => {
     case 'quickDiff':
       if (Array.isArray(msg.changes)) setQuickDiff(view, msg.changes)
       break
+    case 'searchMatches':
+      if (Array.isArray(msg.matches)) showSearchMatches(view, msg.matches, msg.query, msg.caseSensitive)
+      break
     case 'tags':
       if (Array.isArray(msg.tags)) {
         setTagIndex({
@@ -1029,5 +1043,10 @@ window.addEventListener('message', (event) => {
       break
   }
 })
+
+// Clicking a search result whose note is already the active editor produces no
+// event on the host side — but it does move the focus here. That is the only
+// signal for that case; the host answers it at most once per set of results.
+window.addEventListener('focus', () => vscode.postMessage({ type: 'focused' }))
 
 vscode.postMessage({ type: 'ready' })

@@ -8,6 +8,31 @@ All notable changes to MDForge are documented here. The format follows
 
 ### Added
 
+- **A workspace-search result opens the note at the match.** Searching with
+  `Ctrl/Cmd+Shift+F` and clicking a result used to open MDForge scrolled to the
+  top, with nothing to say where the match was — VS Code does not pass the
+  position to an editor like this one
+  ([vscode#289785](https://github.com/microsoft/vscode/issues/289785)). MDForge
+  now recovers it from the Search view itself: the note opens on the match,
+  and **MDForge's own search opens on the term you searched for** — every
+  occurrence highlighted, `F3` / `Maj+F3`, `Entrée` or *next* to walk them,
+  `Échap` to put the panel away. The term is not given either — it
+  is deduced from what the matches have in common — so a note holding a single
+  match, or a regex search, marks the whole line instead of the word. Two other
+  honest limits: with several matches you land on the first, not on the one you
+  clicked, and MDForge cannot tell that a note was opened *from* a result —
+  with the Search view on screen, reaching a matching note by `Ctrl+P` also
+  lands on a match. Set `mdforge.revealSearchMatch` to `false` to switch it
+  off. **`MDForge: Debug search reveal`** reports what the Search view answered
+  when nothing happens. This works whether the note has to be opened, is open in
+  another tab, or is the one you are already looking at — the last case reports
+  nothing at all to an extension, so it is the arrival of the keyboard focus
+  that triggers it.
+
+## [0.6.0]
+
+### Added
+
 - **Resizable table columns**: drag the border between two header cells and the
   two columns share the space; drag the table's own right edge and the whole table
   gets narrower or wider, shares untouched. Releasing the button writes the widths
