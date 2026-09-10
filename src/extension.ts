@@ -2,7 +2,13 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { QuickDiff } from './quickdiff'
-import { searchMatches, suppressReveal, forgetReveal, rawSearchResults } from './searchreveal'
+import {
+  searchMatches,
+  suppressReveal,
+  forgetReveal,
+  rawSearchResults,
+  alreadyRevealed
+} from './searchreveal'
 import { parseSearchResults } from './searchmatches'
 
 const VIEW_TYPE = 'mdforge.editor'
@@ -93,8 +99,12 @@ export function activate(context: vscode.ExtensionContext): void {
           .getConfiguration('mdforge', active.document.uri)
           .get<boolean>('revealSearchMatch', true)
         lines.push(`- \`mdforge.revealSearchMatch\`: **${enabled}**`)
-        const target = await searchMatches(active.document)
+        const target = await searchMatches(active.document, { force: true })
         lines.push(`- Matches found for it: **${target.matches.length}**`)
+        lines.push(
+          `- Already revealed for these results: **${alreadyRevealed(active.document.uri, target)}**` +
+            ' (if `true`, the reveal has already run for them — this is not a failure)'
+        )
         lines.push(`- Term deduced: **${target.query === undefined ? 'none' : `\`${target.query}\``}**`)
         lines.push(`- Case-sensitive: **${target.caseSensitive === true}**`)
         lines.push(`- Path compared: \`${active.document.uri.fsPath}\``)
@@ -948,6 +958,16 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         }
       }) => {
         switch (message.type) {
+          case 'focused':
+            // The last case with no event of its own: the note is already open
+            // AND already the active editor, so clicking a result for it
+            // changes nothing VS Code reports — no `ready`, no view-state
+            // change. What does happen is that the click moves the focus from
+            // the result list into the webview. Revealing is idempotent (the
+            // same note, for the same results, is revealed once), so a plain
+            // click back into a note costs a lookup and nothing more.
+            void revealSearchMatch()
+            break
           case 'ready':
             postConfig()
             postDocument()

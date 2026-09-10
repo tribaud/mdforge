@@ -1044,4 +1044,9 @@ window.addEventListener('message', (event) => {
   }
 })
 
+// Clicking a search result whose note is already the active editor produces no
+// event on the host side — but it does move the focus here. That is the only
+// signal for that case; the host answers it at most once per set of results.
+window.addEventListener('focus', () => vscode.postMessage({ type: 'focused' }))
+
 vscode.postMessage({ type: 'ready' })

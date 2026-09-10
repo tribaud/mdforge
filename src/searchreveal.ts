@@ -111,7 +111,10 @@ export async function rawSearchResults(): Promise<string | undefined> {
  * — no search view, no results, another editor active, an internal command that
  * changed shape.
  */
-export async function searchMatches(document: vscode.TextDocument): Promise<RevealTarget> {
+export async function searchMatches(
+  document: vscode.TextDocument,
+  { force = false }: { force?: boolean } = {}
+): Promise<RevealTarget> {
   const uri = document.uri
   const key = uri.toString()
   if (uri.scheme !== 'file') return { matches: [] }
@@ -137,7 +140,7 @@ export async function searchMatches(document: vscode.TextDocument): Promise<Reve
     const query = deriveQuery(matches, otherMatches(results, uri.fsPath, options), (line) =>
       line >= 1 && line <= document.lineCount ? document.lineAt(line - 1).text : undefined
     )
-    if (query === undefined) return remember(key, { matches })
+    if (query === undefined) return force ? { matches } : remember(key, { matches })
 
     // A case-sensitive search only shows up as a discrepancy in the counts: if
     // the note holds more occurrences ignoring case than the search reported,
@@ -146,10 +149,16 @@ export async function searchMatches(document: vscode.TextDocument): Promise<Reve
     const insensitive = countOccurrences(text.toLowerCase(), query.toLowerCase())
     const sensitive = countOccurrences(text, query)
     const caseSensitive = insensitive > matches.length && sensitive === matches.length
-    return remember(key, { matches, query, caseSensitive })
+    const target = { matches, query, caseSensitive }
+    return force ? target : remember(key, target)
   } catch {
     return { matches: [] }
   }
+}
+
+/** Whether this note was already revealed for what the search holds right now. */
+export function alreadyRevealed(uri: vscode.Uri, target: RevealTarget): boolean {
+  return revealed.get(uri.toString()) === JSON.stringify([target.query, target.matches])
 }
 
 /** Nothing to do when this note was already revealed for these very matches. */

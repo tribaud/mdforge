@@ -415,12 +415,19 @@ so it round-trips for free unless noted.
     Without a term, the mark is the whole **line** (`.cm-search-hit`, and
     `-current` — TWO classes, because the current match is also the active line
     and CodeMirror's own `.cm-activeLine` background wins at equal specificity).
-  - **A note that is already open answers no `ready`** — the webview is kept
-    (`retainContextWhenHidden`), so a result pointing at it only brings its tab
-    forward. The reveal therefore also runs from `onDidChangeViewState`, and a
-    per-note signature of `[query, matches]` (`remember`) keeps that from
-    re-jumping on every tab switch: the same note, for the same results, is
-    revealed once. A new webview forgets it (`forgetReveal`).
+  - **Three triggers, because VS Code reports almost nothing here.** A fresh
+    editor gives `ready`. A note that is already open answers none — the
+    webview is kept (`retainContextWhenHidden`), so a result pointing at it
+    only brings its tab forward — hence `onDidChangeViewState` too. And a note
+    that is already open AND already the ACTIVE editor produces no event at
+    all: nothing about it changes. The only thing that does happen there is the
+    focus moving from the result list into the webview, so the webview posts
+    `focused` and the host answers that as well. All three are idempotent: a
+    per-note signature of `[query, matches]` (`remember`) means the same note,
+    for the same results, is revealed once — clicking back into a note costs a
+    lookup and nothing more. A new webview forgets it (`forgetReveal`), and the
+    debug command bypasses the whole gate (`force`), or it would report a
+    perfectly working reveal as "0 matches".
   - The command is **internal**. It is feature-detected once
     (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
     "no matches": the note simply opens as it always did. **`MDForge: Debug
