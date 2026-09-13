@@ -8,6 +8,7 @@ import {
   forgetReveal,
   rawSearchResults,
   alreadyRevealed,
+  markRevealed,
   notePanelState,
   lastPanelState
 } from './searchreveal'
@@ -104,7 +105,7 @@ export function activate(context: vscode.ExtensionContext): void {
               .get<unknown>('revealSearchMatch')
           )}**`
         )
-        const target = await searchMatches(active.document, { force: true })
+        const target = await searchMatches(active.document)
         lines.push(`- Matches found for it: **${target.matches.length}**`)
         lines.push(
           `- Already revealed for these results: **${alreadyRevealed(active.document.uri, target)}**` +
@@ -951,6 +952,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       // tabs it shows, and a note reopened in the background has no business
       // jumping to a match.
       if (mode === 'off' || !webviewPanel.active) return
+      // Every trigger shows in the trail, gate or no gate: "which path fired"
+      // is the first question to answer when nothing happens.
+      notePanelState(`trigger ${trigger} (${mode})`, webviewPanel.active)
       const target = await searchMatches(document)
       if (target.matches.length === 0) return
       /*
@@ -976,7 +980,18 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         focusEditor()
         setTimeout(focusEditor, 250)
       }
-      notePanelState(`host reveal (${trigger}, ${mode})`, webviewPanel.active)
+      /*
+       * The "once per set of results" gate keeps the caret from being thrown
+       * back to the match on every tab switch. It must NOT keep the keyboard
+       * from landing, though — hence its place, AFTER the focus above.
+       * Returning before it is what left cases 2 and 3 with no focus at all:
+       * the trail showed no `shown` entry because the function never got there.
+       */
+      if (alreadyRevealed(document.uri, target)) {
+        notePanelState('already revealed, focus only', webviewPanel.active)
+        return
+      }
+      markRevealed(document.uri, target)
       void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
     }
 

@@ -111,12 +111,8 @@ export async function rawSearchResults(): Promise<string | undefined> {
  * — no search view, no results, another editor active, an internal command that
  * changed shape.
  */
-export async function searchMatches(
-  document: vscode.TextDocument,
-  { force = false }: { force?: boolean } = {}
-): Promise<RevealTarget> {
+export async function searchMatches(document: vscode.TextDocument): Promise<RevealTarget> {
   const uri = document.uri
-  const key = uri.toString()
   if (uri.scheme !== 'file') return { matches: [] }
   if (selfOpened.delete(uri.toString())) return { matches: [] }
   if (!(await commandExists())) return { matches: [] }
@@ -140,7 +136,7 @@ export async function searchMatches(
     const query = deriveQuery(matches, otherMatches(results, uri.fsPath, options), (line) =>
       line >= 1 && line <= document.lineCount ? document.lineAt(line - 1).text : undefined
     )
-    if (query === undefined) return force ? { matches } : remember(key, { matches })
+    if (query === undefined) return { matches }
 
     // A case-sensitive search only shows up as a discrepancy in the counts: if
     // the note holds more occurrences ignoring case than the search reported,
@@ -149,8 +145,7 @@ export async function searchMatches(
     const insensitive = countOccurrences(text.toLowerCase(), query.toLowerCase())
     const sensitive = countOccurrences(text, query)
     const caseSensitive = insensitive > matches.length && sensitive === matches.length
-    const target = { matches, query, caseSensitive }
-    return force ? target : remember(key, target)
+    return { matches, query, caseSensitive }
   } catch {
     return { matches: [] }
   }
@@ -177,16 +172,18 @@ export function lastPanelState(): string {
 
 /** Whether this note was already revealed for what the search holds right now. */
 export function alreadyRevealed(uri: vscode.Uri, target: RevealTarget): boolean {
-  return revealed.get(uri.toString()) === JSON.stringify([target.query, target.matches])
+  return revealed.get(uri.toString()) === signature(target)
 }
 
-/** Nothing to do when this note was already revealed for these very matches. */
-function remember(key: string, target: RevealTarget): RevealTarget {
-  const signature = JSON.stringify([target.query, target.matches])
-  if (revealed.get(key) === signature) return { matches: [] }
-  revealed.set(key, signature)
-  return target
+/** Remember that it has been — the caller decides what that suppresses. */
+export function markRevealed(uri: vscode.Uri, target: RevealTarget): void {
+  revealed.set(uri.toString(), signature(target))
 }
+
+function signature(target: RevealTarget): string {
+  return JSON.stringify([target.query, target.matches])
+}
+
 
 /** Occurrences of `needle` in `haystack`, overlapping ones included. */
 function countOccurrences(haystack: string, needle: string): number {
