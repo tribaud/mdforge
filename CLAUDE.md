@@ -99,6 +99,16 @@ it fully before making changes.
   is the text, `edit` carries exactly what the user typed — **no re-serialization,
   perfect diffs.** On the first `setContent` the caret is placed past any
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
+  On every LATER one — an external change: `git checkout`, another editor, a
+  formatter — the caret is **put back where it was** (`rememberPlace` /
+  `placeIn`). A whole-document replace gives CodeMirror nothing to map positions
+  through, so everything collapses to 0: that is the "why am I at the top of the
+  file again" this fixes. The place is therefore remembered by CONTENT — the
+  line's own text, then its number as a fallback — so a line pushed down by an
+  insertion above is followed rather than lost, and the column is kept. A blank
+  line is never searched for (it matches anywhere), and the line is put back at
+  the same height on screen rather than centred: nothing appears to scroll, which
+  is what makes it feel like the file did not move.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
   `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`,
   `quickDiff`, `tags`, `searchMatches`.
