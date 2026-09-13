@@ -7,7 +7,9 @@ import {
   suppressReveal,
   forgetReveal,
   rawSearchResults,
-  alreadyRevealed
+  alreadyRevealed,
+  notePanelState,
+  lastPanelState
 } from './searchreveal'
 import { parseSearchResults } from './searchmatches'
 
@@ -108,6 +110,7 @@ export function activate(context: vscode.ExtensionContext): void {
         lines.push(`- Term deduced: **${target.query === undefined ? 'none' : `\`${target.query}\``}**`)
         lines.push(`- Case-sensitive: **${target.caseSensitive === true}**`)
         lines.push(`- Path compared: \`${active.document.uri.fsPath}\``)
+        lines.push(`- Search panel, last thing it did: **${lastPanelState()}**`)
       }
       if (results !== undefined) {
         const files = parseSearchResults(results)
@@ -958,6 +961,12 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         }
       }) => {
         switch (message.type) {
+          case 'searchPanelState':
+            // Diagnostic only: 'armed' means the term is waiting for the focus
+            // to arrive, 'opened' that the panel took over, 'gave-up' that it
+            // never came (a result walked with the arrows, say).
+            notePanelState(String(message.value), message.quiet === true)
+            break
           case 'focused':
             // The last case with no event of its own: the note is already open
             // AND already the active editor, so clicking a result for it

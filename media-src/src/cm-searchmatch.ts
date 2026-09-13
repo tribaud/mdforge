@@ -241,37 +241,69 @@ interface Pending {
 }
 
 let pending: Pending | undefined
-let listening = false
-/** A focus that comes long after the search is somebody else's business. */
-const PENDING_MS = 60_000
+let poll: ReturnType<typeof setInterval> | undefined
+/** How long the term waits for a focus that may never come. */
+const PENDING_MS = 10_000
+/** VS Code polls its own webview focus at this rate; no reason to be finer. */
+const POLL_MS = 250
+
+type PanelStage = 'armed' | 'opened' | 'gave-up'
+let report: ((stage: PanelStage, hasFocus: boolean) => void) | undefined
+
+/** Let the host be told what the panel did — the debug command prints it. */
+export function onSearchPanelState(fn: (stage: PanelStage, hasFocus: boolean) => void): void {
+  report = fn
+}
 
 /**
- * Open the panel on the next focus rather than now.
+ * Open the panel once the webview actually has the keyboard.
  *
  * The panel is never opened into an unfocused webview: while results are walked
- * with the arrows VS Code previews each one here and keeps the keyboard in the
- * result list, and `openSearchPanel` would end that walk on its first step. So
- * the term waits for the focus to actually arrive — which is what a click on a
- * result does, and also what the plain click into the note does a moment later.
- * The term itself is already set by then, so `F3` works without waiting.
+ * with the arrows VS Code previews each one here with `preserveFocus`, keeping
+ * the keyboard in the result list, and `openSearchPanel` would end that walk on
+ * its first step. Only a click (or `Entrée`) on a result sends the focus here.
+ *
+ * Waiting for it is POLLED, not listened for. VS Code tracks its own webview
+ * focus the same way (`trackFocus`, webview/browser/pre/index.html: "Use polling
+ * to track focus of main webview and iframes within the webview") — in this
+ * nested-iframe setup a `focus` event is not dependable, and the host's focus
+ * propagation deliberately does nothing when the iframe is already the active
+ * element. The term itself is already set by then, so `F3` works without
+ * waiting for any of this.
  */
 function armPanel(view: EditorView): void {
   pending = { view, at: Date.now() }
-  if (listening) return
-  listening = true
-  window.addEventListener('focus', () => {
+  report?.('armed', document.hasFocus())
+  if (poll) return
+  poll = setInterval(() => {
+    if (!pending) return stopPolling()
+    if (Date.now() - pending.at > PENDING_MS) {
+      report?.('gave-up', document.hasFocus())
+      return stopPolling()
+    }
+    if (!document.hasFocus()) return
     const armed = pending
-    pending = undefined
-    if (!armed || Date.now() - armed.at > PENDING_MS) return
-    const marked = armed.view.state.field(matchesField, false)
-    // Gone with an edit: the question the marks were asking has moved on.
-    if (!marked || marked.offsets.length === 0) return
-    // Hand the highlighting over to the panel — ours would double it.
-    const head = armed.view.state.selection.main.from
-    const index = Math.max(marked.offsets.indexOf(head), 0)
-    goTo(armed.view, marked.offsets, index, marked.length, false)
-    openSearchPanel(armed.view)
-  })
+    stopPolling()
+    openArmed(armed.view)
+  }, POLL_MS)
+}
+
+function stopPolling(): void {
+  pending = undefined
+  if (poll) clearInterval(poll)
+  poll = undefined
+}
+
+/** The focus arrived: hand the highlighting to the panel and open it. */
+function openArmed(view: EditorView): void {
+  const marked = view.state.field(matchesField, false)
+  // Gone with an edit: the question the marks were asking has moved on.
+  if (!marked || marked.offsets.length === 0) return
+  const head = view.state.selection.main.from
+  const index = Math.max(marked.offsets.indexOf(head), 0)
+  goTo(view, marked.offsets, index, marked.length, false)
+  openSearchPanel(view)
+  report?.('opened', document.hasFocus())
 }
 
 /**

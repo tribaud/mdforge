@@ -156,6 +156,17 @@ export async function searchMatches(
   }
 }
 
+/** What the webview's search panel last did — read back by the debug command. */
+let panelState = 'nothing yet'
+
+export function notePanelState(stage: string, hasFocus: boolean): void {
+  panelState = `${stage} (webview had the keyboard: ${hasFocus})`
+}
+
+export function lastPanelState(): string {
+  return panelState
+}
+
 /** Whether this note was already revealed for what the search holds right now. */
 export function alreadyRevealed(uri: vscode.Uri, target: RevealTarget): boolean {
   return revealed.get(uri.toString()) === JSON.stringify([target.query, target.matches])

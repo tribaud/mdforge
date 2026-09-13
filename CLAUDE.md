@@ -400,13 +400,24 @@ so it round-trips for free unless noted.
     opened on it, so `@codemirror/search` highlights every occurrence and
     `Entrée` / *next* work as they do for `Ctrl+F`. The panel is only opened
     into a webview that HAS the keyboard: while results are walked with the
-    arrows VS Code previews each one here and keeps the focus in the result
-    list, and `openSearchPanel` would end that walk on its first step. But the
-    focus also arrives a beat AFTER the click — VS Code moves it into the inner
-    frame asynchronously, so `document.hasFocus()` is still false when a reveal
-    from `ready` runs. Hence `armPanel`: the panel waits for the next `focus`
-    event rather than being dropped, and hands the highlighting over when it
-    opens. Its highlighter paints only while its panel is open, in the
+    arrows VS Code previews each one here with `preserveFocus`, keeping the
+    focus in the result list, and `openSearchPanel` would end that walk on its
+    first step. But the focus also arrives a beat AFTER the click — VS Code
+    propagates it into the inner frame asynchronously — so `document.hasFocus()`
+    is still false when a reveal from `ready` runs. Hence `armPanel`: the panel
+    waits for the keyboard instead of being dropped, and hands the highlighting
+    over when it opens.
+    **That wait is POLLED, never listened for** (250ms, 10s cap). A `focus`
+    event on the webview's window is not dependable here: VS Code tracks its own
+    webview focus by polling `document.hasFocus()` for exactly that reason
+    (`trackFocus`, `webview/browser/pre/index.html` — *"Use polling to track
+    focus of main webview and iframes within the webview"*), and its focus
+    propagation deliberately does nothing when the iframe is already the active
+    element. An event-only version looked right and never fired: the note
+    opened, the word was marked, and no panel ever came. Each stage
+    (`armed` / `opened` / `gave-up`, with the focus state) is posted back as
+    `searchPanelState` and printed by the debug command — this is not a place to
+    guess twice. Its highlighter paints only while its panel is open, in the
     very same VS Code colours as ours, so our word marks step aside then
     (`ownMarks`) — two alpha backgrounds on one range come out darker than
     either. The landing occurrence is SELECTED rather than pointed at: that is

@@ -47,7 +47,12 @@ import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
 import { quickDiff, setQuickDiff } from './cm-quickdiff'
-import { searchMatchMarks, showSearchMatches, nextSearchMatch } from './cm-searchmatch'
+import {
+  searchMatchMarks,
+  showSearchMatches,
+  nextSearchMatch,
+  onSearchPanelState
+} from './cm-searchmatch'
 import type { SearchMatch } from './cm-searchmatch'
 import type { QuickDiffChange } from './cm-quickdiff'
 import { setDiagnostics, lintGutter } from '@codemirror/lint'
@@ -1048,5 +1053,11 @@ window.addEventListener('message', (event) => {
 // event on the host side — but it does move the focus here. That is the only
 // signal for that case; the host answers it at most once per set of results.
 window.addEventListener('focus', () => vscode.postMessage({ type: 'focused' }))
+
+// What the search panel did with the term it was handed, so that
+// `MDForge: Debug search reveal` can say it out loud.
+onSearchPanelState((stage, hasFocus) =>
+  vscode.postMessage({ type: 'searchPanelState', value: stage, quiet: hasFocus })
+)
 
 vscode.postMessage({ type: 'ready' })
