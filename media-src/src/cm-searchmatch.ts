@@ -226,10 +226,10 @@ export function showSearchMatches(
 
   if (panel) {
     openSearchPanel(view)
-    // `openSearchPanel` focuses its field, which is inside the editor. If that
-    // did not take — the webview may not hold the keyboard at all — put the
-    // caret in the text instead, or `F3` would reach nothing that listens.
-    if (!view.dom.contains(document.activeElement)) view.focus()
+    takeKeyboard(view)
+    // Once more after the search view has finished its own opening: it puts the
+    // keyboard back into its result list right after handing the editor over.
+    setTimeout(() => takeKeyboard(view), 150)
     report?.('opened', document.hasFocus())
     watchForKeyboard(view)
   } else {
@@ -239,6 +239,29 @@ export function showSearchMatches(
 
 type PanelStage = 'opened' | 'marks-only' | 'no-keyboard' | 'key-arrived'
 let report: ((stage: PanelStage, hasFocus: boolean) => void) | undefined
+
+/**
+ * Pull the keyboard into THIS document — the only side that can.
+ *
+ * VS Code propagates focus into a webview's inner frame with
+ * `activeFrame.contentWindow.focus()`, but skips it when the outer iframe is
+ * already the active element — which, after a result click on a note that was
+ * already open, it is. Asking the HOST to focus the editor makes it worse: that
+ * focuses the container, and the keyboard leaves our document without coming
+ * back. From inside, focusing an element does pull it in.
+ *
+ * `blur()` first: an element that is already `document.activeElement` ignores
+ * `focus()`, and with it the chance to pull the keyboard — which is exactly the
+ * case on a second reveal in the same webview, where the panel's field never
+ * moved.
+ */
+function takeKeyboard(view: EditorView): void {
+  window.focus()
+  const field = view.dom.querySelector<HTMLElement>('.cm-panel.cm-search [main-field]')
+  const target = field ?? view.contentDOM
+  if (document.activeElement === target) target.blur()
+  target.focus()
+}
 
 /**
  * Did the keyboard actually reach us?

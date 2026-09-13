@@ -953,22 +953,17 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       if (mode === 'off' || !webviewPanel.active) return
       const target = await searchMatches(document)
       if (target.matches.length === 0) return
-      if (mode === 'panel') {
-        // A note that is ALREADY open is only brought forward by a result
-        // click: VS Code reveals its tab with the focus left in the result
-        // list, so `F3` lands nowhere and the note has to be clicked first. A
-        // freshly opened one is focused by VS Code itself — this is what makes
-        // the two cases feel the same. `mark` mode never takes the keyboard.
-        webviewPanel.reveal(webviewPanel.viewColumn, false)
-        // And again once the search view has finished its own opening: it puts
-        // the keyboard back in its result list after handing the editor over,
-        // so a single `reveal` is undone a few milliseconds later.
-        setTimeout(() => {
-          if (webviewPanel.active) {
-            void vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
-          }
-        }, 120)
-      }
+      /*
+       * The focus is NOT asked for from here. Both host-side ways of doing it —
+       * `webviewPanel.reveal(column, false)` and
+       * `workbench.action.focusActiveEditorGroup` — focus the editor CONTAINER,
+       * i.e. the webview's outer iframe element; VS Code then propagates that
+       * inward only when the iframe was not already the active element
+       * (`webview/browser/pre/index.html`), which after a result click it is. So
+       * the second one measurably made things worse: it pulled the keyboard out
+       * of the inner document even in the case that used to work. The webview
+       * takes the keyboard itself instead (`takeKeyboard`, cm-searchmatch.ts).
+       */
       void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
     }
 
