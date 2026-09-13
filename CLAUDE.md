@@ -442,7 +442,12 @@ so it round-trips for free unless noted.
     that is already open AND already the ACTIVE editor produces no event at
     all: nothing about it changes. The only thing that does happen there is the
     focus moving from the result list into the webview, so the webview posts
-    `focused` and the host answers that as well. All three are idempotent: a
+    `focused` and the host answers that as well. **The `focused` trigger must
+    never ask for the focus back**: it means the webview already HAS the
+    keyboard, and asking makes a loop — ask, the webview is focused, it posts
+    `focused`, we ask again. It ran three times inside one second, which reads
+    as an editor stuck with a key held down. The webview also stays quiet about
+    any focus within 1.5s of a reveal, so the echo never leaves it. All three are idempotent: a
     per-note signature of `[query, matches]` (`alreadyRevealed` /
     `markRevealed`) means the same note, for the same results, has its caret
     thrown to the match once — clicking back into a note costs a lookup and

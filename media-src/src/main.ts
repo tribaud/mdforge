@@ -890,6 +890,9 @@ function applyDiagnostics(raw: RawDiagnostic[]): void {
   view.dispatch(setDiagnostics(view.state, items))
 }
 
+/** When the host last posted a reveal — see the `focus` listener at the end. */
+let lastRevealAt = 0
+
 function setContent(text: string): void {
   if (text === currentText) return
   applyingRemote = true
@@ -1023,6 +1026,7 @@ window.addEventListener('message', (event) => {
       if (Array.isArray(msg.changes)) setQuickDiff(view, msg.changes)
       break
     case 'searchMatches':
+      lastRevealAt = Date.now()
       if (Array.isArray(msg.matches)) {
         showSearchMatches(view, msg.matches, msg.query, msg.caseSensitive, msg.openPanel !== false)
       }
@@ -1055,7 +1059,14 @@ window.addEventListener('message', (event) => {
 // Clicking a search result whose note is already the active editor produces no
 // event on the host side — but it does move the focus here. That is the only
 // signal for that case; the host answers it at most once per set of results.
-window.addEventListener('focus', () => vscode.postMessage({ type: 'focused' }))
+window.addEventListener('focus', () => {
+  // Not the focus WE just took: `takeKeyboard` focuses an element here, which
+  // fires this event, which would ask the host for a reveal, which takes the
+  // keyboard again… The host breaks that loop on its side too; this keeps the
+  // message from being sent at all.
+  if (Date.now() - lastRevealAt < 1500) return
+  vscode.postMessage({ type: 'focused' })
+})
 
 // What the search panel did with the term it was handed, so that
 // `MDForge: Debug search reveal` can say it out loud.

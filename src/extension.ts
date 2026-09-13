@@ -946,7 +946,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
      * are dug back out of the search view itself (src/searchreveal.ts), once,
      * when the editor opens.
      */
-    const revealSearchMatch = async (trigger: 'ready' | 'shown'): Promise<void> => {
+    const revealSearchMatch = async (trigger: 'ready' | 'shown' | 'focused'): Promise<void> => {
       const mode = revealMode(document.uri)
       // Only the editor the user is looking at: restoring a window resolves the
       // tabs it shows, and a note reopened in the background has no business
@@ -972,6 +972,13 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
        * result list has taken the keyboard back, which is exactly what it does
        * right after opening an editor. Hence twice: once now, once after it
        * has settled. Only in `panel` mode: `mark` never takes the keyboard.
+       */
+      /*
+       * NEVER from the `focused` trigger: that one means the webview just told
+       * us it HAS the keyboard, so asking for it again is both pointless and a
+       * loop — ask, the webview is focused, it posts `focused`, we ask again.
+       * Three rounds inside one second, an editor that feels stuck and a `F3`
+       * that never lands: that was this exact loop.
        */
       if (mode === 'panel' && trigger === 'shown') {
         const focusEditor = (): void => {
@@ -1031,7 +1038,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             // the result list into the webview. Revealing is idempotent (the
             // same note, for the same results, is revealed once), so a plain
             // click back into a note costs a lookup and nothing more.
-            void revealSearchMatch('shown')
+            void revealSearchMatch('focused')
             break
           case 'ready':
             postConfig()
