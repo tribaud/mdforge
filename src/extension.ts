@@ -7,7 +7,7 @@ import {
   suppressReveal,
   forgetReveal,
   rawSearchResults,
-  alreadyRevealed,
+  revealedRecently,
   markRevealed,
   notePanelState,
   lastPanelState
@@ -108,8 +108,8 @@ export function activate(context: vscode.ExtensionContext): void {
         const target = await searchMatches(active.document)
         lines.push(`- Matches found for it: **${target.matches.length}**`)
         lines.push(
-          `- Already revealed for these results: **${alreadyRevealed(active.document.uri, target)}**` +
-            ' (if `true`, the reveal has already run for them — this is not a failure)'
+          `- Revealed in the last 2s: **${revealedRecently(active.document.uri, target)}**` +
+            ' (`true` only means the same click is still echoing through its triggers)'
         )
         lines.push(`- Term deduced: **${target.query === undefined ? 'none' : `\`${target.query}\``}**`)
         lines.push(`- Case-sensitive: **${target.caseSensitive === true}**`)
@@ -994,8 +994,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
        * Returning before it is what left cases 2 and 3 with no focus at all:
        * the trail showed no `shown` entry because the function never got there.
        */
-      if (alreadyRevealed(document.uri, target)) {
-        notePanelState('already revealed, focus only', webviewPanel.active)
+      if (revealedRecently(document.uri, target)) {
+        notePanelState('just revealed, skipped', webviewPanel.active)
         return
       }
       markRevealed(document.uri, target)

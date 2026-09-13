@@ -892,6 +892,9 @@ function applyDiagnostics(raw: RawDiagnostic[]): void {
 
 /** When the host last posted a reveal — see the `focus` listener at the end. */
 let lastRevealAt = 0
+/** When the pointer was last pressed in here — same listener, other half. */
+let lastLocalPointerAt = 0
+window.addEventListener('mousedown', () => (lastLocalPointerAt = Date.now()), true)
 
 function setContent(text: string): void {
   if (text === currentText) return
@@ -1065,6 +1068,10 @@ window.addEventListener('focus', () => {
   // keyboard again… The host breaks that loop on its side too; this keeps the
   // message from being sent at all.
   if (Date.now() - lastRevealAt < 1500) return
+  // And not a focus the user brought here by CLICKING in the note: that is
+  // them putting the caret somewhere, not a search result pointing at one.
+  // Only a keyboard arriving from outside means "I was sent here".
+  if (Date.now() - lastLocalPointerAt < 400) return
   vscode.postMessage({ type: 'focused' })
 })
 

@@ -447,17 +447,20 @@ so it round-trips for free unless noted.
     keyboard, and asking makes a loop — ask, the webview is focused, it posts
     `focused`, we ask again. It ran three times inside one second, which reads
     as an editor stuck with a key held down. The webview also stays quiet about
-    any focus within 1.5s of a reveal, so the echo never leaves it. All three are idempotent: a
-    per-note signature of `[query, matches]` (`alreadyRevealed` /
-    `markRevealed`) means the same note, for the same results, has its caret
-    thrown to the match once — clicking back into a note costs a lookup and
-    nothing more. A new webview forgets it (`forgetReveal`).
-    **That gate belongs AFTER the focus, never before it.** A note already
-    revealed for these results is still a note whose result the user just
-    clicked: returning early left it without the keyboard, and the trail then
-    showed no trigger at all, because the function never reached the line that
-    records one. The debug command sits outside the gate for the same reason —
-    it would otherwise report a perfectly working reveal as "0 matches".
+    any focus within 1.5s of a reveal, so the echo never leaves it — and about
+    any focus that follows a **mousedown of its own** within 400ms, which is the
+    user clicking into the note to place the caret, not a search result pointing
+    at one. Only a keyboard arriving from outside means "I was sent here". One click reaches us through
+    two or three of them, so an identical reveal is **de-bounced for 2s**
+    (`revealedRecently` / `markRevealed`, a per-note `[query, matches]`
+    signature + a timestamp) — not gated for ever, as a first version did: a
+    note already revealed for a search is still a note whose result the user may
+    click again, and "nothing happens at all" was the result. **The de-bounce
+    belongs AFTER the focus, never before it**, or clicking such a result leaves
+    the note without the keyboard, with a trail showing no trigger at all
+    because the function never reached the line that records one. A new webview
+    forgets its note (`forgetReveal`), and the debug command sits outside the
+    whole thing.
   - The command is **internal**. It is feature-detected once
     (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
     "no matches": the note simply opens as it always did. **`MDForge: Debug

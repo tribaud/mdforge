@@ -60,7 +60,15 @@ const selfOpened = new Set<string>()
  * this is what keeps that from re-jumping on every tab switch: the same note,
  * for the same results, is revealed once.
  */
-const revealed = new Map<string, string>()
+const revealed = new Map<string, { signature: string; at: number }>()
+
+/**
+ * How long a reveal suppresses an identical one. Long enough to swallow the
+ * storm of triggers a single click produces (the tab comes forward, the webview
+ * is focused, the focus is reported), short enough that clicking the SAME
+ * result again a moment later does what it obviously means.
+ */
+const REVEAL_DEBOUNCE_MS = 2000
 
 /** A fresh editor reveals again, whatever was shown in the previous one. */
 export function forgetReveal(uri: vscode.Uri): void {
@@ -170,14 +178,20 @@ export function lastPanelState(): string {
   return panelTrail.length === 0 ? 'nothing yet' : panelTrail.join(' → ')
 }
 
-/** Whether this note was already revealed for what the search holds right now. */
-export function alreadyRevealed(uri: vscode.Uri, target: RevealTarget): boolean {
-  return revealed.get(uri.toString()) === signature(target)
+/**
+ * Whether this note has JUST been revealed for these very matches — the same
+ * click reaching us through two or three triggers. A permanent gate was wrong:
+ * a note already revealed for a search is still a note whose result the user
+ * may click again, and "nothing happens at all" was the result.
+ */
+export function revealedRecently(uri: vscode.Uri, target: RevealTarget): boolean {
+  const seen = revealed.get(uri.toString())
+  return seen !== undefined && seen.signature === signature(target) && Date.now() - seen.at < REVEAL_DEBOUNCE_MS
 }
 
 /** Remember that it has been — the caller decides what that suppresses. */
 export function markRevealed(uri: vscode.Uri, target: RevealTarget): void {
-  revealed.set(uri.toString(), signature(target))
+  revealed.set(uri.toString(), { signature: signature(target), at: Date.now() })
 }
 
 function signature(target: RevealTarget): string {
