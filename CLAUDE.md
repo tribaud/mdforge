@@ -443,11 +443,16 @@ so it round-trips for free unless noted.
     all: nothing about it changes. The only thing that does happen there is the
     focus moving from the result list into the webview, so the webview posts
     `focused` and the host answers that as well. All three are idempotent: a
-    per-note signature of `[query, matches]` (`remember`) means the same note,
-    for the same results, is revealed once — clicking back into a note costs a
-    lookup and nothing more. A new webview forgets it (`forgetReveal`), and the
-    debug command bypasses the whole gate (`force`), or it would report a
-    perfectly working reveal as "0 matches".
+    per-note signature of `[query, matches]` (`alreadyRevealed` /
+    `markRevealed`) means the same note, for the same results, has its caret
+    thrown to the match once — clicking back into a note costs a lookup and
+    nothing more. A new webview forgets it (`forgetReveal`).
+    **That gate belongs AFTER the focus, never before it.** A note already
+    revealed for these results is still a note whose result the user just
+    clicked: returning early left it without the keyboard, and the trail then
+    showed no trigger at all, because the function never reached the line that
+    records one. The debug command sits outside the gate for the same reason —
+    it would otherwise report a perfectly working reveal as "0 matches".
   - The command is **internal**. It is feature-detected once
     (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
     "no matches": the note simply opens as it always did. **`MDForge: Debug
