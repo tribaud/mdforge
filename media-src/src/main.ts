@@ -11,7 +11,7 @@
  * `setContent`/`config` in), so src/extension.ts is unchanged.
  */
 import { Compartment, EditorState, Prec } from '@codemirror/state'
-import type { Extension } from '@codemirror/state'
+import type { Extension, Text } from '@codemirror/state'
 import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view'
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
 import {
@@ -921,19 +921,101 @@ let selfHandledSearchAt = 0
 let lastLocalPointerAt = 0
 window.addEventListener('mousedown', () => (lastLocalPointerAt = Date.now()), true)
 
+/** Where the caret was, described by what was AROUND it rather than by an offset. */
+interface Place {
+  /** 1-based, as the line gutter shows it. */
+  line: number
+  /** Characters from the start of that line. */
+  column: number
+  /** The line's own text — what the line is FOUND by after the rewrite. */
+  text: string
+  /** How far below the top of the frame that line was drawn, in px. */
+  fromTop: number
+}
+
+/** How far to look for the line that moved. Beyond this it is not the same edit. */
+const PLACE_SEARCH_LINES = 400
+
+/** Note where the caret is before the document is replaced under it. */
+function rememberPlace(): Place | undefined {
+  if (!view.hasFocus && view.state.selection.main.empty && view.state.doc.length === 0) return undefined
+  const head = view.state.selection.main.head
+  const line = view.state.doc.lineAt(head)
+  const coords = view.coordsAtPos(head)
+  const frame = view.scrollDOM.getBoundingClientRect()
+  return {
+    line: line.number,
+    column: head - line.from,
+    text: line.text,
+    fromTop: coords ? coords.top - frame.top : 0
+  }
+}
+
+/**
+ * The same place in the new text.
+ *
+ * A whole-document replace leaves CodeMirror nothing to map positions through —
+ * everything collapses to 0, which is the "why am I back at the top of the
+ * file" of an external change (a `git checkout`, another editor, a formatter).
+ * So the line is found by its CONTENT: same number if the text still matches,
+ * otherwise the nearest line that carries the same text, otherwise the same
+ * number clamped. A blank or whitespace-only line is never searched for — it
+ * would match anywhere — and then only the number is kept.
+ */
+function placeIn(doc: Text, place: Place): number {
+  const wanted = place.text.trim()
+  const same = (n: number): boolean => doc.line(n).text === place.text
+  let found = Math.min(Math.max(place.line, 1), doc.lines)
+  if (wanted !== '') {
+    if (same(found)) {
+      // unchanged, nothing to look for
+    } else {
+      let best: number | undefined
+      for (let away = 1; away <= PLACE_SEARCH_LINES && best === undefined; away++) {
+        const up = place.line - away
+        const down = place.line + away
+        if (up >= 1 && up <= doc.lines && same(up)) best = up
+        else if (down >= 1 && down <= doc.lines && same(down)) best = down
+      }
+      if (best !== undefined) found = best
+    }
+  }
+  const line = doc.line(found)
+  return Math.min(line.from + place.column, line.to)
+}
+
 function setContent(text: string): void {
   if (text === currentText) return
   applyingRemote = true
   // Another document (or an external rewrite): whatever was open in place — a
   // frontmatter property, a table cell — pointed into the previous content.
   resetInlineEditors()
+  const first = currentText === ''
   // On the first load, drop the caret past any frontmatter so it renders as its
   // collapsed card (a caret at 0 sits inside the block and reveals the raw YAML).
-  const anchor = currentText === '' ? bodyStart(text) : undefined
+  // Afterwards this is a RELOAD, and the caret is put back where it was.
+  const place = first ? undefined : rememberPlace()
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
-    ...(anchor ? { selection: { anchor } } : {})
+    ...(first ? { selection: { anchor: bodyStart(text) } } : {})
   })
+  if (place) {
+    const anchor = placeIn(view.state.doc, place)
+    view.dispatch({ selection: { anchor } })
+    // And put that line back where it was on screen, rather than centring it:
+    // the eye keeps its place when nothing appears to have scrolled.
+    view.requestMeasure({
+      read: () => view.coordsAtPos(anchor),
+      write: (coords) => {
+        if (!coords) {
+          view.dispatch({ effects: EditorView.scrollIntoView(anchor, { y: 'center' }) })
+          return
+        }
+        const frame = view.scrollDOM.getBoundingClientRect()
+        view.scrollDOM.scrollTop += coords.top - frame.top - place.fromTop
+      }
+    })
+  }
   currentText = text
   applyingRemote = false
 }

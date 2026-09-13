@@ -6,6 +6,18 @@ All notable changes to MDForge are documented here. The format follows
 
 ## [0.6.1]
 
+### Fixed
+
+- **A note reloaded from disk no longer throws you back to the top.** When the
+  file changed outside the editor — a `git checkout`, another editor, a
+  formatter — MDForge received the whole text again and the caret fell to line
+  1, which meant hunting for your place every time. It is now put back where it
+  was, **line and column**, and on the same height on screen, so nothing appears
+  to have scrolled. The line is found by its own text first: one inserted
+  paragraph above no longer counts as having moved you. If that line was itself
+  rewritten, the caret stays at its number; if the file got shorter, at the
+  closest line that still exists.
+
 ### Added
 
 - **A workspace-search result opens the note at the match.** Searching with
