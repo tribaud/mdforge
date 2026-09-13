@@ -490,6 +490,7 @@ const ENTRIES: Entry[] = [
   { label: 'H1', title: 'Heading 1', run: (v) => toggleLinePrefix(v, '# ', /^#{1,6}\s+/) },
   { label: 'H2', title: 'Heading 2', run: (v) => toggleLinePrefix(v, '## ', /^#{1,6}\s+/) },
   { label: 'H3', title: 'Heading 3', run: (v) => toggleLinePrefix(v, '### ', /^#{1,6}\s+/) },
+  { label: 'H4', title: 'Heading 4', run: (v) => toggleLinePrefix(v, '#### ', /^#{1,6}\s+/) },
   { label: ICONS.frontmatter, title: 'Propriétés (frontmatter)', run: (v) => insertFrontmatter(v) },
   'sep',
   { label: ICONS.quote, title: 'Quote', run: (v) => toggleLinePrefix(v, '> ', /^>\s?/) },

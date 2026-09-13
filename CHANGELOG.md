@@ -26,7 +26,7 @@ All notable changes to MDForge are documented here. The format follows
   honest limits: with several matches you land on the first, not on the one you
   clicked, and MDForge cannot tell that a note was opened *from* a result —
   with the Search view on screen, reaching a matching note by `Ctrl+P` also
-  lands on a match. Set `mdforge.revealSearchMatch` to `false` to switch it
+  lands on a match. Set `mdforge.revealSearchMatch` to `off` to switch it
   off, or to `mark` to keep everything except the panel — useful if you walk
   results with the arrow keys, since opening the panel takes the keyboard.
   **`MDForge: Debug search reveal`** reports what the Search view answered
@@ -34,6 +34,10 @@ All notable changes to MDForge are documented here. The format follows
   another tab, or is the one you are already looking at — the last case reports
   nothing at all to an extension, so it is the arrival of the keyboard focus
   that triggers it.
+- **`H4` in the toolbar** — the heading buttons stopped at `H3`, in the top bar
+  and in the selection bubble alike, so a fourth-level heading had to be typed
+  by hand. The `/` menu gained *Titre 4* for the same reason: a level reachable
+  from one place and not the other is its own little trap.
 
 ## [0.6.0]
 
