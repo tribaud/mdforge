@@ -993,6 +993,7 @@ window.addEventListener('message', (event) => {
     matches?: SearchMatch[]
     query?: string
     caseSensitive?: boolean
+    openPanel?: boolean
     tags?: string[]
     keys?: string[]
     scannedAt?: number
@@ -1022,7 +1023,9 @@ window.addEventListener('message', (event) => {
       if (Array.isArray(msg.changes)) setQuickDiff(view, msg.changes)
       break
     case 'searchMatches':
-      if (Array.isArray(msg.matches)) showSearchMatches(view, msg.matches, msg.query, msg.caseSensitive)
+      if (Array.isArray(msg.matches)) {
+        showSearchMatches(view, msg.matches, msg.query, msg.caseSensitive, msg.openPanel !== false)
+      }
       break
     case 'tags':
       if (Array.isArray(msg.tags)) {

@@ -396,45 +396,26 @@ so it round-trips for free unless noted.
     view's preview text, which is trimmed on very long lines.
     With a term, the search is handed over to **MDForge's own search state**:
     the term is set right away — that alone makes `F3` / `Maj+F3` (and
-    `Ctrl/⌘G`) walk the occurrences, panel or no panel — and the panel is
-    opened on it, so `@codemirror/search` highlights every occurrence and
-    `Entrée` / *next* work as they do for `Ctrl+F`. The panel is only opened
-    into a webview that HAS the keyboard: while results are walked with the
-    arrows VS Code previews each one here with `preserveFocus`, keeping the
-    focus in the result list, and `openSearchPanel` would end that walk on its
-    first step. But the focus also arrives a beat AFTER the click — VS Code
-    propagates it into the inner frame asynchronously — so `document.hasFocus()`
-    is still false when a reveal from `ready` runs. Hence `armPanel`: the panel
-    waits for the keyboard instead of being dropped, and hands the highlighting
-    over when it opens.
-    **That wait is POLLED, never listened for** (250ms, 10s cap). A `focus`
-    event on the webview's window is not dependable here: VS Code tracks its own
-    webview focus by polling `document.hasFocus()` for exactly that reason
-    (`trackFocus`, `webview/browser/pre/index.html` — *"Use polling to track
-    focus of main webview and iframes within the webview"*), and its focus
-    propagation deliberately does nothing when the iframe is already the active
-    element. An event-only version looked right and never fired: the note
-    opened, the word was marked, and no panel ever came. Each stage
-    (`armed` / `opened` / `gave-up`, with the focus state) is posted back as
-    `searchPanelState` and printed by the debug command — this is not a place to
-    guess twice. Its highlighter paints only while its panel is open, in the
-    very same VS Code colours as ours, so our word marks step aside then
-    (`ownMarks`) — two alpha backgrounds on one range come out darker than
-    either. The landing occurrence is SELECTED rather than pointed at: that is
-    what makes it the panel's current match, and the selection bubble stays
-    away because the focus is in the panel's field (`view.hasFocus` false).
-    Without the focus there is no panel to open without stealing it, so the
-    note's OWN occurrences are marked
-    (`.cm-search-word`, `-current` on the one under the caret) and walked —
-    read from the text in front of us, so they hold even if the file moved on,
-    and usually more numerous than what the search reported (a whole-word or
-    case-sensitive search is narrower), which is exactly what `Ctrl+F` would
-    have shown. Case sensitivity is inferred from a count discrepancy: more
-    occurrences ignoring case than the search found, and the same number with
-    it, means the case mattered.
-    Without a term, the mark is the whole **line** (`.cm-search-hit`, and
-    `-current` — TWO classes, because the current match is also the active line
-    and CodeMirror's own `.cm-activeLine` background wins at equal specificity).
+    `Ctrl/⌘G`) walk the occurrences, panel or no panel — and, in the default
+    `panel` mode, `openSearchPanel` is called so `@codemirror/search` highlights
+    every occurrence and `Entrée` / *next* work as they do for `Ctrl+F`.
+    **Do NOT gate that on the webview having the keyboard.** Two versions tried:
+    `document.hasFocus()` at reveal time, then a 10s poll waiting for it. Both
+    left the panel permanently closed in the real editor, because in the inner
+    frame of a webview **that flag simply never becomes true here**: VS Code
+    propagates focus with `activeFrame.contentWindow.focus()` but returns early
+    when `document.activeElement === activeFrame` — the iframe is already the
+    active element after a result click, so our document is never focused, and
+    the polled flag reported `gave-up (webview had the keyboard: false)` every
+    time. (VS Code polls that same flag for its OWN focus tracking — in the
+    OUTER frame, where it covers the whole chain. It does not answer for us.)
+    The reason for the gate was real, though: while results are walked with the
+    arrows VS Code previews each one with `preserveFocus`, and `openSearchPanel`
+    focuses its field, which would end that walk on its first step. With no
+    signal to tell the two apart, it became the user's call —
+    `mdforge.revealSearchMatch: panel | mark | off`, `mark` doing everything
+    except opening the panel. Each outcome is posted back as `searchPanelState`
+    and printed by the debug command: this is not a place to guess twice.
   - **Three triggers, because VS Code reports almost nothing here.** A fresh
     editor gives `ready`. A note that is already open answers none — the
     webview is kept (`retainContextWhenHidden`), so a result pointing at it

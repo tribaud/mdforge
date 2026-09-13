@@ -97,10 +97,13 @@ export function activate(context: vscode.ExtensionContext): void {
         `- MDForge editor active: **${active ? vscode.workspace.asRelativePath(active.document.uri) : 'none'}**`
       )
       if (active) {
-        const enabled = vscode.workspace
-          .getConfiguration('mdforge', active.document.uri)
-          .get<boolean>('revealSearchMatch', true)
-        lines.push(`- \`mdforge.revealSearchMatch\`: **${enabled}**`)
+        lines.push(
+          `- \`mdforge.revealSearchMatch\`: **${String(
+            vscode.workspace
+              .getConfiguration('mdforge', active.document.uri)
+              .get<unknown>('revealSearchMatch')
+          )}**`
+        )
         const target = await searchMatches(active.document, { force: true })
         lines.push(`- Matches found for it: **${target.matches.length}**`)
         lines.push(
@@ -922,21 +925,32 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     assetWatcher.onDidDelete(postRefresh)
 
     /*
+     * `mdforge.revealSearchMatch`, tolerating the boolean it was while this was
+     * being built: `false` meant off, anything else the full behaviour.
+     */
+    const revealMode = (uri: vscode.Uri): 'panel' | 'mark' | 'off' => {
+      const value = vscode.workspace.getConfiguration('mdforge', uri).get<unknown>('revealSearchMatch')
+      if (value === false || value === 'off') return 'off'
+      if (value === 'mark') return 'mark'
+      return 'panel'
+    }
+
+    /*
      * A click on a workspace-search result opens MDForge with no idea of where
      * the match was: VS Code drops the range for a custom editor. The positions
      * are dug back out of the search view itself (src/searchreveal.ts), once,
      * when the editor opens.
      */
     const revealSearchMatch = async (): Promise<void> => {
-      const enabled = vscode.workspace
-        .getConfiguration('mdforge', document.uri)
-        .get<boolean>('revealSearchMatch', true)
+      const mode = revealMode(document.uri)
       // Only the editor the user is looking at: restoring a window resolves the
       // tabs it shows, and a note reopened in the background has no business
       // jumping to a match.
-      if (!enabled || !webviewPanel.active) return
+      if (mode === 'off' || !webviewPanel.active) return
       const target = await searchMatches(document)
-      if (target.matches.length > 0) void webview.postMessage({ type: 'searchMatches', ...target })
+      if (target.matches.length > 0) {
+        void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
+      }
     }
 
     webview.onDidReceiveMessage(

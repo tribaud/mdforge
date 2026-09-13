@@ -23,7 +23,9 @@ All notable changes to MDForge are documented here. The format follows
   clicked, and MDForge cannot tell that a note was opened *from* a result —
   with the Search view on screen, reaching a matching note by `Ctrl+P` also
   lands on a match. Set `mdforge.revealSearchMatch` to `false` to switch it
-  off. **`MDForge: Debug search reveal`** reports what the Search view answered
+  off, or to `mark` to keep everything except the panel — useful if you walk
+  results with the arrow keys, since opening the panel takes the keyboard.
+  **`MDForge: Debug search reveal`** reports what the Search view answered
   when nothing happens. This works whether the note has to be opened, is open in
   another tab, or is the one you are already looking at — the last case reports
   nothing at all to an extension, so it is the arrival of the keyboard focus
