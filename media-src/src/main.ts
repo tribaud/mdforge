@@ -22,7 +22,13 @@ import {
   foldKeymap,
   foldService
 } from '@codemirror/language'
-import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import {
+  search,
+  searchKeymap,
+  highlightSelectionMatches,
+  findNext,
+  findPrevious
+} from '@codemirror/search'
 import { markdown, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
@@ -47,6 +53,13 @@ import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
 import { blockDrag } from './cm-block-drag'
 import { quickDiff, setQuickDiff } from './cm-quickdiff'
+import {
+  searchMatchMarks,
+  showSearchMatches,
+  nextSearchMatch,
+  onSearchPanelState
+} from './cm-searchmatch'
+import type { SearchMatch } from './cm-searchmatch'
 import type { QuickDiffChange } from './cm-quickdiff'
 import { setDiagnostics, lintGutter } from '@codemirror/lint'
 import type { Diagnostic } from '@codemirror/lint'
@@ -582,6 +595,10 @@ try {
           // removes an empty marker — all before the generic bindings so they win.
           { key: 'Tab', run: indentList },
           { key: 'Shift-Tab', run: outdentList },
+          // Walk what a workspace-search result brought us to (the host can
+          // only say WHERE the matches are, never which one was clicked).
+          { key: 'F8', run: (v) => nextSearchMatch(v, 1) },
+          { key: 'Shift-F8', run: (v) => nextSearchMatch(v, -1) },
           ...markdownKeymap,
           ...searchKeymap,
           ...foldKeymap,
@@ -603,6 +620,8 @@ try {
         // Added/modified/deleted bars, computed host-side against git. Placed
         // after the line numbers so it sits against the text, as in VS Code.
         quickDiffGutter.of(quickDiff),
+        // Lines a workspace-search result points at, marked until the next edit.
+        searchMatchMarks,
         search({ top: true }),
         highlightSelectionMatches(),
         blockDrag,
@@ -631,6 +650,23 @@ try {
       ]
     })
   })
+
+  /*
+   * A search key pressed HERE is one CodeMirror will handle itself. VS Code
+   * forwards every keydown to the workbench as well, so `mdforge.searchNext`
+   * fires too and would step a second time — the relay is dropped when this
+   * has just run. A capture listener on `view.dom`, not a keymap entry: the
+   * search PANEL runs its own scope, and a key pressed in its field never
+   * reaches the editor's keymap.
+   */
+  view.dom.addEventListener(
+    'keydown',
+    (event) => {
+      const g = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'g'
+      if (event.key === 'F3' || g) selfHandledSearchAt = Date.now()
+    },
+    true
+  )
 
   // Ctrl/⌘-click a rendered link → open it externally. Handled on *mousedown*
   // (capture) so it fires before CodeMirror moves the caret — which would turn
@@ -877,6 +913,14 @@ function applyDiagnostics(raw: RawDiagnostic[]): void {
   view.dispatch(setDiagnostics(view.state, items))
 }
 
+/** When the host last posted a reveal — see the `focus` listener at the end. */
+let lastRevealAt = 0
+/** When a search key was handled HERE, so the host's relay of it is dropped. */
+let selfHandledSearchAt = 0
+/** When the pointer was last pressed in here — same listener, other half. */
+let lastLocalPointerAt = 0
+window.addEventListener('mousedown', () => (lastLocalPointerAt = Date.now()), true)
+
 function setContent(text: string): void {
   if (text === currentText) return
   applyingRemote = true
@@ -977,6 +1021,11 @@ window.addEventListener('message', (event) => {
     error?: string
     items?: RawDiagnostic[]
     changes?: QuickDiffChange[]
+    matches?: SearchMatch[]
+    query?: string
+    caseSensitive?: boolean
+    openPanel?: boolean
+    value?: string
     tags?: string[]
     keys?: string[]
     scannedAt?: number
@@ -1005,6 +1054,21 @@ window.addEventListener('message', (event) => {
     case 'quickDiff':
       if (Array.isArray(msg.changes)) setQuickDiff(view, msg.changes)
       break
+    case 'searchStep':
+      // The keybinding relay (see `mdforge.searchNext`): only useful when the
+      // key never reached the editor, i.e. when the webview did not have the
+      // keyboard. Otherwise CodeMirror has already stepped.
+      if (Date.now() - selfHandledSearchAt > 250) {
+        if (msg.value === 'previous') findPrevious(view)
+        else findNext(view)
+      }
+      break
+    case 'searchMatches':
+      lastRevealAt = Date.now()
+      if (Array.isArray(msg.matches)) {
+        showSearchMatches(view, msg.matches, msg.query, msg.caseSensitive, msg.openPanel !== false)
+      }
+      break
     case 'tags':
       if (Array.isArray(msg.tags)) {
         setTagIndex({
@@ -1029,5 +1093,27 @@ window.addEventListener('message', (event) => {
       break
   }
 })
+
+// Clicking a search result whose note is already the active editor produces no
+// event on the host side — but it does move the focus here. That is the only
+// signal for that case; the host answers it at most once per set of results.
+window.addEventListener('focus', () => {
+  // Not the focus WE just took: `takeKeyboard` focuses an element here, which
+  // fires this event, which would ask the host for a reveal, which takes the
+  // keyboard again… The host breaks that loop on its side too; this keeps the
+  // message from being sent at all.
+  if (Date.now() - lastRevealAt < 1500) return
+  // And not a focus the user brought here by CLICKING in the note: that is
+  // them putting the caret somewhere, not a search result pointing at one.
+  // Only a keyboard arriving from outside means "I was sent here".
+  if (Date.now() - lastLocalPointerAt < 400) return
+  vscode.postMessage({ type: 'focused' })
+})
+
+// What the search panel did with the term it was handed, so that
+// `MDForge: Debug search reveal` can say it out loud.
+onSearchPanelState((stage, hasFocus) =>
+  vscode.postMessage({ type: 'searchPanelState', value: stage, quiet: hasFocus })
+)
 
 vscode.postMessage({ type: 'ready' })

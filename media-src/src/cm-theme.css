@@ -299,6 +299,34 @@ body.mdforge-presentation .cm-gutters {
 .cm-qd-modified {
   background: var(--vscode-editorGutter-modifiedBackground, #0c7d9d);
 }
+/* Lines a workspace-search result points at. VS Code hands a custom editor no
+   range at all, so the positions come from the Search view and carry no match
+   length — the LINE is marked, never the word. The current one is the find
+   colour, the others the softer range highlight VS Code uses for "you were
+   sent here". Background only: a border or a padding on a line decoration
+   changes its height and drifts the caret (CLAUDE.md §5). */
+.cm-editor .cm-line.cm-search-hit {
+  background: var(--vscode-editor-rangeHighlightBackground, rgba(255, 213, 0, 0.14));
+}
+/* Two classes: the current match is also the ACTIVE line, whose background
+   CodeMirror styles with a class of its own — at equal specificity the caret
+   would win and the match one would never be seen. */
+.cm-editor .cm-line.cm-search-hit-current {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 213, 0, 0.35));
+}
+
+/* And the term itself, when the host could deduce it: the find colours, over
+   the line mark. A `mark` decoration, so no geometry — a padding here would
+   change the line height and drift the caret (CLAUDE.md §5). */
+.cm-editor .cm-search-word {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 213, 0, 0.45));
+  border-radius: 2px;
+}
+.cm-editor .cm-search-word-current {
+  background: var(--vscode-editor-findMatchBackground, rgba(255, 170, 0, 0.75));
+  outline: 1px solid var(--vscode-editor-findMatchBorder, transparent);
+}
+
 /* A deletion has no line of its own: a wedge points at the seam it left. It is
    wider than the 3px bars on purpose — at their width it read as a speck. */
 .cm-qd-deleted::after,

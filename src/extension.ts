@@ -2,6 +2,17 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { QuickDiff } from './quickdiff'
+import {
+  searchMatches,
+  suppressReveal,
+  forgetReveal,
+  rawSearchResults,
+  revealedRecently,
+  markRevealed,
+  notePanelState,
+  lastPanelState
+} from './searchreveal'
+import { parseSearchResults } from './searchmatches'
 
 const VIEW_TYPE = 'mdforge.editor'
 
@@ -29,6 +40,22 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mdforge.outline.reveal', (index: number) => {
       outline.active?.webview.postMessage({ type: 'revealHeading', index })
     }),
+    /*
+     * `F3` / `Maj+F3`, contributed so they work even when the webview does not
+     * hold the keyboard — which happens: VS Code hands focus to a webview's
+     * inner frame through a delayed, conditional path (§4), and a note brought
+     * forward by a search result sometimes loses that race. Bound on
+     * `activeCustomEditorId == 'mdforge.editor'`, so they only exist where they
+     * mean something. The webview forwards every keydown to VS Code anyway, so
+     * when it DID handle the key itself this command arrives as a duplicate;
+     * dropping it is the webview's job — it is the side that knows.
+     */
+    vscode.commands.registerCommand('mdforge.searchNext', () => {
+      void outline.active?.webview.postMessage({ type: 'searchStep', value: 'next' })
+    }),
+    vscode.commands.registerCommand('mdforge.searchPrevious', () => {
+      void outline.active?.webview.postMessage({ type: 'searchStep', value: 'previous' })
+    }),
     vscode.commands.registerCommand('mdforge.togglePresentation', () => {
       if (!outline.active) {
         void vscode.window.showInformationMessage('Open a document with MDForge first.')
@@ -42,6 +69,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showInformationMessage('Open a Markdown file first.')
         return
       }
+      suppressReveal(target)
       await vscode.commands.executeCommand('vscode.openWith', target, VIEW_TYPE)
     }),
     vscode.commands.registerCommand('mdforge.openWithTextEditor', async (uri?: vscode.Uri) => {
@@ -57,11 +85,78 @@ export function activate(context: vscode.ExtensionContext): void {
     // resource (view-only); the modified side is the working file.
     vscode.commands.registerCommand('mdforge.openDiffOriginal', async () => {
       const input = activeDiffInput()
-      if (input) await vscode.commands.executeCommand('vscode.openWith', input.original, VIEW_TYPE)
+      if (input) {
+        suppressReveal(input.original)
+        await vscode.commands.executeCommand('vscode.openWith', input.original, VIEW_TYPE)
+      }
     }),
     vscode.commands.registerCommand('mdforge.openDiffModified', async () => {
       const input = activeDiffInput()
-      if (input) await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
+      if (input) {
+        suppressReveal(input.modified)
+        await vscode.commands.executeCommand('vscode.openWith', input.modified, VIEW_TYPE)
+      }
+    }),
+    /*
+     * Why the reveal did or did not fire. The whole feature rests on an
+     * internal command and on a text format that is nobody's contract, so
+     * "nothing happened" has to be diagnosable without a debugger: this dumps
+     * what the search view answered, what was parsed out of it, and what the
+     * note being looked at matched.
+     */
+    vscode.commands.registerCommand('mdforge.debugSearchReveal', async () => {
+      const active = outline.active
+      const results = await rawSearchResults()
+      const lines: string[] = ['# MDForge — search reveal, diagnostic', '']
+      lines.push(`- Command available: **${results === undefined ? 'no' : 'yes'}**`)
+      lines.push(`- Results returned: **${results === undefined ? '—' : `${results.length} chars`}**`)
+      lines.push(
+        `- MDForge editor active: **${active ? vscode.workspace.asRelativePath(active.document.uri) : 'none'}**`
+      )
+      if (active) {
+        lines.push(
+          `- \`mdforge.revealSearchMatch\`: **${String(
+            vscode.workspace
+              .getConfiguration('mdforge', active.document.uri)
+              .get<unknown>('revealSearchMatch')
+          )}**`
+        )
+        const target = await searchMatches(active.document)
+        lines.push(`- Matches found for it: **${target.matches.length}**`)
+        lines.push(
+          `- Revealed in the last 2s: **${revealedRecently(active.document.uri, target)}**` +
+            ' (`true` only means the same click is still echoing through its triggers)'
+        )
+        lines.push(`- Term deduced: **${target.query === undefined ? 'none' : `\`${target.query}\``}**`)
+        lines.push(`- Case-sensitive: **${target.caseSensitive === true}**`)
+        lines.push(`- Path compared: \`${active.document.uri.fsPath}\``)
+        lines.push(`- Search panel trail: **${lastPanelState()}**`)
+        lines.push(
+          '  (`opened` = the panel took the term; `key-arrived` = a keypress reached' +
+            ' the webview, so `F3` works; `no-keyboard` = none was seen in 8s)'
+        )
+      }
+      if (results !== undefined) {
+        const files = parseSearchResults(results)
+        lines.push('', '## Files the search view listed', '')
+        for (const file of files.slice(0, 40)) {
+          lines.push(`- \`${file.path}\` — ${file.matches.length} match(es)`)
+        }
+        if (files.length > 40) lines.push(`- … and ${files.length - 40} more`)
+        lines.push('', '## Raw answer (first 4000 chars)', '', '```text', results.slice(0, 4000), '```')
+      } else {
+        lines.push(
+          '',
+          'The search view answered nothing. It only answers while **the Search view is',
+          'the one showing in its container** — run a search, leave the results on screen,',
+          'then run this command again.'
+        )
+      }
+      const doc = await vscode.workspace.openTextDocument({
+        content: lines.join('\n'),
+        language: 'markdown'
+      })
+      await vscode.window.showTextDocument(doc, { preview: false })
     }),
     // On-demand reformat of the active note (blank lines + paragraphs).
     vscode.commands.registerCommand('mdforge.normalizeBlankLines', async () => {
@@ -811,7 +906,12 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     // Track which MDForge editor is active so the outline follows it.
     if (webviewPanel.active) this.outline.setActive(document, webview)
     const viewStateSubscription = webviewPanel.onDidChangeViewState(() => {
-      if (webviewPanel.active) this.outline.setActive(document, webview)
+      if (!webviewPanel.active) return
+      this.outline.setActive(document, webview)
+      // A search result pointing at a note that is ALREADY open only brings its
+      // tab forward — the webview is kept alive, so there is no second `ready`
+      // to hang the reveal on. Hence here too, once per set of results.
+      void revealSearchMatch('shown')
     })
 
     const configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -845,6 +945,86 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     assetWatcher.onDidCreate(postRefresh)
     assetWatcher.onDidDelete(postRefresh)
 
+    /*
+     * `mdforge.revealSearchMatch`, tolerating the boolean it was while this was
+     * being built: `false` meant off, anything else the full behaviour.
+     */
+    const revealMode = (uri: vscode.Uri): 'panel' | 'mark' | 'off' => {
+      const value = vscode.workspace.getConfiguration('mdforge', uri).get<unknown>('revealSearchMatch')
+      if (value === false || value === 'off') return 'off'
+      if (value === 'mark') return 'mark'
+      return 'panel'
+    }
+
+    /*
+     * A click on a workspace-search result opens MDForge with no idea of where
+     * the match was: VS Code drops the range for a custom editor. The positions
+     * are dug back out of the search view itself (src/searchreveal.ts), once,
+     * when the editor opens.
+     */
+    const revealSearchMatch = async (trigger: 'ready' | 'shown' | 'focused'): Promise<void> => {
+      const mode = revealMode(document.uri)
+      // Only the editor the user is looking at: restoring a window resolves the
+      // tabs it shows, and a note reopened in the background has no business
+      // jumping to a match.
+      if (mode === 'off' || !webviewPanel.active) return
+      // Every trigger shows in the trail, gate or no gate: "which path fired"
+      // is the first question to answer when nothing happens.
+      notePanelState(`trigger ${trigger} (${mode})`, webviewPanel.active)
+      const target = await searchMatches(document)
+      if (target.matches.length === 0) return
+      /*
+       * The keyboard, for a note that was ALREADY open.
+       *
+       * A freshly created editor ('ready') is focused by VS Code itself and
+       * must be left alone — asking again there is what broke it last time. An
+       * existing one is merely revealed with `preserveFocus`, so `F3` lands
+       * nowhere until the text is clicked.
+       *
+       * Asking is not enough on its own: `webviewElement._doFocus` only sends
+       * the `focus` message that reaches the webview's INNER frame from a
+       * delayed callback, and that callback gives up when the workbench's
+       * active element is neither the webview nor BODY — i.e. when the search
+       * result list has taken the keyboard back, which is exactly what it does
+       * right after opening an editor. Hence twice: once now, once after it
+       * has settled. Only in `panel` mode: `mark` never takes the keyboard.
+       */
+      /*
+       * NEVER from the `focused` trigger: that one means the webview just told
+       * us it HAS the keyboard, so asking for it again is both pointless and a
+       * loop — ask, the webview is focused, it posts `focused`, we ask again.
+       * Three rounds inside one second, an editor that feels stuck and a `F3`
+       * that never lands: that was this exact loop.
+       */
+      /*
+       * ONCE, NOT TWICE. The second ask went out at 250ms — AFTER the webview's last
+       * `takeKeyboard` at 150ms — and re-focusing the container from the host is exactly what
+       * `takeKeyboard` says not to do: "that focuses the container, and the keyboard leaves our
+       * document without coming back". The webview put the keyboard in the panel's field, and the
+       * host took it away a hundred milliseconds later. The last word belongs to the side that is
+       * INSIDE the frame; the host only opens the door.
+       */
+      if (mode === 'panel' && trigger === 'shown') {
+        if (webviewPanel.active) {
+          notePanelState('host-focus', webviewPanel.active)
+          webviewPanel.reveal(webviewPanel.viewColumn, false)
+        }
+      }
+      /*
+       * The "once per set of results" gate keeps the caret from being thrown
+       * back to the match on every tab switch. It must NOT keep the keyboard
+       * from landing, though — hence its place, AFTER the focus above.
+       * Returning before it is what left cases 2 and 3 with no focus at all:
+       * the trail showed no `shown` entry because the function never got there.
+       */
+      if (revealedRecently(document.uri, target)) {
+        notePanelState('just revealed, skipped', webviewPanel.active)
+        return
+      }
+      markRevealed(document.uri, target)
+      void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
+    }
+
     webview.onDidReceiveMessage(
       async (message: {
         type: string
@@ -867,11 +1047,30 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         }
       }) => {
         switch (message.type) {
+          case 'searchPanelState':
+            // Diagnostic only: 'armed' means the term is waiting for the focus
+            // to arrive, 'opened' that the panel took over, 'gave-up' that it
+            // never came (a result walked with the arrows, say).
+            notePanelState(String(message.value), message.quiet === true)
+            break
+          case 'focused':
+            // The last case with no event of its own: the note is already open
+            // AND already the active editor, so clicking a result for it
+            // changes nothing VS Code reports — no `ready`, no view-state
+            // change. What does happen is that the click moves the focus from
+            // the result list into the webview. Revealing is idempotent (the
+            // same note, for the same results, is revealed once), so a plain
+            // click back into a note costs a lookup and nothing more.
+            void revealSearchMatch('focused')
+            break
           case 'ready':
             postConfig()
             postDocument()
             postDiagnostics()
             quickDiff.refresh()
+            // A new webview shows nothing of what the previous one revealed.
+            forgetReveal(document.uri)
+            void revealSearchMatch('ready')
             break
           case 'edit':
             // NOT merged into the tag index here: this fires on every keystroke,
@@ -1566,6 +1765,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       // Re-open fresh at the new location so the webview rebinds its asset base
       // URI + local-resource root to the destination folder (images resolve).
       await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+      suppressReveal(newUri)
       await vscode.commands.executeCommand('vscode.openWith', newUri, VIEW_TYPE)
 
       void vscode.window.showInformationMessage(
@@ -1679,6 +1879,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       const uri = vscode.Uri.file(path.resolve(dir, relative))
       try {
         await vscode.workspace.fs.stat(uri)
+        suppressReveal(uri)
         await vscode.commands.executeCommand('vscode.open', uri)
         return
       } catch {

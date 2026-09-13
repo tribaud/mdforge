@@ -48,6 +48,8 @@ it fully before making changes.
 | `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
 | `src/quickdiff.ts` | **Quick diff**, host side: resolves the built-in `vscode.git` API, reads the base blob (index → `HEAD`), watches doc/repo/setting, posts the line changes. |
 | `src/linediff.ts` | `diffLines` — the patience line diff behind the quick-diff margin. Imports nothing, so it is testable (`npm run test:quickdiff`). |
+| `src/searchreveal.ts` | **Search reveal**, host side: calls the internal `search.action.getSearchResults`, deduces the term, and posts what the note being opened matched. |
+| `src/searchmatches.ts` | `matchesForFile` / `deriveQuery` — parses the search view's result text and deduces the search term from it. Imports nothing, so it is testable (`npm run test:search`). |
 | `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
 | `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
 | `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble; `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
@@ -55,6 +57,7 @@ it fully before making changes.
 | `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
 | `media-src/src/cm-block-drag.ts` | Left-margin block controls: draggable `⠿` handle (reorders top-level blocks / heading sections, click = select the block) and the `▾`/`▸` fold chevron. |
 | `media-src/src/cm-quickdiff.ts` | Quick-diff margin: a CodeMirror `gutter()` whose markers are the added/modified/deleted bars the host computed. |
+| `media-src/src/cm-searchmatch.ts` | Search reveal, webview side: marks the matching lines, scrolls to one, and walks them (`F8` / `Shift+F8`). |
 | `media-src/src/cm-paste-html.ts` | Paste HTML→Markdown (turndown+GFM, escaping OFF, MathML→LaTeX, footnote rewrite + per-section renumber). |
 | `media-src/src/cm-theme.css` | All styling, VS Code light/dark aware. |
 | `media-src/src/turndown-plugin-gfm.d.ts` | Type shim for `turndown-plugin-gfm`. |
@@ -98,7 +101,7 @@ it fully before making changes.
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
   `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`,
-  `quickDiff`, `tags`.
+  `quickDiff`, `tags`, `searchMatches`.
   webview→host: `ready`, `edit`, `setPageWidth`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
   `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
@@ -367,6 +370,148 @@ so it round-trips for free unless noted.
   its line. Between two host posts they are mapped through the user's edits.
   A deletion has no line of its own: it is one wedge at the seam, clamped onto
   the last line when the cut is at the end of the document.
+- **Search reveal** (`mdforge.revealSearchMatch`, default on): a click on a
+  workspace-search (`Ctrl/Cmd+Shift+F`) result opens the note **at the match**,
+  which VS Code does not do on its own — when the target resolves to a custom
+  editor the range is dropped on the way, and `resolveCustomTextEditor` gets the
+  document and nothing else (microsoft/vscode#289785, open; #301887 and #211351
+  closed as *not planned*; nothing in `src/vscode-dts` proposes it either). The
+  positions are therefore read back out of the **search view**, through the
+  internal `search.action.getSearchResults`, which returns what "Copy All" would
+  copy: an unindented, tildified path per file, then `  <line>,<col>: <text>`
+  per match (`  <line>:` for the further lines of a multi-line one).
+  `searchmatches.ts` parses that and nothing else — it imports nothing, so
+  `npm run test:search` pins the format down outside an Extension Host.
+  Consequences, all deliberate:
+  - We learn **every** match in the file, never which one was clicked. MDForge
+    goes to the first, marks the others, and `F8` / `Shift+F8` walk them.
+  - **The term itself is deduced** (`deriveQuery`), since the search view hands
+    it over no more than it hands over the click. Every match starts, by
+    definition, with the term: take each matched line from its match column on
+    and keep what they all share. With two matches in different contexts that
+    common prefix IS the term; it can only ever come out too LONG (every match
+    followed by the same word — hence the trailing whitespace trim), never too
+    short, so ONE lone match is not enough and the term is then left undeduced.
+    The note's own slices are read from the document, not from the search
+    view's preview text, which is trimmed on very long lines.
+    With a term, the search is handed over to **MDForge's own search state**:
+    the term is set right away — that alone makes `F3` / `Maj+F3` (and
+    `Ctrl/⌘G`) walk the occurrences, panel or no panel — and, in the default
+    `panel` mode, `openSearchPanel` is called so `@codemirror/search` highlights
+    every occurrence and `Entrée` / *next* work as they do for `Ctrl+F`.
+    **Do NOT gate that on the webview having the keyboard.** Two versions tried:
+    `document.hasFocus()` at reveal time, then a 10s poll waiting for it. Both
+    left the panel permanently closed in the real editor, because in the inner
+    frame of a webview **that flag simply never becomes true here**: VS Code
+    propagates focus with `activeFrame.contentWindow.focus()` but returns early
+    when `document.activeElement === activeFrame` — the iframe is already the
+    active element after a result click, so our document is never focused, and
+    the polled flag reported `gave-up (webview had the keyboard: false)` every
+    time. (VS Code polls that same flag for its OWN focus tracking — in the
+    OUTER frame, where it covers the whole chain. It does not answer for us.)
+    The reason for the gate was real, though: while results are walked with the
+    arrows VS Code previews each one with `preserveFocus`, and `openSearchPanel`
+    focuses its field, which would end that walk on its first step.
+    For the same `preserveFocus` reason, a note that is **already open** is
+    brought forward WITHOUT the keyboard — `F3` then lands nowhere and the text
+    has to be clicked first, while a freshly opened note is focused by VS Code
+    itself. The keyboard is then asked for, **but only for a note that was
+    already open** (`trigger === 'shown'`): a freshly created editor is focused
+    by VS Code itself and asking again there is what broke it. And it is asked
+    TWICE — now and 250ms later — because `webviewElement._doFocus` sends the
+    `focus` message that alone reaches the INNER frame from a delayed callback
+    which **gives up when the workbench's active element is neither the webview
+    nor BODY**: right after opening an editor, the search result list has taken
+    the keyboard back, so the first ask is dropped.
+    Inside the webview, `takeKeyboard` focuses the panel's field once the frame
+    has the keyboard (with a `blur()` first — an element that is already
+    `document.activeElement` ignores `focus()`, the second-reveal case). What must NOT be done is asking on the
+    `ready` path as well: `workbench.action.focusActiveEditorGroup` there pulled
+    the keyboard out of a newly created editor that already had it, breaking the
+    one case that worked. Focus asked for from inside the frame alone does not
+    work either — a non-focused frame can set its own `activeElement` but cannot
+    take the keyboard. With no
+    signal to tell the two apart, it became the user's call —
+    `mdforge.revealSearchMatch: panel | mark | off`, `mark` doing everything
+    except opening the panel. Each outcome is posted back as `searchPanelState`
+    and printed by the debug command: this is not a place to guess twice.
+  - **Three triggers, because VS Code reports almost nothing here.** A fresh
+    editor gives `ready`. A note that is already open answers none — the
+    webview is kept (`retainContextWhenHidden`), so a result pointing at it
+    only brings its tab forward — hence `onDidChangeViewState` too. And a note
+    that is already open AND already the ACTIVE editor produces no event at
+    all: nothing about it changes. The only thing that does happen there is the
+    focus moving from the result list into the webview, so the webview posts
+    `focused` and the host answers that as well. **The `focused` trigger must
+    never ask for the focus back**: it means the webview already HAS the
+    keyboard, and asking makes a loop — ask, the webview is focused, it posts
+    `focused`, we ask again. It ran three times inside one second, which reads
+    as an editor stuck with a key held down. The webview also stays quiet about
+    any focus within 1.5s of a reveal, so the echo never leaves it — and about
+    any focus that follows a **mousedown of its own** within 400ms, which is the
+    user clicking into the note to place the caret, not a search result pointing
+    at one. Only a keyboard arriving from outside means "I was sent here". One click reaches us through
+    two or three of them, so an identical reveal is **de-bounced for 2s**
+    (`revealedRecently` / `markRevealed`, a per-note `[query, matches]`
+    signature + a timestamp) — not gated for ever, as a first version did: a
+    note already revealed for a search is still a note whose result the user may
+    click again, and "nothing happens at all" was the result. **The de-bounce
+    belongs AFTER the focus, never before it**, or clicking such a result leaves
+    the note without the keyboard, with a trail showing no trigger at all
+    because the function never reached the line that records one. A new webview
+    forgets its note (`forgetReveal`), and the debug command sits outside the
+    whole thing.
+  - **`F3` / `Maj+F3` are contributed to VS Code too**
+    (`mdforge.searchNext` / `searchPrevious`, `when: activeCustomEditorId ==
+    'mdforge.editor'`), and relayed to the webview as `searchStep`. The focus
+    handed to a webview's inner frame is a race we lose now and then (above),
+    and when we do, a key pressed in the note never reaches CodeMirror — the
+    relay is what makes the shortcut work anyway. A webview forwards EVERY
+    keydown to the workbench (`did-keydown`, `webview/browser/pre/index.html`),
+    so when CodeMirror did handle the key the relay arrives as a duplicate and
+    would step twice; the webview drops it if a search key was pressed inside
+    it in the last 250ms. That recorder is a **capture listener on `view.dom`**,
+    not a keymap entry: the search panel runs its own key scope, so a key
+    pressed in its field never reaches the editor's keymap — which is exactly
+    where the caret sits after a reveal, and the version that missed it stepped
+    twice on every `F3`.
+  - The command is **internal**. It is feature-detected once
+    (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
+    "no matches": the note simply opens as it always did. **`MDForge: Debug
+    search reveal`** (`mdforge.debugSearchReveal`) dumps what the search view
+    answered, what was parsed from it and what the active note matched — the
+    only way to tell "the format changed" from "the search view said nothing"
+    without a debugger.
+  - **Nothing says the note was opened FROM a result.** `getSearchView` only
+    requires the search view to be the ACTIVE view of its container — enough to
+    rule out the Explorer, not a `Ctrl+P` with the results still on screen, and
+    not a search view docked in the panel next to an active Explorer. Three
+    guards narrow it: the opens MDForge performs itself are suppressed
+    explicitly (`suppressReveal`, called on the wikilink jump, the rename
+    re-open, the diff-side buttons and `mdforge.openEditor`), the editor has to
+    be `webviewPanel.active` (restoring a window must not make background tabs
+    jump), and the setting switches the lot off. What remains is landing on a
+    line that genuinely matches the search you still have open — a small
+    surprise, against the reported bug of landing at the top of the file.
+  - The results are cached for 500ms: the command renders EVERY match of the
+    workspace to a string (`search.maxResults` defaults to 20000) and ships it
+    over RPC, which several editors resolving at once must not pay for twice.
+  Webview side (`cm-searchmatch.ts`): a `StateField` holding the line
+  decorations AND the match offsets — a decoration only remembers the line it
+  marks, so `F8` would lose the column on its first hop and two matches on one
+  line would collapse into one. The whole set is dropped on the first document
+  change rather than mapped through it (it answers "here is what you were
+  looking for", which stops being true once you type), and `F8` / `Shift+F8`
+  take the next match AFTER the caret, or the previous one before it, wrapping
+  at either end — relative to the caret, so they keep working after a click
+  somewhere else in the note.
+  The scroll is re-issued up to three times over ~1s (`settle`) — mermaid,
+  KaTeX and images all land after CodeMirror measured, and a target centred
+  before they did ends up off-screen; it stops as soon as the line is visible,
+  or if the caret moved (the user's scroll is theirs). Focus is taken **only if
+  the webview already has it** (`document.hasFocus()`): with VS Code's
+  preview-on-arrow, focus stays in the result list, and stealing it would end
+  the walk on its first step.
 - **Reformatting** (host-side, pure, in `extension.ts`): `formatMarkdown(text,
   joinParas)` = the optional paragraph unwrap, then the blank-line pass.
   - `normalizeBlankLines`: MD012 collapse dupes / MD022 around headings / MD031
@@ -487,8 +632,20 @@ npm install
 npm run build                 # tsc (extension) + esbuild (webview) → media/dist
 npx tsc -p media-src --noEmit # webview type-check (also in CI)
 npm run test:quickdiff        # the line diff behind the quick-diff margin
+npm run test:search           # parsing of the search view's result text
 ```
 
+- **Two launch configurations** (`.vscode/launch.json`): the plain one, and
+  *(no other extensions)* which adds `--disable-extensions` — the development
+  extension still loads, everything else does not. Prefer it when something
+  smells like interference: a profile full of extensions is also a profile full
+  of extensions that can take the extension host down with them.
+  Symptom seen for real: the child window dies ~2s in, its renderer log stops
+  before *"Started local extension host"*, no `exthost/` directory is written
+  at all, and `main.log` says `[UtilityProcess type: extensionHost]: crashed
+  with code 6`. Nothing of ours has run at that point — relaunch, let the build
+  task finish first (two F5 in ten seconds means the second host starts while
+  `out/` and `media/dist` are being rewritten under it).
 - MDForge is now the **default** editor for `.md`/`.markdown`, so opening one is
   enough; the code icon (or `Ctrl/Cmd+Shift+Alt+M`) goes back to the text editor.
   A **git diff still opens natively** — that is `diffEditor: "explicit"` doing its
@@ -546,6 +703,18 @@ directly.
   "revert this hunk", no peek of the previous version — those are the diff
   editor's job, and the diff editor is still out of reach (below). It also needs
   the built-in Git extension enabled; SCMs other than git show nothing.
+- **Search reveal knows every match in the note, never the one that was
+  clicked** — VS Code drops the range (§4). The first match is where you land,
+  and `F8` does the rest. The term is **deduced**, not given, so a note holding
+  a single match (and no other file to corroborate it) is marked by the line
+  rather than by the word, and a regex search deduces nothing. It cannot tell
+  either that the note was opened FROM a result: with the search view on screen,
+  a `Ctrl+P` to a matching note also lands on a match. It also leans on
+  an internal command: if `search.action.getSearchResults` ever changes shape,
+  the feature goes quiet rather than wrong. Watch microsoft/vscode#289785 — a
+  `selection` on the custom-editor context would replace the whole mechanism.
+  The same loss hits the Problems panel, Go to Definition and `Ctrl+P file:42`,
+  which are NOT covered.
 - **Perf**: `buildDecorations` re-scans the whole document on every selection
   change. Fine for normal notes; add a viewport limit before very large files.
 - Bundle size: mermaid (many diagram chunks), KaTeX fonts and the

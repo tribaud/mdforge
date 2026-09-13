@@ -31,5 +31,8 @@ jobs:
       - name: Line-diff tests (quick diff)
         run: node scripts/quickdiff.test.mjs
 
+      - name: Search-result parsing tests (reveal)
+        run: node scripts/searchmatch.test.mjs
+
       - name: Bundle webview (esbuild)
         run: npm run build:webview
