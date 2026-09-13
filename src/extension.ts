@@ -948,9 +948,16 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       // jumping to a match.
       if (mode === 'off' || !webviewPanel.active) return
       const target = await searchMatches(document)
-      if (target.matches.length > 0) {
-        void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
+      if (target.matches.length === 0) return
+      if (mode === 'panel') {
+        // A note that is ALREADY open is only brought forward by a result
+        // click: VS Code reveals its tab with the focus left in the result
+        // list, so `F3` lands nowhere and the note has to be clicked first. A
+        // freshly opened one is focused by VS Code itself — this is what makes
+        // the two cases feel the same. `mark` mode never takes the keyboard.
+        webviewPanel.reveal(webviewPanel.viewColumn, false)
       }
+      void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
     }
 
     webview.onDidReceiveMessage(

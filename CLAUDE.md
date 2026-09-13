@@ -411,7 +411,13 @@ so it round-trips for free unless noted.
     OUTER frame, where it covers the whole chain. It does not answer for us.)
     The reason for the gate was real, though: while results are walked with the
     arrows VS Code previews each one with `preserveFocus`, and `openSearchPanel`
-    focuses its field, which would end that walk on its first step. With no
+    focuses its field, which would end that walk on its first step.
+    For the same `preserveFocus` reason, a note that is **already open** is
+    brought forward WITHOUT the keyboard — `F3` then lands nowhere and the text
+    has to be clicked first, while a freshly opened note is focused by VS Code
+    itself. So `panel` mode asks for it: `webviewPanel.reveal(column, false)`
+    before posting, plus a `view.focus()` in the webview when the panel's own
+    field did not take it. That is what makes both cases feel the same. With no
     signal to tell the two apart, it became the user's call —
     `mdforge.revealSearchMatch: panel | mark | off`, `mark` doing everything
     except opening the panel. Each outcome is posted back as `searchPanelState`

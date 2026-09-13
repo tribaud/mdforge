@@ -226,6 +226,10 @@ export function showSearchMatches(
 
   if (panel) {
     openSearchPanel(view)
+    // `openSearchPanel` focuses its field, which is inside the editor. If that
+    // did not take — the webview may not hold the keyboard at all — put the
+    // caret in the text instead, or `F3` would reach nothing that listens.
+    if (!view.dom.contains(document.activeElement)) view.focus()
     report?.('opened', document.hasFocus())
   } else {
     report?.('marks-only', document.hasFocus())
