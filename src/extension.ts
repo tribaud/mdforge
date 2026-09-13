@@ -40,6 +40,22 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mdforge.outline.reveal', (index: number) => {
       outline.active?.webview.postMessage({ type: 'revealHeading', index })
     }),
+    /*
+     * `F3` / `Maj+F3`, contributed so they work even when the webview does not
+     * hold the keyboard — which happens: VS Code hands focus to a webview's
+     * inner frame through a delayed, conditional path (§4), and a note brought
+     * forward by a search result sometimes loses that race. Bound on
+     * `activeCustomEditorId == 'mdforge.editor'`, so they only exist where they
+     * mean something. The webview forwards every keydown to VS Code anyway, so
+     * when it DID handle the key itself this command arrives as a duplicate;
+     * dropping it is the webview's job — it is the side that knows.
+     */
+    vscode.commands.registerCommand('mdforge.searchNext', () => {
+      void outline.active?.webview.postMessage({ type: 'searchStep', value: 'next' })
+    }),
+    vscode.commands.registerCommand('mdforge.searchPrevious', () => {
+      void outline.active?.webview.postMessage({ type: 'searchStep', value: 'previous' })
+    }),
     vscode.commands.registerCommand('mdforge.togglePresentation', () => {
       if (!outline.active) {
         void vscode.window.showInformationMessage('Open a document with MDForge first.')
@@ -980,12 +996,19 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
        * Three rounds inside one second, an editor that feels stuck and a `F3`
        * that never lands: that was this exact loop.
        */
+      /*
+       * ONCE, NOT TWICE. The second ask went out at 250ms — AFTER the webview's last
+       * `takeKeyboard` at 150ms — and re-focusing the container from the host is exactly what
+       * `takeKeyboard` says not to do: "that focuses the container, and the keyboard leaves our
+       * document without coming back". The webview put the keyboard in the panel's field, and the
+       * host took it away a hundred milliseconds later. The last word belongs to the side that is
+       * INSIDE the frame; the host only opens the door.
+       */
       if (mode === 'panel' && trigger === 'shown') {
-        const focusEditor = (): void => {
-          if (webviewPanel.active) webviewPanel.reveal(webviewPanel.viewColumn, false)
+        if (webviewPanel.active) {
+          notePanelState('host-focus', webviewPanel.active)
+          webviewPanel.reveal(webviewPanel.viewColumn, false)
         }
-        focusEditor()
-        setTimeout(focusEditor, 250)
       }
       /*
        * The "once per set of results" gate keeps the caret from being thrown

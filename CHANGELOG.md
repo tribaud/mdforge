@@ -18,7 +18,9 @@ All notable changes to MDForge are documented here. The format follows
   occurrence highlighted, `F3` / `Maj+F3`, `Entrée` or *next* to walk them,
   `Échap` to put the panel away. It behaves the same whether the note had to be
   opened or was already in a tab: in both cases the editor takes the keyboard,
-  so `F3` works without clicking into the text first. The term is not given either — it
+  so `F3` works without clicking into the text first — and `F3` / `Maj+F3` are
+  bound for MDForge editors at the VS Code level as well, so they keep working
+  even when the webview did not get the keyboard. The term is not given either — it
   is deduced from what the matches have in common — so a note holding a single
   match, or a regex search, marks the whole line instead of the word. Two other
   honest limits: with several matches you land on the first, not on the one you

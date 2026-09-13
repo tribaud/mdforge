@@ -461,6 +461,20 @@ so it round-trips for free unless noted.
     because the function never reached the line that records one. A new webview
     forgets its note (`forgetReveal`), and the debug command sits outside the
     whole thing.
+  - **`F3` / `Maj+F3` are contributed to VS Code too**
+    (`mdforge.searchNext` / `searchPrevious`, `when: activeCustomEditorId ==
+    'mdforge.editor'`), and relayed to the webview as `searchStep`. The focus
+    handed to a webview's inner frame is a race we lose now and then (above),
+    and when we do, a key pressed in the note never reaches CodeMirror — the
+    relay is what makes the shortcut work anyway. A webview forwards EVERY
+    keydown to the workbench (`did-keydown`, `webview/browser/pre/index.html`),
+    so when CodeMirror did handle the key the relay arrives as a duplicate and
+    would step twice; the webview drops it if a search key was pressed inside
+    it in the last 250ms. That recorder is a **capture listener on `view.dom`**,
+    not a keymap entry: the search panel runs its own key scope, so a key
+    pressed in its field never reaches the editor's keymap — which is exactly
+    where the caret sits after a reveal, and the version that missed it stepped
+    twice on every `F3`.
   - The command is **internal**. It is feature-detected once
     (`getCommands(true)`), called in a `try/catch`, and any surprise reads as
     "no matches": the note simply opens as it always did. **`MDForge: Debug

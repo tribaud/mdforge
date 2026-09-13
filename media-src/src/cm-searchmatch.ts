@@ -237,7 +237,14 @@ export function showSearchMatches(
   }
 }
 
-type PanelStage = 'opened' | 'marks-only' | 'no-keyboard' | 'key-arrived'
+type PanelStage =
+  | 'opened'
+  | 'marks-only'
+  | 'no-keyboard'
+  | 'key-arrived'
+  /** `takeKeyboard` ran, and what it actually reached — the panel's field, or the fallback. */
+  | 'took-field'
+  | 'took-content'
 let report: ((stage: PanelStage, hasFocus: boolean) => void) | undefined
 
 /**
@@ -261,6 +268,10 @@ function takeKeyboard(view: EditorView): void {
   const target = field ?? view.contentDOM
   if (document.activeElement === target) target.blur()
   target.focus()
+  // WHICH ONE IT REACHED, IN THE TRAIL. `openSearchPanel` mounts its DOM on the next cycle, so the
+  // call that follows it synchronously finds no field and falls back to the content — the trail
+  // said "opened" either way, and the two cases are not the same thing at all.
+  report?.(field ? 'took-field' : 'took-content', document.activeElement === target)
 }
 
 /**

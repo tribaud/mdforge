@@ -22,7 +22,13 @@ import {
   foldKeymap,
   foldService
 } from '@codemirror/language'
-import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import {
+  search,
+  searchKeymap,
+  highlightSelectionMatches,
+  findNext,
+  findPrevious
+} from '@codemirror/search'
 import { markdown, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
@@ -645,6 +651,23 @@ try {
     })
   })
 
+  /*
+   * A search key pressed HERE is one CodeMirror will handle itself. VS Code
+   * forwards every keydown to the workbench as well, so `mdforge.searchNext`
+   * fires too and would step a second time — the relay is dropped when this
+   * has just run. A capture listener on `view.dom`, not a keymap entry: the
+   * search PANEL runs its own scope, and a key pressed in its field never
+   * reaches the editor's keymap.
+   */
+  view.dom.addEventListener(
+    'keydown',
+    (event) => {
+      const g = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'g'
+      if (event.key === 'F3' || g) selfHandledSearchAt = Date.now()
+    },
+    true
+  )
+
   // Ctrl/⌘-click a rendered link → open it externally. Handled on *mousedown*
   // (capture) so it fires before CodeMirror moves the caret — which would turn
   // the link back into raw text and drop the `data-href` before a click lands.
@@ -892,6 +915,8 @@ function applyDiagnostics(raw: RawDiagnostic[]): void {
 
 /** When the host last posted a reveal — see the `focus` listener at the end. */
 let lastRevealAt = 0
+/** When a search key was handled HERE, so the host's relay of it is dropped. */
+let selfHandledSearchAt = 0
 /** When the pointer was last pressed in here — same listener, other half. */
 let lastLocalPointerAt = 0
 window.addEventListener('mousedown', () => (lastLocalPointerAt = Date.now()), true)
@@ -1000,6 +1025,7 @@ window.addEventListener('message', (event) => {
     query?: string
     caseSensitive?: boolean
     openPanel?: boolean
+    value?: string
     tags?: string[]
     keys?: string[]
     scannedAt?: number
@@ -1027,6 +1053,15 @@ window.addEventListener('message', (event) => {
       break
     case 'quickDiff':
       if (Array.isArray(msg.changes)) setQuickDiff(view, msg.changes)
+      break
+    case 'searchStep':
+      // The keybinding relay (see `mdforge.searchNext`): only useful when the
+      // key never reached the editor, i.e. when the webview did not have the
+      // keyboard. Otherwise CodeMirror has already stepped.
+      if (Date.now() - selfHandledSearchAt > 250) {
+        if (msg.value === 'previous') findPrevious(view)
+        else findNext(view)
+      }
       break
     case 'searchMatches':
       lastRevealAt = Date.now()
