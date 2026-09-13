@@ -231,13 +231,44 @@ export function showSearchMatches(
     // caret in the text instead, or `F3` would reach nothing that listens.
     if (!view.dom.contains(document.activeElement)) view.focus()
     report?.('opened', document.hasFocus())
+    watchForKeyboard(view)
   } else {
     report?.('marks-only', document.hasFocus())
   }
 }
 
-type PanelStage = 'opened' | 'marks-only'
+type PanelStage = 'opened' | 'marks-only' | 'no-keyboard' | 'key-arrived'
 let report: ((stage: PanelStage, hasFocus: boolean) => void) | undefined
+
+/**
+ * Did the keyboard actually reach us?
+ *
+ * `document.hasFocus()` cannot answer (see `showSearchMatches`): in a webview's
+ * inner frame it stays false even when typing works. The only honest test is
+ * whether a key event arrives — so after a reveal we wait for one, and say so.
+ * A note where `F3` does nothing until the text is clicked reports
+ * `no-keyboard`; one where it just works reports `key-arrived`.
+ */
+function watchForKeyboard(view: EditorView): void {
+  if (keyWatch) clearTimeout(keyWatch)
+  const onKey = (event: KeyboardEvent): void => {
+    clearTimeout(keyWatch)
+    window.removeEventListener('keydown', onKey, true)
+    report?.('key-arrived', document.hasFocus())
+    void event
+  }
+  window.addEventListener('keydown', onKey, true)
+  keyWatch = setTimeout(() => {
+    window.removeEventListener('keydown', onKey, true)
+    // Nothing pressed is not the same as nothing arriving; the host prints this
+    // as "no key seen", which only means something when the user did press one.
+    report?.('no-keyboard', view.dom.contains(document.activeElement))
+  }, KEY_WATCH_MS)
+}
+
+let keyWatch: ReturnType<typeof setTimeout> | undefined
+/** Long enough for the user to press F3 after the note appears. */
+const KEY_WATCH_MS = 8000
 
 /** Let the host be told what the panel did — the debug command prints it. */
 export function onSearchPanelState(fn: (stage: PanelStage, hasFocus: boolean) => void): void {

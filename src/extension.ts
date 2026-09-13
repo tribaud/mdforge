@@ -113,7 +113,11 @@ export function activate(context: vscode.ExtensionContext): void {
         lines.push(`- Term deduced: **${target.query === undefined ? 'none' : `\`${target.query}\``}**`)
         lines.push(`- Case-sensitive: **${target.caseSensitive === true}**`)
         lines.push(`- Path compared: \`${active.document.uri.fsPath}\``)
-        lines.push(`- Search panel, last thing it did: **${lastPanelState()}**`)
+        lines.push(`- Search panel trail: **${lastPanelState()}**`)
+        lines.push(
+          '  (`opened` = the panel took the term; `key-arrived` = a keypress reached' +
+            ' the webview, so `F3` works; `no-keyboard` = none was seen in 8s)'
+        )
       }
       if (results !== undefined) {
         const files = parseSearchResults(results)
@@ -956,6 +960,14 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         // freshly opened one is focused by VS Code itself — this is what makes
         // the two cases feel the same. `mark` mode never takes the keyboard.
         webviewPanel.reveal(webviewPanel.viewColumn, false)
+        // And again once the search view has finished its own opening: it puts
+        // the keyboard back in its result list after handing the editor over,
+        // so a single `reveal` is undone a few milliseconds later.
+        setTimeout(() => {
+          if (webviewPanel.active) {
+            void vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
+          }
+        }, 120)
       }
       void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
     }

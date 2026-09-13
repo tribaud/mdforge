@@ -156,15 +156,23 @@ export async function searchMatches(
   }
 }
 
-/** What the webview's search panel last did — read back by the debug command. */
-let panelState = 'nothing yet'
+/**
+ * What the webview reported about the last reveal, kept as a short trail: the
+ * interesting question — did a keypress actually reach the webview — can only
+ * be answered after the fact, so the debug command prints the sequence rather
+ * than one state. `key-arrived` means `F3` would have worked; `no-keyboard`
+ * only means nothing was pressed within the watch window.
+ */
+const panelTrail: string[] = []
 
-export function notePanelState(stage: string, hasFocus: boolean): void {
-  panelState = `${stage} (webview had the keyboard: ${hasFocus})`
+export function notePanelState(stage: string, flag: boolean): void {
+  const at = new Date().toLocaleTimeString()
+  panelTrail.push(`${stage} (${flag}) at ${at}`)
+  if (panelTrail.length > 6) panelTrail.shift()
 }
 
 export function lastPanelState(): string {
-  return panelState
+  return panelTrail.length === 0 ? 'nothing yet' : panelTrail.join(' → ')
 }
 
 /** Whether this note was already revealed for what the search holds right now. */
