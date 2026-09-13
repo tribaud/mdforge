@@ -894,7 +894,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       // A search result pointing at a note that is ALREADY open only brings its
       // tab forward — the webview is kept alive, so there is no second `ready`
       // to hang the reveal on. Hence here too, once per set of results.
-      void revealSearchMatch()
+      void revealSearchMatch('shown')
     })
 
     const configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -945,7 +945,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
      * are dug back out of the search view itself (src/searchreveal.ts), once,
      * when the editor opens.
      */
-    const revealSearchMatch = async (): Promise<void> => {
+    const revealSearchMatch = async (trigger: 'ready' | 'shown'): Promise<void> => {
       const mode = revealMode(document.uri)
       // Only the editor the user is looking at: restoring a window resolves the
       // tabs it shows, and a note reopened in the background has no business
@@ -954,16 +954,29 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       const target = await searchMatches(document)
       if (target.matches.length === 0) return
       /*
-       * The focus is NOT asked for from here. Both host-side ways of doing it —
-       * `webviewPanel.reveal(column, false)` and
-       * `workbench.action.focusActiveEditorGroup` — focus the editor CONTAINER,
-       * i.e. the webview's outer iframe element; VS Code then propagates that
-       * inward only when the iframe was not already the active element
-       * (`webview/browser/pre/index.html`), which after a result click it is. So
-       * the second one measurably made things worse: it pulled the keyboard out
-       * of the inner document even in the case that used to work. The webview
-       * takes the keyboard itself instead (`takeKeyboard`, cm-searchmatch.ts).
+       * The keyboard, for a note that was ALREADY open.
+       *
+       * A freshly created editor ('ready') is focused by VS Code itself and
+       * must be left alone — asking again there is what broke it last time. An
+       * existing one is merely revealed with `preserveFocus`, so `F3` lands
+       * nowhere until the text is clicked.
+       *
+       * Asking is not enough on its own: `webviewElement._doFocus` only sends
+       * the `focus` message that reaches the webview's INNER frame from a
+       * delayed callback, and that callback gives up when the workbench's
+       * active element is neither the webview nor BODY — i.e. when the search
+       * result list has taken the keyboard back, which is exactly what it does
+       * right after opening an editor. Hence twice: once now, once after it
+       * has settled. Only in `panel` mode: `mark` never takes the keyboard.
        */
+      if (mode === 'panel' && trigger === 'shown') {
+        const focusEditor = (): void => {
+          if (webviewPanel.active) webviewPanel.reveal(webviewPanel.viewColumn, false)
+        }
+        focusEditor()
+        setTimeout(focusEditor, 250)
+      }
+      notePanelState(`host reveal (${trigger}, ${mode})`, webviewPanel.active)
       void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
     }
 
@@ -1003,7 +1016,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             // the result list into the webview. Revealing is idempotent (the
             // same note, for the same results, is revealed once), so a plain
             // click back into a note costs a lookup and nothing more.
-            void revealSearchMatch()
+            void revealSearchMatch('shown')
             break
           case 'ready':
             postConfig()
@@ -1012,7 +1025,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             quickDiff.refresh()
             // A new webview shows nothing of what the previous one revealed.
             forgetReveal(document.uri)
-            void revealSearchMatch()
+            void revealSearchMatch('ready')
             break
           case 'edit':
             // NOT merged into the tag index here: this fires on every keystroke,

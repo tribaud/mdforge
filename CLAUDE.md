@@ -415,18 +415,22 @@ so it round-trips for free unless noted.
     For the same `preserveFocus` reason, a note that is **already open** is
     brought forward WITHOUT the keyboard — `F3` then lands nowhere and the text
     has to be clicked first, while a freshly opened note is focused by VS Code
-    itself. **Take the keyboard from INSIDE the webview** (`takeKeyboard`),
-    never by asking the host. Both host-side routes —
-    `webviewPanel.reveal(column, false)` and
-    `workbench.action.focusActiveEditorGroup` — focus the editor CONTAINER, i.e.
-    the outer iframe element, and VS Code propagates that inward only when the
-    iframe was not already the active element; after a result click it is, so
-    the keyboard leaves the inner document and does not come back. That version
-    shipped for one round and broke the case that used to work. From inside,
-    `window.focus()` + focusing the panel's field does pull it in — with a
-    `blur()` first, because an element that is already `document.activeElement`
-    ignores `focus()`, which is exactly the second-reveal-in-the-same-webview
-    case. With no
+    itself. The keyboard is then asked for, **but only for a note that was
+    already open** (`trigger === 'shown'`): a freshly created editor is focused
+    by VS Code itself and asking again there is what broke it. And it is asked
+    TWICE — now and 250ms later — because `webviewElement._doFocus` sends the
+    `focus` message that alone reaches the INNER frame from a delayed callback
+    which **gives up when the workbench's active element is neither the webview
+    nor BODY**: right after opening an editor, the search result list has taken
+    the keyboard back, so the first ask is dropped.
+    Inside the webview, `takeKeyboard` focuses the panel's field once the frame
+    has the keyboard (with a `blur()` first — an element that is already
+    `document.activeElement` ignores `focus()`, the second-reveal case). What must NOT be done is asking on the
+    `ready` path as well: `workbench.action.focusActiveEditorGroup` there pulled
+    the keyboard out of a newly created editor that already had it, breaking the
+    one case that worked. Focus asked for from inside the frame alone does not
+    work either — a non-focused frame can set its own `activeElement` but cannot
+    take the keyboard. With no
     signal to tell the two apart, it became the user's call —
     `mdforge.revealSearchMatch: panel | mark | off`, `mark` doing everything
     except opening the panel. Each outcome is posted back as `searchPanelState`
