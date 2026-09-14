@@ -4,6 +4,23 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0]
+
+### Changed
+
+- **A real presentation.** The page shown on the Marketplace still announced an
+  *"early scaffold (v0.0.1)"* — three releases and a full feature set later.
+  It now opens on MDForge inside VS Code and takes the tour in pictures: live
+  preview, tables with draggable column widths, Mermaid and KaTeX, the
+  frontmatter card with its workspace tag completion, the quick-diff margin, a
+  search result landing on its match. Then the settings, the shortcuts, what
+  MDForge needs — and what it cannot do, said plainly rather than left out.
+- `examples/showcase.md` is the note every screenshot is taken from, so they can
+  be retaken identically when something changes appearance.
+- `@types/vscode` was pinned three years below the `engines.vscode` floor it
+  declares; it now sits at `~1.125.0`, the newest release at or below it —
+  packaging refuses anything above, and DefinitelyTyped publishes no `1.133`.
+
 ## [0.6.1]
 
 ### Fixed
