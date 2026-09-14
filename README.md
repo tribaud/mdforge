@@ -16,7 +16,7 @@ rendering — where the `.md` file stays exactly what you typed.
 
 </div>
 
-![A note open in MDForge: frontmatter card, headings, a callout, a three-state task list, a table with custom column widths and a Mermaid diagram](https://raw.githubusercontent.com/tribaud/mdforge/main/docs/images/showcase-light.png)
+![MDForge open in VS Code: a note showing its frontmatter card, headings, a callout, a three-state task list, a table with custom column widths and a Mermaid diagram](https://raw.githubusercontent.com/tribaud/mdforge/main/docs/images/vscode-window.png)
 
 ## Why
 
@@ -63,6 +63,8 @@ themes; **KaTeX** renders `$inline$` and `$$block$$` maths; fenced code is
 highlighted per language, with a picker to change it.
 
 <br clear="all">
+
+![A Mermaid flowchart drawn at the full width of the text column, followed by inline and block KaTeX formulas](https://raw.githubusercontent.com/tribaud/mdforge/main/docs/images/diagrams-math.png)
 
 ### Metadata that reads like metadata
 
