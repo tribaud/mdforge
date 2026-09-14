@@ -637,6 +637,14 @@ so it round-trips for free unless noted.
 
 ## 6. Build, run, verify
 
+**`@types/vscode` must stay at or below `engines.vscode`** — `vsce package`
+refuses otherwise (*"@types/vscode ^1.137.0 greater than engines.vscode
+^1.133.0"*), which would break publishing, and compiling against newer types
+would let an API the floor does not have slip in. DefinitelyTyped does not
+publish every version: there is no `1.133`, so the pin is **`~1.125.0`**, the
+newest release at or below the floor. A caret would defeat it — `^1.125.0`
+installs `1.137`.
+
 ```sh
 npm install
 npm run build                 # tsc (extension) + esbuild (webview) → media/dist
