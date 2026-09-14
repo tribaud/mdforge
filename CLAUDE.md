@@ -565,6 +565,20 @@ so it round-trips for free unless noted.
 
 - **Block decorations MUST come from a `StateField`, not a `ViewPlugin`** — a
   ViewPlugin providing block decorations blanks the editor.
+- **CodeMirror's own base theme has a light half and a dark half, and it picks
+  between them on the `EditorView.darkTheme` facet — not on your CSS.** Left
+  unset it stays light for ever, so on a dark VS Code the gutter strip, the
+  search panel, the active line and the selection layer kept painting themselves
+  pale; and since its injected rules outrank an external stylesheet at equal
+  specificity, restyling them from `cm-theme.css` does not help either (the
+  `.cm-gutters` rule needed `.cm-editor .cm-gutters` to win). It lives in a
+  compartment fed by `editorIsDark()`, reconfigured from the same theme-kind
+  observer as the mermaid `auto` theme: VS Code swaps the theme under a live
+  webview without sending any configuration event.
+  The harness now declares that theme kind too (`data-vscode-theme-kind` + the
+  body class) — without it `editorIsDark()` answered "light" and `THEME=dark`
+  produced light gutters and light diagrams, i.e. it could not have shown this
+  bug at all.
 - **Block-widget & line MARGINS drift the caret.** CM measures the border-box
   height of `.cm-line`/widgets for its vertical layout model; CSS `margin` falls
   *outside* the border-box and is **not counted**, so clicks/arrows land on the

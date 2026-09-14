@@ -259,7 +259,7 @@ body.mdforge-width-full .cm-content {
 /* --- Gutters: source line numbers + lint marks ---
    Folding is NOT in the gutter (its arrows were too discreet): the chevron sits
    next to the ⠿ block handle, see .cm-block-fold. */
-.cm-gutters {
+.cm-editor .cm-gutters {
   background: transparent;
   border: none;
   color: var(--vscode-editorLineNumber-foreground, rgba(127, 127, 127, 0.6));
