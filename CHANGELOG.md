@@ -4,6 +4,16 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A dark theme is now dark all the way.** The line-number margin kept a pale
+  band down the left of every note, and the search panel, the active line and
+  the selection layer stayed light too: CodeMirror's own base theme has a light
+  and a dark half, and nothing told it which one applied. It follows the VS Code
+  theme now, including when you switch theme with a note open.
+
 ## [0.7.0]
 
 ### Changed

@@ -220,7 +220,7 @@ let mermaidTheme: MermaidTheme = 'default'
  * and `auto` drew dark diagrams on a white page. VS Code stamps its theme kind on
  * the document (`data-vscode-theme-kind`, plus a `vscode-*` body class); the
  * media query is only the fallback (the headless harness has neither). */
-function editorIsDark(): boolean {
+export function editorIsDark(): boolean {
   const kind = `${document.documentElement.dataset.vscodeThemeKind ?? ''} ${document.body.className}`
   if (/light/.test(kind)) return false // vscode-light, vscode-high-contrast-light
   if (/dark|high-contrast/.test(kind)) return true

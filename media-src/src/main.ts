@@ -44,7 +44,8 @@ import {
   setTagIndex,
   refreshTags,
   resetInlineEditors,
-  openWikilink
+  openWikilink,
+  editorIsDark
 } from './cm-livepreview'
 import { createTopbar, createBubble, wrap, insertLink, insertTable } from './cm-toolbar'
 import { ICONS } from './cm-icons'
@@ -125,6 +126,16 @@ setWikilinkHandler((target) => vscode.postMessage({ type: 'openWikilink', target
 // The host sweeps once on the first request, then answers from its cache; only
 // the editor's ↻ asks for a fresh sweep.
 setTagsRequester((refresh) => vscode.postMessage({ type: 'requestTags', refresh }))
+
+/*
+ * CodeMirror's OWN base theme has a light and a dark half (`&light` / `&dark`),
+ * and it picks between them on this facet alone — not on our CSS. Left unset it
+ * stays light, so on a dark VS Code the gutter strip, the search panel, the
+ * active line and the selection layer kept painting themselves pale, and its
+ * injected rules win over an external stylesheet (§5). In a compartment: VS Code
+ * swaps the theme under a live webview without any configuration event.
+ */
+const darkMode = new Compartment()
 
 const editorTheme = EditorView.theme({
   '&': {
@@ -628,6 +639,7 @@ try {
         lintGutter(),
         preview.of(livePreview),
         editorTheme,
+        darkMode.of(EditorView.darkTheme.of(editorIsDark())),
         domEvents,
         editable.of(EditorView.editable.of(true)),
         EditorView.updateListener.of((update) => {
@@ -1046,6 +1058,7 @@ function watchThemeKind(): void {
   if (themeKindWatched) return
   themeKindWatched = true
   const onKind = (): void => {
+    view.dispatch({ effects: darkMode.reconfigure(EditorView.darkTheme.of(editorIsDark())) })
     if (setMermaidTheme(mermaidThemeSetting)) redrawMermaid(view)
   }
   new MutationObserver(onKind).observe(document.documentElement, {

@@ -69,9 +69,14 @@ const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
   if (url === '/' || url === '/index.html') {
     res.writeHead(200, { 'content-type': 'text/html' })
-    res.end(`<!doctype html><html><head><meta charset="utf-8">
+    // The theme KIND, as VS Code stamps it on a webview: the editor reads it
+    // (`editorIsDark`) for the mermaid `auto` theme and for CodeMirror's own
+    // dark base theme, and answers "light" without it — so a dark preview used
+    // to render light gutters and light diagrams.
+    const kind = DARK ? 'vscode-dark' : 'vscode-light'
+    res.end(`<!doctype html><html data-vscode-theme-kind="${kind}"><head><meta charset="utf-8">
 <link rel="stylesheet" href="/main.css">
-<style>:root{${DARK ? DARK_VARS : LIGHT_VARS}}</style></head><body><div id="app"></div>
+<style>:root{${DARK ? DARK_VARS : LIGHT_VARS}}</style></head><body class="${kind}"><div id="app"></div>
 <script type="module" src="/main.js"></script></body></html>`)
     return
   }
@@ -111,7 +116,7 @@ await page.addInitScript(() => {
 
 await page.goto(`http://localhost:${port}/`, { waitUntil: 'load' })
 await page.evaluate((text) => {
-  window.dispatchEvent(new MessageEvent('message', { data: { type: 'config', config: { fontSize: 15, mermaidTheme: 'default', pageWidth: 'comfortable', mermaidFitWidth: true } } }))
+  window.dispatchEvent(new MessageEvent('message', { data: { type: 'config', config: { fontSize: 15, mermaidTheme: 'auto', pageWidth: 'comfortable', mermaidFitWidth: true } } }))
   window.dispatchEvent(new MessageEvent('message', { data: { type: 'setContent', text } }))
 }, doc)
 
