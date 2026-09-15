@@ -115,6 +115,16 @@ search, marks the line instead of the word.
   one line — never behind your back, never per keystroke.
 - **Justified text**, line numbers, and a page-width toggle.
 
+### Slide decks
+
+Files named `*.marp.md` open in the plain text editor, not in MDForge — that is
+what [Marp](https://marketplace.visualstudio.com/items?itemName=marp-team.marp-vscode)
+users expect, since Marp renders its deck in VS Code's built-in Markdown
+preview. It is only a default: put `"*.marp.md": "mdforge.editor"` in
+`workbench.editorAssociations` to edit decks here instead, and open the deck
+preview to the side from the Command Palette (*Markdown: Open Preview to the
+Side*).
+
 ## Settings
 
 | Setting | Default | What it does |
