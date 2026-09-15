@@ -1662,7 +1662,9 @@ class AlertSelectWidget extends WidgetType {
       o.textContent = text
       sel.appendChild(o)
     }
-    mk('', '— Citation (aucune alerte)')
+    // Just a dash: a plain quote should look like a plain quote, and the
+    // dropdown's own arrow already says a menu is there.
+    mk('', '—')
     for (const t of ALERT_TYPES) mk(t, ALERT_LABELS[t])
     sel.value = this.kind
     sel.addEventListener('mousedown', (e) => e.stopPropagation())

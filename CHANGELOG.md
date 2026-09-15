@@ -13,6 +13,10 @@ All notable changes to MDForge are documented here. The format follows
   source, not a WYSIWYG editor. MDForge now says so through a contributed
   default, which the Settings UI shows as coming from MDForge and which one line
   of `workbench.editorAssociations` puts back.
+- **A quote without a type now looks like a quote**, not like a callout: the
+  blue rule VS Code uses in its own Markdown preview, and no tinted background —
+  that box is what tells an alert apart. Its type menu is down to a single `—`,
+  which no longer pushes the first line of the quote across the column.
 
 ### Fixed
 
