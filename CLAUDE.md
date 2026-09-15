@@ -272,9 +272,16 @@ so it round-trips for free unless noted.
     not trusted: `fitWidths` truncates extras, pads with the average, and rescales
     to the total the comment declared — dropping an entry must not shrink the
     table (a 4-entry comment on a 3-column table rendered it at 75% width).
-- **GitHub alerts**: a per-blockquote type dropdown (`AlertSelectWidget`, "—
-  Citation" = none) always shown on the first line; the `[!TYPE]` marker is hidden
-  and the block styled as a callout.
+- **GitHub alerts**: a per-blockquote type dropdown (`AlertSelectWidget`) always
+  shown on the first line; the `[!TYPE]` marker is hidden and the block styled as
+  a callout. **A plain quote is not a callout**: it gets VS Code's own blockquote
+  rule (`--vscode-textBlockQuote-border`, the blue of its Markdown preview) and
+  **no fill** — the tinted box is what says "this is an alert", and giving one to
+  every quote made an ordinary citation look like a NOTE. Its dropdown reads
+  just `—`: the label used to be "— Citation (aucune alerte)", and a `<select>`
+  is as wide as its WIDEST option, so those words pushed the quote's own first
+  line halfway across the column. Hence also the explicit width on
+  `.cm-alert-select-none` — the native dropdown list is not constrained by it.
 - **Wikilinks / footnotes**: `[[target]]` decorated + click→host; `[^id]` refs and
   `[^id]:` defs styled, click jumps ref↔def. The toolbar `†` inserts a footnote via
   a popup: pick the target **section** (existing note-def sections + Notes/

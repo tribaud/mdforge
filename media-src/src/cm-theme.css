@@ -857,9 +857,11 @@ body.mdforge-mermaid-fit .cm-mermaid-target {
   white-space: pre-wrap;
 }
 
-/* Blockquotes */
+/* Blockquotes — a plain one is NOT a callout: the rule VS Code uses for a
+   quote (`textBlockQuote.border`, the blue of its own Markdown preview) and no
+   fill at all. The tinted box below belongs to alerts, which say what they are. */
 .cm-line.cm-md-quote {
-  border-left: 3px solid var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.6));
+  border-left: 4px solid var(--vscode-textBlockQuote-border, #4493f8);
   padding-left: 14px;
   color: var(--vscode-descriptionForeground, inherit);
 }
@@ -928,10 +930,16 @@ body.mdforge-mermaid-fit .cm-mermaid-target {
   color: var(--vscode-editor-foreground);
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
 }
+/* No type chosen: the label is a single dash, but a <select> is as wide as its
+   WIDEST option — which pushed the quote's own first line halfway across the
+   column. On a plain quote it is therefore sized to what it shows; the native
+   dropdown list is not constrained by it. */
 .cm-alert-select-none {
   --alert-color: var(--vscode-descriptionForeground, #888);
   font-weight: 400;
   opacity: 0.55;
+  width: 2.6em;
+  padding-right: 16px;
 }
 .cm-alert-select:hover.cm-alert-select-none {
   opacity: 1;
