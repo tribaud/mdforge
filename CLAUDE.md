@@ -93,6 +93,24 @@ it fully before making changes.
   **`editor/title` buttons** (book icon → `mdforge.openEditor`; code icon →
   `mdforge.openWithTextEditor`) or `Ctrl/Cmd+Shift+Alt+M`, and can put the text
   editor back for good with `workbench.editorAssociations`.
+- **Marp decks stay in the text editor** (`contributes.configurationDefaults`:
+  `workbench.editorAssociations` → `"*.marp.md": "default"`). `marp-vscode`
+  contributes **no editor of its own**: it extends VS Code's built-in Markdown
+  preview (`markdown.markdownItPlugins` + `previewStyles`/`previewScripts`), and
+  renders the deck there when the frontmatter says `marp: true`. So there is no
+  editor priority to arbitrate — MDForge simply has to stand aside for the files
+  a deck author expects to open as source. `configurationDefaults` is the right
+  tool: `editorAssociations` is WINDOW-scoped and does not set
+  `disallowConfigurationDefault`, the two gates the contribution point checks
+  (`configurationExtensionPoint.ts`). It is a **default**, so the Settings UI
+  shows it as coming from MDForge and one line puts it back — but a user who has
+  ANY `workbench.editorAssociations` of their own shadows the whole object,
+  ours included. `filenamePattern` has no exclusion syntax, which is why this is
+  not done in the `customEditors` selector.
+  A deck kept in MDForge can still be previewed: `markdown.showPreviewToSide`
+  takes a **URI argument** (`showPreview.ts`), so it does not need an active
+  TEXT editor — but `markdown.marp.export` reads `window.activeTextEditor`, so
+  exporting still means switching to the text editor first.
 - **Sync**: host → webview posts `setContent` on external changes; webview → host
   posts `edit` with the new Markdown (whole-document replace via `WorkspaceEdit`).
   A `syncedText`/`applyingRemote` guard avoids echo loops. Because the CM document

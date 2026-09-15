@@ -6,6 +6,14 @@ All notable changes to MDForge are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`*.marp.md` files open in the plain text editor.** Marp renders its slide
+  decks in VS Code's built-in Markdown preview, so a deck author expects the
+  source, not a WYSIWYG editor. MDForge now says so through a contributed
+  default, which the Settings UI shows as coming from MDForge and which one line
+  of `workbench.editorAssociations` puts back.
+
 ### Fixed
 
 - **A dark theme is now dark all the way.** The line-number margin kept a pale
