@@ -47,6 +47,7 @@ it fully before making changes.
 | --- | --- |
 | `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
 | `src/quickdiff.ts` | **Quick diff**, host side: resolves the built-in `vscode.git` API, reads the base blob (index → `HEAD`), watches doc/repo/setting, posts the line changes. |
+| `src/writequeue.ts` | `createWriter` — one whole-document write at a time, latest text wins. Imports nothing, so it is testable (`npm run test:writes`). |
 | `src/linediff.ts` | `diffLines` — the patience line diff behind the quick-diff margin. Imports nothing, so it is testable (`npm run test:quickdiff`). |
 | `src/searchreveal.ts` | **Search reveal**, host side: calls the internal `search.action.getSearchResults`, deduces the term, and posts what the note being opened matched. |
 | `src/searchmatches.ts` | `matchesForFile` / `deriveQuery` — parses the search view's result text and deduces the search term from it. Imports nothing, so it is testable (`npm run test:search`). |
@@ -113,7 +114,20 @@ it fully before making changes.
   exporting still means switching to the text editor first.
 - **Sync**: host → webview posts `setContent` on external changes; webview → host
   posts `edit` with the new Markdown (whole-document replace via `WorkspaceEdit`).
-  A `syncedText`/`applyingRemote` guard avoids echo loops. Because the CM document
+  A `syncedText`/`applyingRemote` guard avoids echo loops.
+  **Those writes go through a QUEUE** (`writequeue.ts`), and that is not an
+  optimisation. The webview posts one `edit` per keystroke and the host's
+  message handler is `async`, so a second write used to compute its
+  whole-document range while the first was still in flight, against a document
+  that had not changed yet. Under key repeat (a held Backspace) the writes
+  overlapped, the file ended up holding text the webview never sent, the
+  `syncedText` guard stopped matching, and the host echoed that text back as
+  `setContent`: a whole-document replace under the user's fingers, the caret put
+  back by content, characters eaten somewhere else. Reported as "the cursor
+  jumps and deletes text at random while I hold Backspace", and it made the
+  editor unusable. The queue writes one at a time, measures the range inside the
+  queue, and COALESCES what arrives meanwhile — the webview holds the truth, so
+  only its latest text has to land. Because the CM document
   is the text, `edit` carries exactly what the user typed — **no re-serialization,
   perfect diffs.** On the first `setContent` the caret is placed past any
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
@@ -470,6 +484,24 @@ so it round-trips for free unless noted.
     `mdforge.revealSearchMatch: panel | mark | off`, `mark` doing everything
     except opening the panel. Each outcome is posted back as `searchPanelState`
     and printed by the debug command: this is not a place to guess twice.
+  - **The reveal never touches the caret while someone is typing**
+    (`TYPING_GRACE_MS`, 1.5s after the last `edit` message). It moves the caret,
+    and a caret moved mid-keystroke deletes the wrong characters — no
+    convenience is worth that.
+  - **It asks for the focus from nowhere any more.** Every host-side way of
+    handing the keyboard to a webview focuses its CONTAINER, and VS Code
+    propagates that inward only when the outer iframe was not already the active
+    element. Each version that asked ended up taking the keyboard AWAY from the
+    inner frame instead: notes that lost their focus on a plain tab switch, an
+    editor that felt stuck. `F3` no longer needs it either (the shortcut is
+    contributed to VS Code and relayed), so the panel is opened only where the
+    keyboard is already ours — a fresh editor, or a webview that just reported
+    receiving the focus. A tab merely brought forward (`shown`) gets the marks
+    and the search term, and leaves the keyboard where the user put it.
+  - **`MDForge: Reveal the search match here`** (`mdforge.revealHere`) covers
+    the one case VS Code reports nothing for: the note is already open AND
+    already the active editor, so clicking its result changes no observable
+    state. The command skips the typing grace and the de-bounce.
   - **Three triggers, because VS Code reports almost nothing here.** A fresh
     editor gives `ready`. A note that is already open answers none — the
     webview is kept (`retainContextWhenHidden`), so a result pointing at it

@@ -2,6 +2,8 @@ import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
 import { QuickDiff } from './quickdiff'
+import { createWriter } from './writequeue'
+import type { Writer } from './writequeue'
 import {
   searchMatches,
   suppressReveal,
@@ -15,6 +17,9 @@ import {
 import { parseSearchResults } from './searchmatches'
 
 const VIEW_TYPE = 'mdforge.editor'
+
+/** How long after a keystroke a search reveal keeps its hands off the caret. */
+const TYPING_GRACE_MS = 1500
 
 export function activate(context: vscode.ExtensionContext): void {
   const outline = new OutlineProvider()
@@ -50,6 +55,15 @@ export function activate(context: vscode.ExtensionContext): void {
      * when it DID handle the key itself this command arrives as a duplicate;
      * dropping it is the webview's job — it is the side that knows.
      */
+    vscode.commands.registerCommand('mdforge.revealHere', async () => {
+      const active = outline.active
+      const reveal = active && provider.revealerFor(active.document.uri)
+      if (!reveal) {
+        void vscode.window.showInformationMessage('Open a note with MDForge first.')
+        return
+      }
+      await reveal()
+    }),
     vscode.commands.registerCommand('mdforge.searchNext', () => {
       void outline.active?.webview.postMessage({ type: 'searchStep', value: 'next' })
     }),
@@ -818,6 +832,10 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
   /** URIs currently open in an MDForge editor — gates format-on-save so it only
    *  touches documents this editor owns, not every Markdown file. */
   private readonly openDocs = new Set<string>()
+  public revealerFor(uri: vscode.Uri): (() => Promise<void>) | undefined {
+    return this.revealers.get(uri.toString())
+  }
+
   public isOpen(uri: vscode.Uri): boolean {
     return this.openDocs.has(uri.toString())
   }
@@ -845,6 +863,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
 
     /** Text we last pushed to / received from the webview; guards echo loops. */
     let syncedText = document.getText()
+    /** When the webview last reported a keystroke, for the reveal's grace period. */
+    let lastLocalEdit = 0
 
     const postDocument = (): void => {
       void webview.postMessage({ type: 'setContent', text: document.getText() })
@@ -962,8 +982,27 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
      * are dug back out of the search view itself (src/searchreveal.ts), once,
      * when the editor opens.
      */
-    const revealSearchMatch = async (trigger: 'ready' | 'shown' | 'focused'): Promise<void> => {
+    /*
+     * On demand, for the one case VS Code reports nothing at all: the note is
+     * already open AND already the active editor, so clicking its result in the
+     * Search view changes no state we can observe — no `ready`, no view-state
+     * change, and no focus arriving from outside since the editor already had
+     * it. `MDForge: Reveal the search match here` is the manual way in, and it
+     * skips both the typing grace and the de-bounce: it was asked for.
+     */
+    this.revealers.set(document.uri.toString(), () => revealSearchMatch('command'))
+
+    const revealSearchMatch = async (
+      trigger: 'ready' | 'shown' | 'focused' | 'command'
+    ): Promise<void> => {
       const mode = revealMode(document.uri)
+      /*
+       * Never over someone's fingers. A reveal moves the caret, and a caret
+       * moved mid-keystroke deletes the wrong characters — the worst thing this
+       * feature can do, against the small convenience it buys. A note being
+       * typed in is not a note someone was just sent to.
+       */
+      if (trigger !== 'command' && Date.now() - lastLocalEdit < TYPING_GRACE_MS) return
       // Only the editor the user is looking at: restoring a window resolves the
       // tabs it shows, and a note reopened in the background has no business
       // jumping to a match.
@@ -974,42 +1013,23 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       const target = await searchMatches(document)
       if (target.matches.length === 0) return
       /*
-       * The keyboard, for a note that was ALREADY open.
+       * NOTHING is asked of the focus here, by any path.
        *
-       * A freshly created editor ('ready') is focused by VS Code itself and
-       * must be left alone — asking again there is what broke it last time. An
-       * existing one is merely revealed with `preserveFocus`, so `F3` lands
-       * nowhere until the text is clicked.
+       * Both host-side ways of giving the keyboard to a webview focus its
+       * CONTAINER, and VS Code propagates that inward only when the outer
+       * iframe was not already the active element — after a result click it is.
+       * Every version that asked ended up taking the keyboard AWAY from the
+       * inner frame instead: a note that lost its focus on a plain tab switch,
+       * and an editor that felt stuck. `F3` no longer depends on it either, the
+       * shortcut being contributed to VS Code and relayed (§4), so the reveal
+       * has nothing left to gain by fighting for focus.
        *
-       * Asking is not enough on its own: `webviewElement._doFocus` only sends
-       * the `focus` message that reaches the webview's INNER frame from a
-       * delayed callback, and that callback gives up when the workbench's
-       * active element is neither the webview nor BODY — i.e. when the search
-       * result list has taken the keyboard back, which is exactly what it does
-       * right after opening an editor. Hence twice: once now, once after it
-       * has settled. Only in `panel` mode: `mark` never takes the keyboard.
+       * The panel is opened only where the keyboard is already ours: a fresh
+       * editor (VS Code focuses it) or a webview that just told us it received
+       * the focus. A tab brought forward gets the marks and the search term,
+       * and leaves the keyboard exactly where the user put it.
        */
-      /*
-       * NEVER from the `focused` trigger: that one means the webview just told
-       * us it HAS the keyboard, so asking for it again is both pointless and a
-       * loop — ask, the webview is focused, it posts `focused`, we ask again.
-       * Three rounds inside one second, an editor that feels stuck and a `F3`
-       * that never lands: that was this exact loop.
-       */
-      /*
-       * ONCE, NOT TWICE. The second ask went out at 250ms — AFTER the webview's last
-       * `takeKeyboard` at 150ms — and re-focusing the container from the host is exactly what
-       * `takeKeyboard` says not to do: "that focuses the container, and the keyboard leaves our
-       * document without coming back". The webview put the keyboard in the panel's field, and the
-       * host took it away a hundred milliseconds later. The last word belongs to the side that is
-       * INSIDE the frame; the host only opens the door.
-       */
-      if (mode === 'panel' && trigger === 'shown') {
-        if (webviewPanel.active) {
-          notePanelState('host-focus', webviewPanel.active)
-          webviewPanel.reveal(webviewPanel.viewColumn, false)
-        }
-      }
+      const openPanel = mode === 'panel' && trigger !== 'shown'
       /*
        * The "once per set of results" gate keeps the caret from being thrown
        * back to the match on every tab switch. It must NOT keep the keyboard
@@ -1017,12 +1037,12 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
        * Returning before it is what left cases 2 and 3 with no focus at all:
        * the trail showed no `shown` entry because the function never got there.
        */
-      if (revealedRecently(document.uri, target)) {
+      if (trigger !== 'command' && revealedRecently(document.uri, target)) {
         notePanelState('just revealed, skipped', webviewPanel.active)
         return
       }
       markRevealed(document.uri, target)
-      void webview.postMessage({ type: 'searchMatches', ...target, openPanel: mode === 'panel' })
+      void webview.postMessage({ type: 'searchMatches', ...target, openPanel })
     }
 
     webview.onDidReceiveMessage(
@@ -1077,6 +1097,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             // so a tag being typed would persist every prefix of itself (`p`,
             // `pr`, `pro`…) with no way to take them back. Saving does it.
             if (typeof message.text === 'string' && message.text !== document.getText()) {
+              lastLocalEdit = Date.now()
               syncedText = message.text
               await this.writeDocument(document, message.text)
             }
@@ -1178,19 +1199,42 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       diagnosticsSubscription.dispose()
       assetWatcher.dispose()
       quickDiff.dispose()
+      this.writers.delete(document.uri.toString())
+      this.revealers.delete(document.uri.toString())
       this.outline.clear(document)
     })
   }
 
   /** Replace the entire document with new text in a single edit. */
-  private async writeDocument(document: vscode.TextDocument, text: string): Promise<void> {
-    const edit = new vscode.WorkspaceEdit()
-    const fullRange = new vscode.Range(
-      document.positionAt(0),
-      document.positionAt(document.getText().length)
-    )
-    edit.replace(document.uri, fullRange, text)
-    await vscode.workspace.applyEdit(edit)
+  /** The on-demand reveal of each open editor, for `mdforge.revealHere`. */
+  private readonly revealers = new Map<string, () => Promise<void>>()
+
+  /** One writer per document: see `writequeue.ts` for why the queue exists. */
+  private readonly writers = new Map<string, Writer>()
+
+  private writeDocument(document: vscode.TextDocument, text: string): Promise<void> {
+    const key = document.uri.toString()
+    let writer = this.writers.get(key)
+    if (!writer) {
+      writer = createWriter({
+        read: () => document.getText(),
+        apply: async (next) => {
+          const edit = new vscode.WorkspaceEdit()
+          // Measured HERE, inside the queue: a whole-document range is only
+          // valid against the document as it stands once every earlier write
+          // has landed.
+          edit.replace(
+            document.uri,
+            new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
+            next
+          )
+          await vscode.workspace.applyEdit(edit)
+        },
+        onError: (error) => console.error('[MDForge] write failed:', error)
+      })
+      this.writers.set(key, writer)
+    }
+    return writer.write(text)
   }
 
   /**

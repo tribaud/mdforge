@@ -122,6 +122,10 @@
       {
         "command": "mdforge.searchPrevious",
         "title": "MDForge: Find Previous Match"
+      },
+      {
+        "command": "mdforge.revealHere",
+        "title": "MDForge: Reveal the search match here"
       }
     ],
     "views": {
@@ -399,7 +403,8 @@
     "test:quickdiff": "npm run compile:ext && node scripts/quickdiff.test.mjs",
     "test:search": "npm run compile:ext && node scripts/searchmatch.test.mjs",
     "vscode:prepublish": "npm run build",
-    "package": "vsce package"
+    "package": "vsce package",
+    "test:writes": "npm run compile:ext && node scripts/writequeue.test.mjs"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",
