@@ -64,7 +64,18 @@ export function createWriter({ read, apply, onError }: WriterHooks): Writer {
   return {
     write(text: string): Promise<void> {
       pending = text
-      if (!running) running = drain()
+      if (!running) {
+        /*
+         * The hop matters. `drain()` can finish WITHOUT ever awaiting — a text
+         * the document already holds is skipped, and the loop then ends
+         * synchronously. Its `finally` would clear `running` before the
+         * assignment below ever ran, leaving a settled promise in place for
+         * good: `busy()` stuck at true and every later write dropped in
+         * silence. Starting one microtask later means the assignment always
+         * lands first.
+         */
+        running = Promise.resolve().then(drain)
+      }
       return running
     },
     busy: () => running !== undefined

@@ -127,7 +127,22 @@ it fully before making changes.
   jumps and deletes text at random while I hold Backspace", and it made the
   editor unusable. The queue writes one at a time, measures the range inside the
   queue, and COALESCES what arrives meanwhile — the webview holds the truth, so
-  only its latest text has to land. Because the CM document
+  only its latest text has to land.
+  Two details the first version got wrong, both caught in review:
+  - **The echo mark belongs where the write LANDS**, not where the message
+    arrives (`lastWritten`, set inside `apply`). Set on arrival it named a text
+    the coalescing had already skipped, the change listener saw a mismatch, and
+    the host pushed that stale text back as `setContent`: the very replace this
+    was meant to remove. Measured: a four-keystroke burst echoed twice.
+  - **Do not compare an incoming edit against `document.getText()`.** With a
+    queue the document lags a whole burst behind, so typing a character then
+    erasing it read as "nothing changed", the second message was dropped, and
+    the file kept a character the editor no longer showed. The queue skips a
+    real no-op itself, against the document as it stands when the write runs.
+  `scripts/sync.test.cjs` drives the compiled extension against a fake `vscode`
+  whose document really mutates and fires its change event: a burst must end on
+  the last keystroke and echo nothing, while an external change must still be
+  forwarded. Because the CM document
   is the text, `edit` carries exactly what the user typed — **no re-serialization,
   perfect diffs.** On the first `setContent` the caret is placed past any
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
@@ -722,6 +737,8 @@ npm run build                 # tsc (extension) + esbuild (webview) → media/di
 npx tsc -p media-src --noEmit # webview type-check (also in CI)
 npm run test:quickdiff        # the line diff behind the quick-diff margin
 npm run test:search           # parsing of the search view's result text
+npm run test:writes           # the document write queue, under key repeat
+npm run test:sync             # the host round-trip: a burst in, no echo back
 ```
 
 - **Two launch configurations** (`.vscode/launch.json`): the plain one, and

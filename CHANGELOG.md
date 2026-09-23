@@ -9,26 +9,27 @@ All notable changes to MDForge are documented here. The format follows
 ### Fixed
 
 - **Typing no longer moves the caret or eats text.** Holding Backspace could
-  send the caret somewhere else and delete a chunk of the note. The webview
-  sends one edit per keystroke, and those writes were not serialised: a second
+  send the caret elsewhere and delete a chunk of the note. The webview sends one
+  edit per keystroke, and those writes were not serialised: a second
   whole-document replace was measured against a document the first had not
-  changed yet, so the file ended up holding text the editor never sent, and the
-  host sent it back — a full replace under your fingers. Writes are queued now,
-  one at a time, and keystrokes that pile up while one is in flight are
-  collapsed into the latest.
+  changed yet. The file then held text the editor never sent, so the host sent
+  it back, replacing the whole document under your fingers. Writes are queued
+  now, one at a time, and keystrokes that pile up while one is in flight
+  collapse into the latest.
 - **Switching tabs no longer costs the keyboard.** The search reveal asked VS
-  Code to focus the editor when a note was brought forward, which focuses the
-  webview's container and takes the keyboard away from the editor inside it. It
+  Code to focus the editor when a note was brought forward. That focuses the
+  webview's container, and takes the keyboard away from the editor inside it. It
   asks for nothing now: the search panel opens only where the keyboard already
-  is, and `F3` works either way since the shortcut is bound at the VS Code level.
-- A reveal also stays away from the caret for 1.5s after a keystroke.
+  is, and `F3` works either way since the shortcut is bound at the VS Code
+  level.
+- A reveal also stays away from the caret for 1.5 seconds after a keystroke.
 
 ### Added
 
-- **`MDForge: Reveal the search match here`** for the case VS Code reports
+- **`MDForge: Reveal the search match here`**, for the case VS Code reports
   nothing at all: a result clicked for the note you already have open and
-  active. Nothing changes that an extension can observe, so the reveal has to be
-  asked for.
+  active. No state changes that an extension can observe, so the reveal has to
+  be asked for.
 
 ## [0.7.1]
 

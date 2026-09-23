@@ -404,7 +404,8 @@
     "test:search": "npm run compile:ext && node scripts/searchmatch.test.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package",
-    "test:writes": "npm run compile:ext && node scripts/writequeue.test.mjs"
+    "test:writes": "npm run compile:ext && node scripts/writequeue.test.mjs",
+    "test:sync": "npm run compile:ext && node scripts/sync.test.cjs"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",

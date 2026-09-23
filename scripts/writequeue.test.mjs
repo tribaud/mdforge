@@ -62,7 +62,9 @@ const fakeDoc = (initial, delay = 3) => {
   await writer.write('abcd')
   check('a burst ends on the last text', state.text, 'abcd')
   check('never two writes at once', state.maxInFlight, 1)
-  check('intermediate keystrokes are coalesced', state.applied, ['a', 'abcd'])
+  // Everything posted in one tick becomes ONE write: the drain starts a
+  // microtask later, by which time only the last text is still pending.
+  check('a burst posted in one tick is a single write', state.applied, ['abcd'])
 }
 
 // Each write measures the document AFTER the previous one landed. With the old
@@ -110,6 +112,24 @@ const fakeDoc = (initial, delay = 3) => {
   await writer.write('two')
   check('a failed write is reported, the next one lands', state.applied, ['caught:busy', 'two'])
   check('the queue is idle afterwards', writer.busy(), false)
+}
+
+// A write the document already holds finishes without ever awaiting. The queue
+// must not stay marked busy afterwards, or every later keystroke is dropped.
+{
+  const { state, writer } = fakeDoc('same')
+  await writer.write('same')
+  check('idle after a write that had nothing to do', writer.busy(), false)
+  await writer.write('changed')
+  check('and the next write still lands', state.text, 'changed')
+}
+
+// Same thing without awaiting in between, which is how keystrokes arrive.
+{
+  const { state, writer } = fakeDoc('a')
+  writer.write('a')
+  await writer.write('ab')
+  check('a no-op followed straight away by a real write', state.text, 'ab')
 }
 
 console.log(failures === 0 ? '\nall passed' : `\n${failures} failed`)

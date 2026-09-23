@@ -37,5 +37,8 @@ jobs:
       - name: Document write queue tests
         run: node scripts/writequeue.test.mjs
 
+      - name: Host round-trip tests (edit burst, echo guard)
+        run: node scripts/sync.test.cjs
+
       - name: Bundle webview (esbuild)
         run: npm run build:webview

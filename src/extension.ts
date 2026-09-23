@@ -861,8 +861,17 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
     }
     webview.html = this.getHtml(webview)
 
-    /** Text we last pushed to / received from the webview; guards echo loops. */
-    let syncedText = document.getText()
+    /*
+     * Text the document is known to hold on purpose: what we last WROTE into it
+     * (set by the write queue, when the write lands) or last pushed to the
+     * webview. Anything else is an external change worth forwarding.
+     */
+    const docKey = document.uri.toString()
+    this.lastWritten.set(docKey, document.getText())
+    const synced = (): string | undefined => this.lastWritten.get(docKey)
+    const markSynced = (text: string): void => {
+      this.lastWritten.set(docKey, text)
+    }
     /** When the webview last reported a keystroke, for the reveal's grace period. */
     let lastLocalEdit = 0
 
@@ -918,8 +927,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         this.outline.refresh()
       }
       // Ignore the change we caused ourselves when writing the webview's edit back.
-      if (event.document.getText() === syncedText) return
-      syncedText = event.document.getText()
+      if (event.document.getText() === synced()) return
+      markSynced(event.document.getText())
       postDocument()
     })
 
@@ -1096,9 +1105,16 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             // NOT merged into the tag index here: this fires on every keystroke,
             // so a tag being typed would persist every prefix of itself (`p`,
             // `pr`, `pro`…) with no way to take them back. Saving does it.
-            if (typeof message.text === 'string' && message.text !== document.getText()) {
+            /*
+             * No comparison against `document.getText()` here: with a queue the
+             * document lags a whole burst behind. Typing a character then
+             * erasing it under key repeat looked like "nothing changed", the
+             * second message was dropped, and the file kept a character the
+             * editor no longer showed. The queue skips a genuine no-op itself,
+             * against the document as it stands when the write runs.
+             */
+            if (typeof message.text === 'string') {
               lastLocalEdit = Date.now()
-              syncedText = message.text
               await this.writeDocument(document, message.text)
             }
             break
@@ -1200,6 +1216,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       assetWatcher.dispose()
       quickDiff.dispose()
       this.writers.delete(document.uri.toString())
+      this.lastWritten.delete(document.uri.toString())
       this.revealers.delete(document.uri.toString())
       this.outline.clear(document)
     })
@@ -1211,6 +1228,8 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
 
   /** One writer per document: see `writequeue.ts` for why the queue exists. */
   private readonly writers = new Map<string, Writer>()
+  /** The text each document was last written with, for the echo guard. */
+  private readonly lastWritten = new Map<string, string>()
 
   private writeDocument(document: vscode.TextDocument, text: string): Promise<void> {
     const key = document.uri.toString()
@@ -1228,7 +1247,18 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
             next
           )
-          await vscode.workspace.applyEdit(edit)
+          /*
+           * Marked BEFORE the edit lands, and marked with what is actually
+           * being written. Marking it when the message arrived was wrong the
+           * moment writes were coalesced: the document then passes through a
+           * text the webview has already moved past, the change listener sees a
+           * mismatch, and it pushes that stale text back as `setContent` — the
+           * whole-document replace under the user's fingers this was all meant
+           * to remove.
+           */
+          this.lastWritten.set(key, next)
+          const done = await vscode.workspace.applyEdit(edit)
+          if (!done) throw new Error('VS Code refused the edit')
         },
         onError: (error) => console.error('[MDForge] write failed:', error)
       })
