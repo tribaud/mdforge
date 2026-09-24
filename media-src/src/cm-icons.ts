@@ -17,6 +17,12 @@ export const ICONS: Record<string, string> = {
     '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'
   ),
   search: svg('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'),
+  searchNext: svg(
+    '<circle cx="10" cy="10" r="7"/><line x1="20" y1="20" x2="15" y2="15"/><path d="M7.5 10h5"/><path d="M10.5 7.5l2.5 2.5-2.5 2.5"/>'
+  ),
+  searchFiles: svg(
+    '<path d="M4 3h8l4 4v5"/><path d="M12 3v4h4"/><path d="M4 3v14a2 2 0 0 0 2 2h3"/><circle cx="16" cy="16" r="4"/><line x1="21" y1="21" x2="19" y2="19"/>'
+  ),
   image: svg('<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>'),
   table: svg(
     '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>'

@@ -8,7 +8,14 @@
 import { EditorView } from '@codemirror/view'
 import type { ChangeSpec } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
-import { openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search'
+import {
+  openSearchPanel,
+  closeSearchPanel,
+  searchPanelOpen,
+  setSearchQuery,
+  SearchQuery,
+  findNext
+} from '@codemirror/search'
 import { ICONS } from './cm-icons'
 
 /** Lezer node the marker produces, and the child node that IS the marker. */
@@ -503,8 +510,60 @@ const ENTRIES: Entry[] = [
   { label: ICONS.search, title: 'Rechercher (Ctrl/⌘F)', run: (v) => toggleSearch(v) }
 ]
 
-function buildButtons(view: EditorView, container: HTMLElement): void {
-  for (const entry of ENTRIES) {
+/*
+ * Selection-only actions. They answer the two questions a selected word raises:
+ * where else is it in this note, and where else is it in the workspace. Kept
+ * out of `ENTRIES` because neither means anything without a selection, and the
+ * top toolbar is always there.
+ */
+const BUBBLE_ENTRIES: Entry[] = [
+  'sep',
+  {
+    label: ICONS.searchNext,
+    title: 'Occurrence suivante dans la note (F3)',
+    run: (v) => findSelectionInNote(v)
+  },
+  {
+    label: ICONS.searchFiles,
+    title: 'Rechercher dans tous les fichiers',
+    run: (v) => findSelectionInWorkspace(v)
+  }
+]
+
+/** The selected text, or the word under the caret when nothing is selected. */
+function selectedText(view: EditorView): string {
+  const sel = view.state.selection.main
+  if (!sel.empty) return view.state.sliceDoc(sel.from, sel.to)
+  const line = view.state.doc.lineAt(sel.head)
+  const at = sel.head - line.from
+  const before = /[\w'’-]*$/.exec(line.text.slice(0, at))?.[0] ?? ''
+  const after = /^[\w'’-]*/.exec(line.text.slice(at))?.[0] ?? ''
+  return before + after
+}
+
+/** Put the selection in the note's own search and jump to the next match. */
+function findSelectionInNote(view: EditorView): void {
+  const query = selectedText(view)
+  if (!query) return
+  view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: query })) })
+  openSearchPanel(view)
+  findNext(view)
+}
+
+let workspaceSearch: ((query: string) => void) | undefined
+
+/** Set by the webview entry point: the host runs VS Code's own search. */
+export function setWorkspaceSearch(fn: (query: string) => void): void {
+  workspaceSearch = fn
+}
+
+function findSelectionInWorkspace(view: EditorView): void {
+  const query = selectedText(view)
+  if (query) workspaceSearch?.(query)
+}
+
+function buildButtons(view: EditorView, container: HTMLElement, entries: Entry[]): void {
+  for (const entry of entries) {
     if (entry === 'sep') {
       const sep = document.createElement('span')
       sep.className = 'cm-tb-sep'
@@ -535,7 +594,7 @@ function buildButtons(view: EditorView, container: HTMLElement): void {
 export function createTopbar(view: EditorView): HTMLElement {
   const bar = document.createElement('div')
   bar.className = 'cm-topbar'
-  buildButtons(view, bar)
+  buildButtons(view, bar, ENTRIES)
   return bar
 }
 
@@ -545,7 +604,7 @@ export function createBubble(view: EditorView): { el: HTMLElement; update: () =>
   const el = document.createElement('div')
   el.className = 'cm-bubble'
   el.style.display = 'none'
-  buildButtons(view, el)
+  buildButtons(view, el, [...ENTRIES, ...BUBBLE_ENTRIES])
   document.body.appendChild(el)
 
   const update = (): void => {

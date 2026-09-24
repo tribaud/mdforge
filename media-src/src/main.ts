@@ -47,7 +47,14 @@ import {
   openWikilink,
   editorIsDark
 } from './cm-livepreview'
-import { createTopbar, createBubble, wrap, insertLink, insertTable } from './cm-toolbar'
+import {
+  createTopbar,
+  createBubble,
+  wrap,
+  insertLink,
+  insertTable,
+  setWorkspaceSearch
+} from './cm-toolbar'
 import { ICONS } from './cm-icons'
 import { createSlashMenu } from './cm-slash'
 import type { SlashMenu } from './cm-slash'
@@ -126,6 +133,9 @@ setWikilinkHandler((target) => vscode.postMessage({ type: 'openWikilink', target
 // The host sweeps once on the first request, then answers from its cache; only
 // the editor's ↻ asks for a fresh sweep.
 setTagsRequester((refresh) => vscode.postMessage({ type: 'requestTags', refresh }))
+
+// The workspace search belongs to VS Code: the webview only hands over the term.
+setWorkspaceSearch((query) => vscode.postMessage({ type: 'findInFiles', query }))
 
 /*
  * CodeMirror's OWN base theme has a light and a dark half (`&light` / `&dark`),
@@ -694,6 +704,28 @@ try {
         event.stopPropagation()
         vscode.postMessage({ type: 'openExternal', url: href })
       }
+    },
+    true
+  )
+
+  /*
+   * A link inside a RENDERED table opens on a plain click. Running text needs
+   * Ctrl/⌘ because a click there places the caret, which reveals the raw
+   * `[text](url)`; a table cell is a widget with nowhere to put a caret, so the
+   * modifier only got in the way. Handled on mousedown, like the other one, and
+   * before CodeMirror sees it.
+   */
+  view.dom.addEventListener(
+    'mousedown',
+    (event) => {
+      if (event.metaKey || event.ctrlKey) return
+      const target = event.target as HTMLElement | null
+      if (!target?.closest?.('.cm-md-table')) return
+      const href = target.closest?.('[data-href]')?.getAttribute('data-href')
+      if (!href) return
+      event.preventDefault()
+      event.stopPropagation()
+      vscode.postMessage({ type: 'openExternal', url: href })
     },
     true
   )

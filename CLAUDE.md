@@ -53,7 +53,7 @@ it fully before making changes.
 | `src/searchmatches.ts` | `matchesForFile` / `deriveQuery` — parses the search view's result text and deduces the search term from it. Imports nothing, so it is testable (`npm run test:search`). |
 | `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
 | `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
-| `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble; `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
+| `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble (`ENTRIES` for both, `BUBBLE_ENTRIES` for the two search actions a selection alone justifies); `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
 | `media-src/src/cm-slash.ts` | `/` slash command menu (`createSlashMenu(view).update`). |
 | `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
 | `media-src/src/cm-block-drag.ts` | Left-margin block controls: draggable `⠿` handle (reorders top-level blocks / heading sections, click = select the block) and the `▾`/`▸` fold chevron. |
@@ -311,6 +311,18 @@ so it round-trips for free unless noted.
   is as wide as its WIDEST option, so those words pushed the quote's own first
   line halfway across the column. Hence also the explicit width on
   `.cm-alert-select-none` — the native dropdown list is not constrained by it.
+- **Links in a rendered table open on a PLAIN click.** Running text needs
+  Ctrl/⌘ because a click there places the caret, which reveals the raw
+  `[text](url)` and drops the `data-href` before the click lands (see gotchas).
+  A table cell is a widget with nowhere to put a caret, so the modifier only got
+  in the way. Same mousedown capture listener, scoped to `.cm-md-table`.
+- **The selection bubble carries two searches** (`BUBBLE_ENTRIES`), because a
+  selected word raises exactly two questions. `searchNext` puts it in the note's
+  own search state, opens the panel and jumps to the next occurrence, so `F3`
+  carries on from there. `searchFiles` hands the term to the host, which runs
+  VS Code's `workbench.action.findInFiles` with `triggerSearch`: the workspace
+  search belongs to VS Code, the webview only supplies the word. With no
+  selection both fall back to the word under the caret.
 - **Wikilinks / footnotes**: `[[target]]` decorated + click→host; `[^id]` refs and
   `[^id]:` defs styled, click jumps ref↔def. The toolbar `†` inserts a footnote via
   a popup: pick the target **section** (existing note-def sections + Notes/

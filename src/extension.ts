@@ -1066,6 +1066,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         name?: string
         path?: string
         quiet?: boolean
+        query?: string
         value?: string
         html?: string
         dump?: string
@@ -1123,6 +1124,18 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           case 'openExternal':
             if (message.url) await vscode.env.openExternal(vscode.Uri.parse(message.url))
+            break
+          case 'findInFiles':
+            // VS Code's own Search view, seeded with the selection: the webview
+            // has no business searching the workspace itself.
+            if (typeof message.query === 'string' && message.query !== '') {
+              await vscode.commands.executeCommand('workbench.action.findInFiles', {
+                query: message.query,
+                triggerSearch: true,
+                matchWholeWord: false,
+                isCaseSensitive: false
+              })
+            }
             break
           case 'openTextEditor':
             await vscode.commands.executeCommand('vscode.openWith', document.uri, 'default')
