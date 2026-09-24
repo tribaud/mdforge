@@ -575,9 +575,15 @@ so it round-trips for free unless noted.
     because the function never reached the line that records one. A new webview
     forgets its note (`forgetReveal`), and the debug command sits outside the
     whole thing.
-  - **`F3` / `Maj+F3` are contributed to VS Code too**
-    (`mdforge.searchNext` / `searchPrevious`, `when: activeCustomEditorId ==
-    'mdforge.editor'`), and relayed to the webview as `searchStep`. The focus
+  - **`F3` / `Maj+F3` — and `Cmd+G` / `Cmd+Maj+G` on macOS — are contributed
+    to VS Code too** (`mdforge.searchNext` / `searchPrevious`, `when:
+    activeCustomEditorId == 'mdforge.editor'`, the mac pair additionally gated
+    on `isMac`), and relayed to the webview as `searchStep`. The mac pair is
+    not a nicety: `F3` is a Windows convention and macOS gives that key to
+    Mission Control before VS Code sees it, so a Mac had the relay bound to a
+    key that never arrives — no fallback at all. Inside the webview both chords
+    already worked, `Mod-g` being part of `@codemirror/search`'s own keymap,
+    and the double-step recorder already counts Ctrl/⌘+G as self-handled. The focus
     handed to a webview's inner frame is a race we lose now and then (above),
     and when we do, a key pressed in the note never reaches CodeMirror — the
     relay is what makes the shortcut work anyway. A webview forwards EVERY

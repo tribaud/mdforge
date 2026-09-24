@@ -21,6 +21,10 @@ All notable changes to MDForge are documented here. The format follows
   so it is written as `<br>` — which is what GitHub renders too, and what any
   other Markdown tool will read. Re-opening that cell shows the break as a line
   again, and closing it without a change writes nothing.
+- **`Cmd+G` / `Cmd+Maj+G` walk the matches on macOS.** `F3` is a Windows
+  convention, and macOS hands that key to Mission Control before VS Code sees
+  it. The relay that makes the shortcut work when the note has lost the
+  keyboard was bound to `F3` alone, so on a Mac there was no fallback at all.
 - **Two searches in the selection bubble.** Select a word, or double-click it,
   and the bubble now offers the next occurrence in the note (the search panel
   opens on the term, so `F3` carries on) and a search across every file, handed
