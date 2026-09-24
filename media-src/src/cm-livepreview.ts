@@ -1303,7 +1303,12 @@ class TableWidget extends WidgetType {
      */
     const input = document.createElement('div')
     input.className = 'cm-td-editor-input'
-    input.contentEditable = 'true'
+    // `plaintext-only` where it exists (Chromium, so every VS Code webview):
+    // it switches off the browser's own rich-text commands, which would answer
+    // Ctrl+B with a `<b>` element instead of the `**` this field is for. The
+    // fallback matters — an unsupported value leaves the element NOT editable.
+    input.contentEditable = 'plaintext-only'
+    if (!input.isContentEditable) input.contentEditable = 'true'
     input.spellcheck = true
     input.textContent = unescapePipes(original)
     input.setAttribute('data-placeholder', 'Markdown, HTML, image…')
