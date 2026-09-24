@@ -12,6 +12,12 @@ All notable changes to MDForge are documented here. The format follows
   `Ctrl/⌘` held, because clicking running text places the caret and turns the
   link back into its Markdown. A rendered table has nowhere to put a caret, so
   the modifier was pure friction.
+- **A table cell is now edited in the cell itself.** Double-click one (or use
+  its `✎`) and its raw Markdown opens in place of its rendering, with the table
+  still standing around it — no more field above the table, and no more looking
+  away from the cell you are changing. Write Markdown or plain HTML in it: both
+  render on `Entrée`, and a narrow column grows downwards instead of pushing the
+  table sideways.
 - **Two searches in the selection bubble.** Select a word, or double-click it,
   and the bubble now offers the next occurrence in the note (the search panel
   opens on the term, so `F3` carries on) and a search across every file, handed

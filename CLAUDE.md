@@ -248,13 +248,27 @@ so it round-trips for free unless noted.
   parsed by `parseTableCells` → `splitCells`, which yields each cell's **absolute
   document offsets** and treats `\|` as an escaped pipe.
   Two levels of editing:
-  - **one cell** — hover → `✎` (or double-click): the table STAYS rendered, the
-    cell gets `.cm-td-editing`, and its raw Markdown opens in a field above the
-    table (`cellEditor`). Enter/`✓` commits, Escape/`✕` cancels, Tab moves on. The
+  - **one cell** — hover → `✎` (or double-click): the table STAYS rendered and
+    the cell ITSELF becomes the editor (`.cm-td-editing` + `cellEditor` built
+    from `fill`, in place of the cell's rendering). Enter/`✓` commits,
+    Escape/`✕` cancels, Tab moves on. Markdown or raw HTML both work — the field
+    only ever holds text, and `renderCell` decides on commit. The
     field is plain DOM, so the state (`cellEdit` + `cellEditEffect`, which the
     live-preview field must rebuild on) lives module-side; committing rewrites
     only that cell's range, and **bails out if the offsets went stale**.
-    `flushCellEdit` keeps a pending edit when another cell's `✎` is clicked.
+    `flushCellEdit` keeps a pending edit when another cell's `✎` is clicked, and
+    an edit whose cell no longer exists is dropped in `toDOM` — the editor being
+    built BY the cell, a stale one would show nothing while keeping that
+    callback alive.
+    It is a **`contenteditable`, not an `<input>`**: a cell can be a 10% column,
+    where a single-line input is a slot two words wide and the text scrolls
+    sideways under the caret. This one wraps (`white-space: pre-wrap`), so the
+    cell grows downwards and the table keeps its layout; the `✓` / `✕` sit on
+    `flex-wrap` and drop below the field when the column is too narrow to hold
+    them beside it. A paste is forced to plain text — rich HTML from the
+    clipboard has no business landing in Markdown the user is writing by hand —
+    and the caret is put at the end from a `Range`, since `setSelectionRange`
+    does not exist here.
   - **the whole table** — the block's `✎ Éditer`, i.e. caret inside → raw source +
     preview + the floating structural toolbar (add/del row & col, align, delete)
     that rewrites the table text. Entering it clears any open cell field.

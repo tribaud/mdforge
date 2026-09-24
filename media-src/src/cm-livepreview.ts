@@ -1285,7 +1285,8 @@ class TableWidget extends WidgetType {
     return this.source.split('\n').filter((l) => l.trim()).length * 34 + (this.edit ? 40 : 0)
   }
 
-  /** The field above the table: label, the cell's raw Markdown, ✓ / ✕. */
+  /** The editor for one cell: its raw Markdown, ✓ / ✕ — built by the cell
+   * itself, so it appears in place of what it renders. */
   private cellEditor(view: EditorView, rows: Cell[][]): HTMLElement {
     const edit = this.edit as CellEdit
     const cell = rows[edit.row]?.[edit.col]
@@ -1293,16 +1294,19 @@ class TableWidget extends WidgetType {
     const bar = document.createElement('div')
     bar.className = 'cm-td-editor'
 
-    const label = document.createElement('span')
-    label.className = 'cm-td-editor-label'
-    label.textContent = `${edit.row === 0 ? 'En-tête' : `Ligne ${edit.row - 1}`} · Colonne ${edit.col + 1}`
-    bar.appendChild(label)
-
-    const input = document.createElement('input')
+    /*
+     * A contenteditable, not an `<input>`, and inside the cell rather than in a
+     * field above the table. A cell can be a 10% column: a single-line input
+     * there is a slot two words wide, and the old field made you look away from
+     * the cell you were editing. This one wraps, so a narrow column grows
+     * downwards instead of sideways, and the table keeps its layout.
+     */
+    const input = document.createElement('div')
     input.className = 'cm-td-editor-input'
+    input.contentEditable = 'true'
     input.spellcheck = true
-    input.value = unescapePipes(original)
-    input.placeholder = 'Contenu de la cellule (Markdown, HTML, image…)'
+    input.textContent = unescapePipes(original)
+    input.setAttribute('data-placeholder', 'Markdown, HTML, image…')
     bar.appendChild(input)
 
     let done = false
@@ -1319,7 +1323,7 @@ class TableWidget extends WidgetType {
       const target = next === undefined ? cellEdit : next
       cellEdit = target
       cellEditFocus = target !== null
-      const value = escapePipes(input.value.replace(/[\r\n]+/g, ' ')).trim()
+      const value = escapePipes((input.textContent ?? '').replace(/[\r\n]+/g, ' ')).trim()
       // Bail out on stale offsets (the document moved under us) rather than
       // writing over whatever now sits at that range.
       const stale = !cell || view.state.doc.sliceString(cell.padFrom, cell.padTo).trim() !== original
@@ -1361,16 +1365,23 @@ class TableWidget extends WidgetType {
     )
 
     input.addEventListener('mousedown', (e) => e.stopPropagation())
+    // Plain text only: a cell is one line of Markdown, and a rich paste would
+    // drop HTML of its own into what the user is writing by hand.
+    input.addEventListener('paste', (e) => {
+      e.preventDefault()
+      const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/[\r\n]+/g, ' ')
+      document.execCommand('insertText', false, text)
+    })
     // A blur here is not always the user leaving the field: CodeMirror re-syncs
     // the focus while updating its DOM (a click elsewhere, a viewport
     // re-render…), so this can fire from INSIDE an update. Never dispatch
     // synchronously from it — and when the field was merely re-created under us
     // with nothing typed, put the focus back instead of closing it.
     input.addEventListener('blur', () => {
-      const typed = escapePipes(input.value.replace(/[\r\n]+/g, ' ')).trim() !== original
+      const typed = escapePipes((input.textContent ?? '').replace(/[\r\n]+/g, ' ')).trim() !== original
       window.setTimeout(() => {
         if (torn && !typed) {
-          const fresh = document.querySelector('.cm-td-editor-input') as HTMLInputElement | null
+          const fresh = document.querySelector('.cm-td-editor-input') as HTMLElement | null
           if (fresh && fresh !== input) fresh.focus()
           return
         }
@@ -1398,7 +1409,13 @@ class TableWidget extends WidgetType {
       cellEditFocus = false
       requestAnimationFrame(() => {
         input.focus()
-        input.setSelectionRange(input.value.length, input.value.length)
+        // Caret at the end, the way an input behaves when you tab into it.
+        const range = document.createRange()
+        range.selectNodeContents(input)
+        range.collapse(false)
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(range)
       })
     }
     return bar
@@ -1532,7 +1549,14 @@ class TableWidget extends WidgetType {
       wrap.textContent = this.source
       return wrap
     }
-    if (this.edit) wrap.appendChild(this.cellEditor(view, rows))
+    // An edit can outlive its cell (a row deleted under it, a column dropped):
+    // now that the editor is built BY the cell, such a state would show nothing
+    // at all while keeping a stale `flushCellEdit` behind it.
+    const edit = this.edit && rows[this.edit.row]?.[this.edit.col] ? this.edit : null
+    if (this.edit && !edit) {
+      cellEdit = null
+      flushCellEdit = null
+    }
     const aligns = rows[1].map((c) => {
       const l = c.text.startsWith(':')
       const r = c.text.endsWith(':')
@@ -1564,14 +1588,21 @@ class TableWidget extends WidgetType {
     }
     if (this.widths) applyWidths(fitWidths(this.widths, colEls.length))
 
-    /** Build one cell: rendered content, alignment, and — in render mode — the
-     * per-cell ✎ that opens the field above the table. */
+    /** Build one cell: its rendering, alignment, and — in render mode — the
+     * per-cell ✎ that opens its editor. The cell being edited holds that editor
+     * instead of its rendering. */
     const fill = (el: HTMLTableCellElement, cell: Cell, row: number, col: number): void => {
-      renderCell(view, el, unescapePipes(cell.text))
       if (aligns[col]) el.style.textAlign = aligns[col]
+      // The cell being edited IS the editor: its raw Markdown in place of its
+      // rendering, with the table still standing around it.
+      if (this.mode === 'render' && edit && edit.row === row && edit.col === col) {
+        el.classList.add('cm-td-editing')
+        el.appendChild(this.cellEditor(view, rows))
+        return
+      }
+      renderCell(view, el, unescapePipes(cell.text))
       if (!cell.text) el.classList.add('cm-td-empty')
       if (this.mode !== 'render') return
-      if (this.edit && this.edit.row === row && this.edit.col === col) el.classList.add('cm-td-editing')
       const open = (): void => {
         flushCellEdit?.()
         setCellEdit(view, { table: this.base, row, col })
