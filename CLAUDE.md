@@ -767,11 +767,37 @@ npm run test:writes           # the document write queue, under key repeat
 npm run test:sync             # the host round-trip: a burst in, no echo back
 ```
 
-- **Two launch configurations** (`.vscode/launch.json`): the plain one, and
+- **Three launch configurations** (`.vscode/launch.json`): the plain one,
   *(no other extensions)* which adds `--disable-extensions` — the development
-  extension still loads, everything else does not. Prefer it when something
+  extension still loads, everything else does not — and *(no debugger)*, which
+  is `noDebug: true` and is the one to reach for when F5 itself is the problem
+  (below). Prefer *(no other extensions)* when something
   smells like interference: a profile full of extensions is also a profile full
   of extensions that can take the extension host down with them.
+- **F5 hanging on an empty window is a DEBUGGER problem, not ours.** The symptom
+  is an editor tab that opens, spins, and never shows any text; the renderer
+  console says it plainly:
+  ```
+  Provided debugging port 53492 is not free, using 55540 instead.
+  STOPPED on first line for debugging on port 55540
+  ERR Extension host did not start in 10 seconds (debugBrk: true)
+  ```
+  js-debug picks a port, passes it as `--inspect-brk-extensions`, and the
+  extension host starts **paused on its first line** waiting to be attached to.
+  When that port turns out to be taken — macOS hands out ephemeral ports from
+  the same range, and a workstation running several VS Code windows holds dozens
+  of them — the host falls back to another port while the debugger keeps waiting
+  on the first. Nobody attaches, so the host never runs a line of anything:
+  MDForge has not been reached at that point, and no amount of reading our code
+  explains it.
+  **The cure is `noDebug`**, i.e. the third configuration or plain `Ctrl+F5`
+  (*Run Without Debugging*). js-debug's own launcher is explicit —
+  `r.noDebug || t.unshift({prefix: '--inspect-brk-extensions=' + e})` — so with
+  it the flag is never passed: no port to lose, no pause, nothing to attach.
+  Breakpoints in `src/` are the only thing given up, and the webview's own
+  DevTools (*Developer: Open Webview Developer Tools*) are unaffected. A host
+  left paused by a failed launch also stays alive and holds its port, so kill it
+  before retrying: `ps -ax | grep inspect-brk-extensions`.
   Symptom seen for real: the child window dies ~2s in, its renderer log stops
   before *"Started local extension host"*, no `exthost/` directory is written
   at all, and `main.log` says `[UtilityProcess type: extensionHost]: crashed
