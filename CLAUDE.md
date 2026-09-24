@@ -260,6 +260,12 @@ so it round-trips for free unless noted.
     an edit whose cell no longer exists is dropped in `toDOM` — the editor being
     built BY the cell, a stale one would show nothing while keeping that
     callback alive.
+    **`Maj+Entrée` breaks the line, as `<br>`** — GFM has no multi-line cell and
+    `br` was already in `renderHtml`'s allow-list, so the break renders for
+    free. `brToLines` / `linesToBr` convert around the field: only the exact
+    `<br>` MDForge writes is read back, so a `<br/>` the user typed stays their
+    literal text and the round-trip is an identity. The editor must not rewrite
+    a cell it was merely opened on.
     It is a **`contenteditable`, not an `<input>`**: a cell can be a 10% column,
     where a single-line input is a slot two words wide and the text scrolls
     sideways under the caret. This one wraps (`white-space: pre-wrap`), so the
@@ -722,6 +728,22 @@ so it round-trips for free unless noted.
   width). `state.doc.line(n)` on it throws, CM catches it and *disables the
   crashed plugin* — the gutter silently vanishes. Guard with
   `line <= state.doc.lines`.
+- **In a `contenteditable`, never place a line break — or the caret — yourself.**
+  Three ways were tried for `Maj+Entrée` in a table cell and all three failed:
+  `execCommand('insertText', '\n')` inserted nothing; a text node placed by
+  hand lost its caret because **Chrome merges adjacent text nodes**, which
+  invalidates the reference `setStartAfter` was given; and setting the caret by
+  character OFFSET worked until the next keystroke, because **Chrome pulls the
+  caret back before a trailing `\n`** — that position generates no line box, so
+  the break drifted to the end of the field and the cell came back joined
+  (`"Thierry\nBaud"` written as `ThierryBaud`). A CSS `::after` sentinel does
+  not help: pseudo-elements are not editing-aware.
+  Let the BROWSER do it — in `plaintext-only` a break is a real `\n` in the
+  text, and the caret is its own business. Then read the field through a walker
+  that also counts `<br>` ELEMENTS as breaks (`fieldText`), never `textContent`
+  alone: a contenteditable is free to represent a break either way, Chrome
+  already leaves its own trailing one in there, and `textContent` silently drops
+  them — which would join two of the user's lines into one.
 - **A DOM field inside a widget must survive the rebuild it triggers.** Writing to
   the document re-creates the widget, so the `<input>` is a NEW element: keep the
   state module-side (see `cellEdit`), re-focus from `toDOM`, and commit on

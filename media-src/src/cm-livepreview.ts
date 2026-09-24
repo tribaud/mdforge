@@ -1261,6 +1261,42 @@ function stepCell(rows: Cell[][], edit: CellEdit, dir: number): CellEdit {
   return { ...edit }
 }
 
+/**
+ * GFM has no multi-line cell, so a break inside one is `<br>` — what GitHub
+ * renders too, and what our allow-list already lets through. The field shows it
+ * as a real line; only the exact `<br>` we write is read back, so a `<br/>` or
+ * `<br />` the user typed stays the literal text they typed. The round-trip is
+ * an identity, which is the whole point: this editor must not rewrite a cell it
+ * was merely opened on.
+ */
+const BR = '<br>'
+
+/**
+ * The field's text, with `<br>` ELEMENTS counted as line breaks. `textContent`
+ * alone drops them, and a contenteditable is free to represent a break either
+ * way — Chrome already leaves its own trailing one in there. Reading through
+ * this means a break can never silently join two of the user's lines.
+ */
+function fieldText(el: HTMLElement): string {
+  let out = ''
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT)
+  let node = walker.nextNode()
+  while (node) {
+    if (node.nodeType === Node.TEXT_NODE) out += node.nodeValue ?? ''
+    else if ((node as HTMLElement).tagName === 'BR') out += '\n'
+    node = walker.nextNode()
+  }
+  return out
+}
+
+const brToLines = (text: string): string => text.split(BR).join('\n')
+const linesToBr = (text: string): string =>
+  text
+    .replace(/\r\n?/g, '\n')
+    .trim()
+    .split('\n')
+    .join(BR)
+
 class TableWidget extends WidgetType {
   constructor(
     readonly source: string,
@@ -1310,8 +1346,9 @@ class TableWidget extends WidgetType {
     input.contentEditable = 'plaintext-only'
     if (!input.isContentEditable) input.contentEditable = 'true'
     input.spellcheck = true
-    input.textContent = unescapePipes(original)
+    input.textContent = brToLines(unescapePipes(original))
     input.setAttribute('data-placeholder', 'Markdown, HTML, image…')
+    input.title = 'Maj+Entrée : saut de ligne (<br>)'
     bar.appendChild(input)
 
     let done = false
@@ -1328,7 +1365,7 @@ class TableWidget extends WidgetType {
       const target = next === undefined ? cellEdit : next
       cellEdit = target
       cellEditFocus = target !== null
-      const value = escapePipes((input.textContent ?? '').replace(/[\r\n]+/g, ' ')).trim()
+      const value = escapePipes(linesToBr(fieldText(input)))
       // Bail out on stale offsets (the document moved under us) rather than
       // writing over whatever now sits at that range.
       const stale = !cell || view.state.doc.sliceString(cell.padFrom, cell.padTo).trim() !== original
@@ -1374,7 +1411,7 @@ class TableWidget extends WidgetType {
     // drop HTML of its own into what the user is writing by hand.
     input.addEventListener('paste', (e) => {
       e.preventDefault()
-      const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/[\r\n]+/g, ' ')
+      const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n')
       document.execCommand('insertText', false, text)
     })
     // A blur here is not always the user leaving the field: CodeMirror re-syncs
@@ -1383,7 +1420,7 @@ class TableWidget extends WidgetType {
     // synchronously from it — and when the field was merely re-created under us
     // with nothing typed, put the focus back instead of closing it.
     input.addEventListener('blur', () => {
-      const typed = escapePipes((input.textContent ?? '').replace(/[\r\n]+/g, ' ')).trim() !== original
+      const typed = escapePipes(linesToBr(fieldText(input))) !== original
       window.setTimeout(() => {
         if (torn && !typed) {
           const fresh = document.querySelector('.cm-td-editor-input') as HTMLElement | null
@@ -1395,6 +1432,15 @@ class TableWidget extends WidgetType {
     })
     input.addEventListener('keydown', (e) => {
       e.stopPropagation() // the editor's own keymap must not see this typing
+      if (e.key === 'Enter' && e.shiftKey) {
+        // Let the browser insert the break ITSELF, and leave the caret to it.
+        // Placing either by hand does not work: whatever we insert, Chrome
+        // pulls the caret back BEFORE a trailing `\n` on the next keystroke —
+        // that position generates no line box — so the break drifted to the
+        // end and the cell came back joined. `fieldText` reads whichever shape
+        // the browser chose.
+        return
+      }
       if (e.key === 'Enter') {
         e.preventDefault()
         commit(null)

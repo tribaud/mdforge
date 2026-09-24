@@ -17,7 +17,10 @@ All notable changes to MDForge are documented here. The format follows
   still standing around it — no more field above the table, and no more looking
   away from the cell you are changing. Write Markdown or plain HTML in it: both
   render on `Entrée`, and a narrow column grows downwards instead of pushing the
-  table sideways.
+  table sideways. **`Maj+Entrée` breaks the line**: GFM has no multi-line cell,
+  so it is written as `<br>` — which is what GitHub renders too, and what any
+  other Markdown tool will read. Re-opening that cell shows the break as a line
+  again, and closing it without a change writes nothing.
 - **Two searches in the selection bubble.** Select a word, or double-click it,
   and the bubble now offers the next occurrence in the note (the search panel
   opens on the term, so `F3` carries on) and a search across every file, handed
