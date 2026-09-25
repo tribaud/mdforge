@@ -4,7 +4,7 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0]
 
 ### Added
 
@@ -27,7 +27,7 @@ All notable changes to MDForge are documented here. The format follows
   keyboard was bound to `F3` alone, so on a Mac there was no fallback at all.
 - **Two searches in the selection bubble.** Select a word, or double-click it,
   and the bubble now offers the next occurrence in the note (the search panel
-  opens on the term, so `F3` carries on) and a search across every file, handed
+  opens on the term, so `F3` / `Cmd+G` carries on) and a search across every file, handed
   to VS Code's own Search view.
 
 ## [0.7.2]
