@@ -27,6 +27,21 @@
         "${workspaceFolder}/out/**/*.js"
       ],
       "preLaunchTask": "build"
+    },
+    {
+      "name": "Run MDForge Extension (no debugger)",
+      "type": "extensionHost",
+      "request": "launch",
+      "noDebug": true,
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extensions",
+        "${workspaceFolder}/examples"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "preLaunchTask": "build"
     }
   ]
 }

@@ -1473,51 +1473,60 @@ body.mdforge-presentation .cm-block-fold-all {
 .cm-td-edit:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
 }
-/* The cell currently open in the field above the table. */
+/* The cell being edited: it holds the editor in place of its rendering, so it
+   gives it all its room and keeps its own outline as the "you are here". */
 .cm-md-table th.cm-td-editing,
 .cm-md-table td.cm-td-editing {
+  padding: 2px;
+  vertical-align: top;
   outline: 2px solid var(--vscode-focusBorder, #007fd4);
   outline-offset: -2px;
   background: color-mix(in srgb, var(--vscode-focusBorder, #007fd4) 12%, transparent);
 }
-/* One-cell source field, above the table — same place the full source appears. */
+/* The editor itself. No fixed width anywhere: the field takes the column it was
+   given and wraps, so a narrow column grows downwards and the table keeps its
+   layout. */
 .cm-td-editor {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 6px;
-  padding: 5px 6px;
-  border: 1px solid var(--vscode-focusBorder, #007fd4);
-  border-radius: 5px;
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-}
-.cm-td-editor-label {
-  flex: none;
-  color: var(--vscode-descriptionForeground, inherit);
-  font-size: 11px;
-  white-space: nowrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 3px;
 }
 .cm-td-editor-input {
-  flex: 1 1 auto;
+  /* A basis wide enough to type in: below it the two buttons wrap underneath
+     rather than eating a third of a narrow column. */
+  flex: 1 1 7em;
   min-width: 0;
-  padding: 3px 6px;
-  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 4px;
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
   border-radius: 4px;
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
-  font: 12px/1.5 var(--vscode-editor-font-family, monospace);
+  font: 12px/1.45 var(--vscode-editor-font-family, monospace);
+  /* The raw Markdown of a cell, wrapped: spaces are kept as typed and a long
+     cell becomes several lines rather than a horizontal scroll. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 .cm-td-editor-input:focus {
-  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline: none;
+}
+.cm-td-editor-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--vscode-descriptionForeground, #888);
 }
 .cm-td-editor-btn {
   flex: none;
-  width: 22px;
-  padding: 2px 0;
+  width: 18px;
+  padding: 1px 0;
   border: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.4));
   border-radius: 4px;
   background: transparent;
   color: var(--vscode-editor-foreground);
+  font-size: 11px;
+  line-height: 1.4;
   cursor: pointer;
 }
 .cm-td-editor-btn:hover {

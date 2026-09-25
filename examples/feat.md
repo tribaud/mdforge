@@ -56,7 +56,7 @@ Une cellule accepte tout ce qu'accepte une ligne de texte — **image**, Markdow
 | Image locale      | ![Logo MDForge](assets/mdforge-icon.png)                  |
 | Image `data:`     | ![carré](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiByeD0iOCIgZmlsbD0iIzU4YTZmZiIvPjwvc3ZnPg==) |
 | Markdown imbriqué | **gras avec [un lien](https://example.com)**, `code`, ~~barré~~ |
-| HTML brut         | <b>gras</b>, <span style="color:#d29922">couleur</span><br>et un saut de ligne |
+| HTML brut         | <b>gras</b>, <span style="color:#d29922">couleur</span><br>et un saut de ligne<br>essai de saut de ligne |
 | Maths             | $\sqrt{a^2 + b^2}$                                        |
 | Wikilink          | [[Une autre note]]                                        |
 | Pipe échappé      | `a \| b` reste dans la même cellule                       |

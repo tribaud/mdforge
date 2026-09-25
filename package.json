@@ -197,6 +197,16 @@
         "key": "shift+f3",
         "command": "mdforge.searchPrevious",
         "when": "activeCustomEditorId == 'mdforge.editor'"
+      },
+      {
+        "key": "cmd+g",
+        "command": "mdforge.searchNext",
+        "when": "activeCustomEditorId == 'mdforge.editor' && isMac"
+      },
+      {
+        "key": "cmd+shift+g",
+        "command": "mdforge.searchPrevious",
+        "when": "activeCustomEditorId == 'mdforge.editor' && isMac"
       }
     ],
     "configuration": {
