@@ -435,10 +435,68 @@ function editing(state: EditorState, from: number, to: number): boolean {
 /* ---------- widgets ---------- */
 type BlockMode = 'render' | 'preview'
 
-/** Drop the caret into a block's source at `pos`, which — via the reveal-on-edit
- * rule — shows the editable source with a live preview underneath. */
+/*
+ * The block opened for editing. A rendered block (diagram, formula, table,
+ * image, frontmatter) shows its source ONLY once its ✎ button was clicked:
+ * the caret merely reaching it — an arrow key, a click on a formula — used to
+ * flip it to raw source, which read as the note falling apart under the
+ * keyboard. It closes as soon as the selection leaves the block.
+ */
+type Span = [number, number]
+const openBlockEffect = StateEffect.define<Span | null>()
+const openBlock = StateField.define<Span | null>({
+  create: () => null,
+  update: (open, tr) => {
+    for (const e of tr.effects) if (e.is(openBlockEffect)) return e.value
+    if (!open) return null
+    const mapped: Span = [tr.changes.mapPos(open[0], -1), tr.changes.mapPos(open[1], 1)]
+    if (tr.selection) {
+      const { from, to } = tr.selection.main
+      if (from < mapped[0] || to > mapped[1]) return null
+    }
+    return mapped
+  }
+})
+
+/** True when the block [from, to] was opened with its ✎ button. Without the
+ * live-preview field (source view) every block is source anyway. */
+export function blockOpen(state: EditorState, from: number, to: number): boolean {
+  const open = state.field(openBlock, false)
+  return !!open && open[0] <= to && open[1] >= from
+}
+
+/** The rendered block holding `pos`: frontmatter, fenced code, table, image or
+ * `$$` math — the units a ✎ button opens. */
+function blockRangeAt(state: EditorState, pos: number): Span {
+  const text = state.doc.toString()
+  if (text.startsWith('---\n')) {
+    const end = text.indexOf('\n---', 3)
+    if (end !== -1 && pos <= state.doc.lineAt(end + 1).to) return [0, state.doc.lineAt(end + 1).to]
+  }
+  for (let n: ReturnType<ReturnType<typeof syntaxTree>['resolveInner']> | null = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent) {
+    if (n.name === 'FencedCode' || n.name === 'Table' || n.name === 'Image') return [n.from, n.to]
+  }
+  for (const m of text.matchAll(/\$\$([\s\S]+?)\$\$/g)) {
+    if (pos >= m.index && pos <= m.index + m[0].length) return [m.index, m.index + m[0].length]
+  }
+  const line = state.doc.lineAt(pos)
+  return [line.from, line.to]
+}
+
+/** Where ✎ drops the caret in a `$$` block: on the formula, not before the
+ * opening `$$` (typing there wrote outside the formula). */
+function mathContentPos(text: string, from: number): number {
+  return from + 2 + (text[from + 2] === '\n' ? 1 : 0)
+}
+
+/** Open the block holding `pos` and drop the caret into its source there: the
+ * editable source shows, with a live preview underneath. */
 function enterEdit(view: EditorView, pos: number): void {
-  view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+  view.dispatch({
+    selection: { anchor: pos },
+    effects: openBlockEffect.of(blockRangeAt(view.state, pos)),
+    scrollIntoView: true
+  })
   view.focus()
 }
 
@@ -2712,7 +2770,6 @@ class ListMarkWidget extends WidgetType {
 const BULLETS = ['•', '◦', '▪']
 
 /* ---------- helpers for the regex post-pass ---------- */
-type Span = [number, number]
 function inAny(spans: Span[], from: number, to: number): boolean {
   for (const [a, b] of spans) {
     if (from < b && to > a) return true
@@ -2744,7 +2801,7 @@ function buildDecorations(state: EditorState): DecorationSet {
     if (end !== -1) {
       const closeLine = doc.lineAt(end + 1)
       frontmatterEnd = closeLine.to
-      if (!editing(state, 0, frontmatterEnd)) {
+      if (!blockOpen(state, 0, frontmatterEnd)) {
         // Collapsed: a discreet card (title → H1, other keys → chips).
         const rawFrom = doc.line(2).from
         const rawTo = closeLine.number > 2 ? doc.line(closeLine.number - 1).to : rawFrom
@@ -2785,7 +2842,7 @@ function buildDecorations(state: EditorState): DecorationSet {
           const textNode = node.node.getChild('CodeText')
           const code = textNode ? doc.sliceString(textNode.from, textNode.to) : ''
           const contentPos = textNode ? textNode.from : from
-          if (!editing(state, from, to)) {
+          if (!blockOpen(state, from, to)) {
             deco.push(
               Decoration.replace({ widget: new MermaidWidget(code, contentPos, 'render'), block: true }).range(from, to)
             )
@@ -2844,7 +2901,7 @@ function buildDecorations(state: EditorState): DecorationSet {
           deco.push(Decoration.replace({}).range(cw.from, cw.to))
           deco.push(Decoration.line({ class: 'cm-md-colw' }).range(cw.from))
         }
-        if (!editing(state, from, to)) {
+        if (!blockOpen(state, from, to)) {
           // Edit button lands the caret inside the first header cell (from + 2),
           // not on the table boundary, so the table toolbar resolves the node.
           // A per-cell edit (the field above the table) keeps the table rendered.
@@ -2930,14 +2987,17 @@ function buildDecorations(state: EditorState): DecorationSet {
           const markText = doc.sliceString(mark.from, mark.to)
           const ordered = /\d/.test(markText)
           const end = Math.min(mark.to + 1, line.to)
+          // A bulleted task drops its bullet (the checkbox stands in); a
+          // numbered one keeps its number in front of the checkbox.
+          const bareTask = !!m && !ordered
           deco.push(
             Decoration.line({
-              class: m ? 'cm-md-li cm-md-li-task' : 'cm-md-li',
+              class: bareTask ? 'cm-md-li cm-md-li-task' : 'cm-md-li',
               attributes: { style: `--li-depth: ${Math.max(1, depth)}` }
             }).range(line.from)
           )
           if (!editing(state, line.from, end)) {
-            const label = m ? '' : ordered ? markText : BULLETS[(Math.max(1, depth) - 1) % BULLETS.length]
+            const label = bareTask ? '' : ordered ? markText : BULLETS[(Math.max(1, depth) - 1) % BULLETS.length]
             deco.push(Decoration.replace({ widget: new ListMarkWidget(label) }).range(line.from, end))
           }
         }
@@ -3059,7 +3119,7 @@ function buildDecorations(state: EditorState): DecorationSet {
         const t = doc.sliceString(from, to)
         const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)/.exec(t)
         if (!m) return
-        if (!editing(state, from, to)) {
+        if (!blockOpen(state, from, to)) {
           deco.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1], from, 'render') }).range(from, to))
         } else {
           const line = doc.lineAt(to)
@@ -3083,9 +3143,9 @@ function buildDecorations(state: EditorState): DecorationSet {
     const to = from + m[0].length
     if (inFrontmatter(from) || inAny(codeRanges, from, to)) continue
     mathRanges.push([from, to])
-    if (!editing(state, from, to)) {
+    if (!blockOpen(state, from, to)) {
       deco.push(
-        Decoration.replace({ widget: new MathWidget(m[1].trim(), true, from, 'render'), block: true }).range(from, to)
+        Decoration.replace({ widget: new MathWidget(m[1].trim(), true, mathContentPos(text, from), 'render'), block: true }).range(from, to)
       )
     } else {
       deco.push(
@@ -3173,10 +3233,14 @@ export const livePreview = StateField.define<DecorationSet>({
     if (
       tr.docChanged ||
       tr.selection ||
-      tr.effects.some((e) => e.is(redrawMermaidEffect) || e.is(cellEditEffect) || e.is(fmEditEffect))
+      tr.effects.some(
+        (e) => e.is(redrawMermaidEffect) || e.is(cellEditEffect) || e.is(fmEditEffect) || e.is(openBlockEffect)
+      )
     )
       return buildDecorations(tr.state)
     return deco.map(tr.changes)
   },
-  provide: (field) => EditorView.decorations.from(field)
+  // The open-block field travels with the preview: in source view there is
+  // nothing to open.
+  provide: (field) => [openBlock, EditorView.decorations.from(field)]
 })
