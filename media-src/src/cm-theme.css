@@ -1396,6 +1396,19 @@ body.mdforge-presentation .cm-block-fold-all {
 }
 
 /* Rendered GFM table */
+/* The table's controls are not its text: a selection in the cells would
+   otherwise copy a ✎ after every cell. */
+.cm-md-table-wrap .cm-td-edit,
+.cm-md-table-wrap .cm-block-edit,
+.cm-md-table-wrap .cm-col-grip {
+  user-select: none;
+}
+/* Focusable only so a selection in a cell survives (see TableWidget): no ring. */
+.cm-frontmatter-card:focus,
+.cm-math-block:focus,
+.cm-md-table-wrap:focus {
+  outline: none;
+}
 .cm-md-table-wrap {
   position: relative;
   overflow-x: auto;

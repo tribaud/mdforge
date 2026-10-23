@@ -690,6 +690,14 @@ so it round-trips for free unless noted.
   with a background (code block, quote, inline code) hid it: the text was
   selected and copied fine, but nothing showed it. Without
   `pointer-events: none` the layer swallows every click on a selection.
+- **A rendered block whose text people select must be focusable**
+  (`tabIndex = -1`: the table wrap, the frontmatter card, block math). A click
+  in it otherwise focuses the editor, and CodeMirror rewrites the DOM selection
+  on EVERY update while it has the focus (`docView.updateSelection`) — a
+  selection inside a widget has no place in its state, so it vanished at once
+  and Cmd+C copied nothing. Focused on the widget, CodeMirror leaves the native
+  selection alone and the browser copies it. Controls inside (`✎`, grips) are
+  `user-select: none`, or they end up in the copied text.
 - **The mono font is `--vscode-editor-font-family` first.** The old stack
   opened on `'SFMono-Regular'`, a name Chrome does not expose on macOS, and
   every code span fell through to Courier.

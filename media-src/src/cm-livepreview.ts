@@ -766,6 +766,7 @@ class MathWidget extends WidgetType {
       (this.display ? 'cm-math cm-math-block' : 'cm-math cm-math-inline') +
       (this.mode === 'preview' ? ' cm-block-preview' : '')
     if (this.display) {
+      el.tabIndex = -1 // a selection in the formula must survive (see TableWidget)
       const target = document.createElement('div')
       el.appendChild(target)
       renderMath(view, target, this.code, true)
@@ -1608,6 +1609,13 @@ class TableWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div')
     wrap.className = this.mode === 'preview' ? 'cm-md-table-wrap cm-block-preview' : 'cm-md-table-wrap'
+    // Focusable, so a click in the table gives IT the focus rather than the
+    // editor. CodeMirror rewrites the DOM selection on every update while it
+    // has the focus, and a selection inside a widget has no place in its
+    // state: text selected in a cell vanished at once, and Cmd+C copied nothing.
+    // Without the focus it leaves the native selection alone, and the copy is
+    // the browser's own.
+    wrap.tabIndex = -1
     if (this.mode === 'render') addEditButton(wrap, view, this.pos, 'Éditer la source du tableau')
     else addCloseButton(wrap, view)
     const rows = parseTableCells(this.source, this.base)
@@ -2404,6 +2412,7 @@ class FrontmatterWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div')
     wrap.className = 'cm-frontmatter-card'
+    wrap.tabIndex = -1 // a selection in the card must survive (see TableWidget)
     const entries = parseFrontmatter(this.raw, this.pos)
     const title = entries.find((e) => e.key.toLowerCase() === 'title')
     if (title && entryText(title)) {
