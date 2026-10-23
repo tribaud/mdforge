@@ -4,6 +4,48 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0]
+
+### Added
+
+- **A table of contents, in a panel on the left.** The first button of the
+  toolbar opens it; it lists the note's headings, marks the one you are
+  reading, and a click scrolls to a heading — unfolding its section if it was
+  folded, and leaving the caret where it was. Whether it is open is remembered
+  (`mdforge.toc.visible`).
+- **A copy button on code blocks**, on hover, as in VS Code's preview. It copies
+  the code alone, without the fences.
+- **Bare URLs are links.** `https://…`, `www.…` and `<https://…>` open on
+  `Ctrl/⌘`-click like any other link; the hand cursor shows while the modifier
+  is held.
+
+### Changed
+
+- **The rendering follows VS Code's Markdown preview.** Its fonts (code in the
+  editor's own font, where it fell back to Courier on macOS), heading scale and
+  rules, line height, paragraph spacing, code colours and code box, quotes,
+  table rules and inline code colours. Lists get real bullets and numbers in a
+  hanging indent; fences are hidden unless the caret is on them. The default
+  font size is now 14px, the preview's.
+- **A rendered block opens only through its `✎` button.** A formula, a diagram,
+  a table, an image or the frontmatter card no longer turns into source when
+  the caret reaches it by the arrows or a click; it closes again when the
+  selection leaves it.
+- **A selection crossing a link or a table leaves it rendered**, so the text no
+  longer jumps under the pointer while selecting, and `Cmd+A` keeps the note
+  rendered.
+
+### Fixed
+
+- **Selected text in a code block is visible.** It was selected and copied all
+  along, but the block's background hid the selection.
+- **Text selected in a rendered table can be copied.** The selection vanished
+  at once and `Cmd+C` copied nothing; the same held for the frontmatter card
+  and block formulas.
+- **Numbered task lists keep their numbers** in front of the checkbox.
+- **Headings are no longer underlined**, and the active line is no longer
+  tinted over the rendered note.
+
 ## [0.8.0]
 
 ### Added
