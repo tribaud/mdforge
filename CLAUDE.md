@@ -172,8 +172,11 @@ so it round-trips for free unless noted.
 - **Live-preview decorations** (`cm-livepreview.ts` `livePreview` StateField):
   `buildDecorations(state)` walks the Lezer tree + a regex post-pass and emits
   line/mark/replace/widget decorations. Rebuilt on every doc **and selection**
-  change (so `editing()` — "does a selection touch this range?" — can reveal raw
-  syntax under the caret). MUST be a `StateField` (not a ViewPlugin) to provide
+  change (so `editing()` can reveal raw syntax under the caret). It counts a
+  **caret** touching the range, but a real selection only when it lies **wholly
+  inside** it: a drag merely crossing a link or a table used to reveal it
+  mid-drag (the text reflowed under the pointer), and Cmd+A turned the whole
+  note raw. MUST be a `StateField` (not a ViewPlugin) to provide
   **block** decorations. Wrapped in a `Compartment` (`preview`) so the source-view
   toggle can switch it off.
 - **Headings / inline marks**: line class enlarges the heading; the `###`, `**`,
@@ -235,7 +238,12 @@ so it round-trips for free unless noted.
   `initialize()` payload, and a theme change must go through `setMermaidTheme` +
   `redrawMermaid` (mermaid reads the theme only at render time).
 - **Code blocks**: fenced code is shown as styled source (highlighted via
-  `codeLanguages`); a **language picker** (`LangWidget`, `<input list=datalist>`
+  `codeLanguages`, coloured with the palette of VS Code's preview
+  `highlight.css` — `codeHighlight` in `main.ts`, CSS variables per theme kind;
+  CodeMirror's `defaultHighlightStyle` was light-only and underlined every
+  heading). The fence lines are **hidden** (kept as the box's padding) unless
+  the caret is on them, and a **copy button** (`CodeCopyWidget`, through the
+  host clipboard: `copyText`) shows on hover, as in the preview; a **language picker** (`LangWidget`, `<input list=datalist>`
   of `@codemirror/language-data` names + free text) floats top-right and rewrites
   the info string on change.
 - **Tables** (`TableWidget` + `cm-table.ts`): rendered HTML table. **Cells render
@@ -286,8 +294,10 @@ so it round-trips for free unless noted.
     not of each other: their SUM is the table's own width** — `[10,60,15,15]`
     fills the column, `[10,20,15]` is a table 45% wide. That model is what makes
     the last border draggable and what keeps a first drag from resizing anything.
-    A table with NO comment is `width: 100%` (CSS) — a small table hugging the
-    left margin read as a bug. With one, `table-layout: fixed` + an inline
+    A table with NO comment is as wide as its content, with the preview's rules
+    (a strong line under the header, a hairline between rows, no grid). It used to
+    be `width: 100%`, a small table at the left margin having read as a bug; the
+    preview leaves it there, and so does MDForge now. With one, `table-layout: fixed` + an inline
     `width: <sum>%` and a `colgroup` of shares.
     Dragged from a `.cm-col-grip` on each border of the header row (`addGrips`):
     an INNER border moves that one border (the pair keeps its combined width, so
@@ -323,11 +333,10 @@ so it round-trips for free unless noted.
     table (a 4-entry comment on a 3-column table rendered it at 75% width).
 - **GitHub alerts**: a per-blockquote type dropdown (`AlertSelectWidget`) always
   shown on the first line; the `[!TYPE]` marker is hidden and the block styled as
-  a callout. **A plain quote is not a callout**: it gets VS Code's own blockquote
-  rule (`--vscode-textBlockQuote-border`, the blue of its Markdown preview) and
-  **no fill** — the tinted box is what says "this is an alert", and giving one to
-  every quote made an ordinary citation look like a NOTE. Its dropdown reads
-  just `—`: the label used to be "— Citation (aucune alerte)", and a `<select>`
+  a callout. **A plain quote** is drawn as VS Code's preview draws it:
+  `textBlockQuote-border` (5px) over `textBlockQuote-background`, in the normal
+  text colour; alerts keep their coloured tint. Its dropdown sits off to the
+  right and shows on hover only. It reads just `—`: the label used to be "— Citation (aucune alerte)", and a `<select>`
   is as wide as its WIDEST option, so those words pushed the quote's own first
   line halfway across the column. Hence also the explicit width on
   `.cm-alert-select-none` — the native dropdown list is not constrained by it.
@@ -675,6 +684,15 @@ so it round-trips for free unless noted.
 
 - **Block decorations MUST come from a `StateField`, not a `ViewPlugin`** — a
   ViewPlugin providing block decorations blanks the editor.
+- **The selection layer is drawn ABOVE the text** (`z-index: 2 !important` —
+  CodeMirror writes the z-index inline — `pointer-events: none`, blended with
+  `multiply` / `screen`). Below the text, where CodeMirror puts it, any line
+  with a background (code block, quote, inline code) hid it: the text was
+  selected and copied fine, but nothing showed it. Without
+  `pointer-events: none` the layer swallows every click on a selection.
+- **The mono font is `--vscode-editor-font-family` first.** The old stack
+  opened on `'SFMono-Regular'`, a name Chrome does not expose on macOS, and
+  every code span fell through to Courier.
 - **CodeMirror's own base theme has a light half and a dark half, and it picks
   between them on the `EditorView.darkTheme` facet — not on your CSS.** Left
   unset it stays light for ever, so on a dark VS Code the gutter strip, the

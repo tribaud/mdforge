@@ -9,6 +9,8 @@ const svg = (paths: string): string =>
   `<svg class="cm-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
 
 export const ICONS: Record<string, string> = {
+  copy: svg('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
+  check: svg('<polyline points="20 6 9 17 4 12"/>'),
   code: svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
   // Fenced code block: the inline chevrons, but framed — distinct from `code`.
   codeBlock: svg('<rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="9 10 7 12 9 14"/><polyline points="15 10 17 12 15 14"/>'),

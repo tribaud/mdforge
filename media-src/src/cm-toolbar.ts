@@ -6,7 +6,7 @@
  * line prefix), so — like the rest of this engine — it never re-serializes.
  */
 import { EditorView } from '@codemirror/view'
-import type { ChangeSpec } from '@codemirror/state'
+import type { ChangeSpec, EditorState } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import {
   openSearchPanel,
@@ -598,6 +598,15 @@ export function createTopbar(view: EditorView): HTMLElement {
   return bar
 }
 
+/** True when [from, to] lies within one fenced code block. */
+function inCodeBlock(state: EditorState, from: number, to: number): boolean {
+  const start = syntaxTree(state).resolveInner(from, 1)
+  for (let n: typeof start | null = start; n; n = n.parent) {
+    if (n.name === 'FencedCode') return to <= n.to
+  }
+  return false
+}
+
 /** Floating bubble shown over a non-empty selection. Returns an `update` hook to
  * call from the editor's update listener. */
 export function createBubble(view: EditorView): { el: HTMLElement; update: () => void } {
@@ -609,7 +618,9 @@ export function createBubble(view: EditorView): { el: HTMLElement; update: () =>
 
   const update = (): void => {
     const sel = view.state.selection.main
-    if (sel.empty || !view.hasFocus) {
+    // Inside a code block there is nothing to format, and the bubble sat on the
+    // very lines being selected to copy them.
+    if (sel.empty || !view.hasFocus || inCodeBlock(view.state, sel.from, sel.to)) {
       el.style.display = 'none'
       return
     }

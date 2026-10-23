@@ -16,7 +16,7 @@ import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } f
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
 import {
   syntaxHighlighting,
-  defaultHighlightStyle,
+  HighlightStyle,
   syntaxTree,
   codeFolding,
   foldKeymap,
@@ -32,6 +32,7 @@ import {
 import { markdown, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
+import { tags as t } from '@lezer/highlight'
 import {
   livePreview,
   setAssetsBase,
@@ -39,6 +40,7 @@ import {
   redrawMermaid,
   refitMermaid,
   setWikilinkHandler,
+  setCopyHandler,
   setEnableInProgress,
   setTagsRequester,
   setTagIndex,
@@ -129,6 +131,8 @@ let applyingRemote = false
 
 // Wikilink clicks in the rendered text ask the host to open the target note.
 setWikilinkHandler((target) => vscode.postMessage({ type: 'openWikilink', target }))
+// A code block's copy button writes through the host's clipboard.
+setCopyHandler((text) => vscode.postMessage({ type: 'copyText', text }))
 // The frontmatter tag editor completes on the tags already used in the workspace.
 // The host sweeps once on the first request, then answers from its cache; only
 // the editor's ↻ asks for a fresh sweep.
@@ -156,7 +160,7 @@ const editorTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': {
     fontFamily: 'var(--mdforge-font)',
-    lineHeight: '1.7',
+    lineHeight: '1.6',
     overflow: 'auto'
   },
   '.cm-content': {
@@ -166,7 +170,7 @@ const editorTheme = EditorView.theme({
     // it needs ~58px of room even with the line-number gutter off. Kept
     // symmetrical so the column stays centred.
     padding: '24px 64px 40vh',
-    fontSize: 'var(--mdforge-font-size, 15px)',
+    fontSize: 'var(--mdforge-font-size, 14px)',
     caretColor: 'var(--vscode-editorCursor-foreground)'
   },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--vscode-editorCursor-foreground)' },
@@ -174,6 +178,30 @@ const editorTheme = EditorView.theme({
     backgroundColor: 'var(--vscode-editor-selectionBackground)'
   }
 })
+
+/*
+ * Code colours: the palette of VS Code's own Markdown preview (`highlight.css`,
+ * vs / vs2015), as CSS variables so the light and dark halves follow the
+ * editor's theme kind (cm-theme.css). CodeMirror's `defaultHighlightStyle` is
+ * light-only, and it underlined every heading and link of the note.
+ */
+const hl = (name: string): string => `var(--mdforge-hl-${name})`
+const codeHighlight = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier, t.self, t.null, t.bool, t.atom], color: hl('keyword') },
+  { tag: [t.string, t.special(t.string), t.character, t.docString], color: hl('string') },
+  { tag: [t.regexp, t.escape], color: hl('regexp') },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: hl('comment'), fontStyle: 'italic' },
+  { tag: [t.number, t.integer, t.float], color: hl('number') },
+  { tag: [t.typeName, t.className, t.namespace, t.standard(t.variableName), t.standard(t.name)], color: hl('type') },
+  { tag: [t.propertyName, t.attributeName], color: hl('attr') },
+  { tag: [t.tagName, t.angleBracket], color: hl('tag') },
+  { tag: [t.meta, t.processingInstruction, t.annotation], color: hl('meta') },
+  { tag: t.invalid, color: hl('invalid') },
+  { tag: t.heading, fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.strikethrough, textDecoration: 'line-through' }
+])
 
 /** Editability is toggled for presentation mode (read-only preview). */
 const editable = new Compartment()
@@ -631,7 +659,7 @@ try {
         drawSelection(),
         highlightActiveLine(),
         markdown({ extensions: GFM, codeLanguages: languages }),
-        syntaxHighlighting(defaultHighlightStyle),
+        syntaxHighlighting(codeHighlight),
         pasteURLAsLink,
         codeFolding(),
         markdownFold,
@@ -964,6 +992,14 @@ let selfHandledSearchAt = 0
 /** When the pointer was last pressed in here — same listener, other half. */
 let lastLocalPointerAt = 0
 window.addEventListener('mousedown', () => (lastLocalPointerAt = Date.now()), true)
+// Links open on Ctrl/⌘-click: show the hand only while the modifier is held.
+const trackModifier = (event: KeyboardEvent | MouseEvent): void => {
+  document.body.classList.toggle('mdforge-mod-held', event.metaKey || event.ctrlKey)
+}
+window.addEventListener('keydown', trackModifier, true)
+window.addEventListener('keyup', trackModifier, true)
+window.addEventListener('mousemove', trackModifier, true)
+window.addEventListener('blur', () => document.body.classList.remove('mdforge-mod-held'))
 
 /** Where the caret was, described by what was AROUND it rather than by an offset. */
 interface Place {

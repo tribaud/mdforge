@@ -17,6 +17,7 @@ import { syntaxTree } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 import { StateEffect, StateField } from '@codemirror/state'
 import type { EditorState, Range } from '@codemirror/state'
+import { ICONS } from './cm-icons'
 
 /* ---------- host bridge (wikilink navigation) ---------- */
 let onWikilink: (target: string) => void = () => {}
@@ -26,6 +27,14 @@ export function setWikilinkHandler(fn: (target: string) => void): void {
 /** Called by the DOM handler wired in main.ts. */
 export function openWikilink(target: string): void {
   onWikilink(target)
+}
+
+/* ---------- host bridge (clipboard) ---------- */
+// A code block's copy button goes through the host's clipboard: it does not
+// depend on the webview having the focus or a clipboard permission.
+let onCopy: (text: string) => void = () => {}
+export function setCopyHandler(fn: (text: string) => void): void {
+  onCopy = fn
 }
 
 /* ---------- config: MDForge `[~]` in-progress checkbox state ---------- */
@@ -409,10 +418,16 @@ function renderMath(view: EditorView, el: HTMLElement, code: string, display: bo
     })
 }
 
-/** True when a selection range touches [from, to] — then we reveal raw syntax. */
+/**
+ * True when the selection is working INSIDE [from, to] — then we reveal raw
+ * syntax. A caret touching the range counts; a real selection only counts when
+ * it lies wholly within it. A selection merely crossing a link, a table or a
+ * diagram leaves it rendered: revealing it mid-drag reflowed the text under the
+ * pointer (the selection jumped lines), and a Cmd+A turned the whole note raw.
+ */
 function editing(state: EditorState, from: number, to: number): boolean {
   for (const r of state.selection.ranges) {
-    if (r.from <= to && r.to >= from) return true
+    if (r.empty ? r.from >= from && r.from <= to : r.from >= from && r.to <= to) return true
   }
   return false
 }
@@ -2625,6 +2640,68 @@ class LangWidget extends WidgetType {
   }
 }
 
+/** A code block's copy button, top-right, shown on hover — VS Code's preview
+ * has the same one. It copies the code alone, without the fences. */
+class CodeCopyWidget extends WidgetType {
+  constructor(readonly code: string) {
+    super()
+  }
+  eq(other: CodeCopyWidget): boolean {
+    return other.code === this.code
+  }
+  toDOM(): HTMLElement {
+    const btn = document.createElement('button')
+    btn.className = 'cm-code-copy'
+    btn.innerHTML = ICONS.copy
+    btn.setAttribute('data-tip', 'Copier le code')
+    btn.setAttribute('aria-label', 'Copier le code')
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      onCopy(this.code)
+      btn.innerHTML = ICONS.check
+      btn.classList.add('cm-code-copied')
+      window.setTimeout(() => {
+        btn.innerHTML = ICONS.copy
+        btn.classList.remove('cm-code-copied')
+      }, 1200)
+    })
+    return btn
+  }
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+
+/** The marker of a list item, drawn as the browser draws it: a disc, a circle
+ * or a square for a bullet by depth, the number for an ordered item, nothing
+ * for a task (its checkbox stands in). */
+class ListMarkWidget extends WidgetType {
+  constructor(readonly label: string) {
+    super()
+  }
+  eq(other: ListMarkWidget): boolean {
+    return other.label === this.label
+  }
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = 'cm-li-mark'
+    if (BULLETS.includes(this.label)) {
+      const glyph = document.createElement('span')
+      glyph.className = 'cm-li-bullet'
+      glyph.textContent = this.label
+      span.appendChild(glyph)
+    } else {
+      span.textContent = this.label
+    }
+    return span
+  }
+  ignoreEvent(): boolean {
+    return false
+  }
+}
+const BULLETS = ['•', '◦', '▪']
+
 /* ---------- helpers for the regex post-pass ---------- */
 type Span = [number, number]
 function inAny(spans: Span[], from: number, to: number): boolean {
@@ -2718,12 +2795,28 @@ function buildDecorations(state: EditorState): DecorationSet {
         }
         const first = doc.lineAt(from).number
         const last = doc.lineAt(to).number
+        const FENCE = /^\s*(`{3,}|~{3,})/
         for (let n = first; n <= last; n++) {
-          deco.push(Decoration.line({ class: 'cm-md-codeblock' }).range(doc.line(n).from))
+          const line = doc.line(n)
+          // The fences are bookkeeping, as in VS Code's preview: their text is
+          // hidden (the line stays, as the box's top and bottom padding) unless
+          // the caret is on it. An unclosed block has no closing fence.
+          const fence = (n === first || n === last) && FENCE.test(line.text) && (n === first || last > first)
+          const pos = (n === first ? ' cm-md-code-first' : '') + (n === last ? ' cm-md-code-last' : '')
+          if (fence && !editing(state, line.from, line.to)) {
+            deco.push(Decoration.line({ class: `cm-md-codeblock cm-md-fence${pos}` }).range(line.from))
+            if (line.to > line.from) deco.push(Decoration.replace({}).range(line.from, line.to))
+          } else {
+            deco.push(Decoration.line({ class: `cm-md-codeblock${pos}` }).range(line.from))
+          }
         }
-        // Language picker floated at the block's top-right (free text + known-lang
-        // autocompletion). Placed on the opening fence line.
-        deco.push(Decoration.widget({ widget: new LangWidget(lang), side: 1 }).range(doc.line(first).from))
+        // Copy button and language picker floated at the block's top-right (the
+        // picker: free text + known-lang autocompletion). Side -1, so the hidden
+        // fence text does not swallow them.
+        const textNode = node.node.getChild('CodeText')
+        const code = textNode ? doc.sliceString(textNode.from, textNode.to) : ''
+        deco.push(Decoration.widget({ widget: new CodeCopyWidget(code), side: -1 }).range(doc.line(first).from))
+        deco.push(Decoration.widget({ widget: new LangWidget(lang), side: -1 }).range(doc.line(first).from))
         // Return true: descend so the nested language tree (from codeLanguages)
         // is still highlighted by syntaxHighlighting().
         return true
@@ -2784,7 +2877,7 @@ function buildDecorations(state: EditorState): DecorationSet {
           const line = doc.line(n)
           const pos = (n === first ? ' cm-alert-first' : '') + (n === last ? ' cm-alert-last' : '')
           deco.push(
-            Decoration.line({ class: kind ? `cm-alert cm-alert-${kind}${pos}` : 'cm-md-quote' }).range(line.from)
+            Decoration.line({ class: kind ? `cm-alert cm-alert-${kind}${pos}` : `cm-md-quote${pos}` }).range(line.from)
           )
           if (n === first) {
             deco.push(Decoration.widget({ widget: new AlertSelectWidget(kind, line.from), side: -1 }).range(line.from))
@@ -2814,6 +2907,30 @@ function buildDecorations(state: EditorState): DecorationSet {
           const st = (m[2].toLowerCase() === 'x' ? 'x' : m[2]) as TaskState
           deco.push(Decoration.replace({ widget: new TaskWidget(st) }).range(markFrom, markFrom + 3))
           taskRanges.push([markFrom, markFrom + 3])
+        }
+        // The marker, drawn as a bullet or a number in a hanging indent, as the
+        // preview lays a list out: wrapped lines align under the text, nested
+        // lists step in. Only for an item that starts its line (`> - x` keeps
+        // its raw marker), and the raw marker comes back under the caret.
+        const mark = node.node.getChild('ListMark')
+        if (mark && !inFrontmatter(from) && /^\s*$/.test(doc.sliceString(line.from, mark.from))) {
+          let depth = 0
+          for (let p = node.node.parent; p; p = p.parent) {
+            if (p.name === 'BulletList' || p.name === 'OrderedList') depth++
+          }
+          const markText = doc.sliceString(mark.from, mark.to)
+          const ordered = /\d/.test(markText)
+          const end = Math.min(mark.to + 1, line.to)
+          deco.push(
+            Decoration.line({
+              class: m ? 'cm-md-li cm-md-li-task' : 'cm-md-li',
+              attributes: { style: `--li-depth: ${Math.max(1, depth)}` }
+            }).range(line.from)
+          )
+          if (!editing(state, line.from, end)) {
+            const label = m ? '' : ordered ? markText : BULLETS[(Math.max(1, depth) - 1) % BULLETS.length]
+            deco.push(Decoration.replace({ widget: new ListMarkWidget(label) }).range(line.from, end))
+          }
         }
         return
       }
@@ -2865,6 +2982,27 @@ function buildDecorations(state: EditorState): DecorationSet {
           }
         }
         return
+      }
+
+      // A bare URL (GFM autolink: `https://…`, `www.…`) or `<https://…>`. Both
+      // are links in every renderer, so they open on Ctrl/⌘-click like the
+      // others; an `<autolink>` also hides its brackets. A URL inside a
+      // `[text](url)` or an image belongs to that node, not to this one.
+      if (name === 'Autolink' || (name === 'URL' && node.node.parent?.name !== 'Link' && node.node.parent?.name !== 'Image')) {
+        if (inFrontmatter(from) || inAny(wikilinkRanges, from, to)) return false
+        const url = node.node.getChild('URL') ?? node.node
+        const raw = doc.sliceString(url.from, url.to)
+        const href = /^www\./i.test(raw) ? `https://${raw}` : /^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(raw) ? `mailto:${raw}` : raw
+        deco.push(
+          Decoration.mark({
+            class: 'cm-md-link',
+            attributes: { 'data-href': href, title: `${href}  (Ctrl/⌘+clic pour ouvrir)` }
+          }).range(url.from, url.to)
+        )
+        if (name === 'Autolink' && !editing(state, from, to)) {
+          deco.push(Decoration.replace({}).range(from, url.from), Decoration.replace({}).range(url.to, to))
+        }
+        return false
       }
 
       // Links: hide `[`, `](url)` and style the text. Skip the `[~]` task marker

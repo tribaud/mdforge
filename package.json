@@ -272,7 +272,7 @@
         },
         "mdforge.fontSize": {
           "type": "number",
-          "default": 15,
+          "default": 14,
           "minimum": 8,
           "maximum": 48,
           "description": "Editor font size (px)."

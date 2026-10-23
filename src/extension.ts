@@ -902,7 +902,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       void webview.postMessage({
         type: 'config',
         config: {
-          fontSize: config.get<number>('fontSize', 15),
+          fontSize: config.get<number>('fontSize', 14),
           pageWidth: config.get<string>('pageWidth', 'comfortable'),
           textAlign: config.get<string>('textAlign', 'left'),
           lineNumbers: config.get<boolean>('lineNumbers', true),
@@ -1124,6 +1124,11 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           case 'openExternal':
             if (message.url) await vscode.env.openExternal(vscode.Uri.parse(message.url))
+            break
+          case 'copyText':
+            // A code block's copy button: the host's clipboard needs no focus
+            // and no permission inside the webview.
+            if (typeof message.text === 'string') await vscode.env.clipboard.writeText(message.text)
             break
           case 'findInFiles':
             // VS Code's own Search view, seeded with the selection: the webview
