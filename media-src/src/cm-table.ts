@@ -8,7 +8,7 @@
  */
 import { EditorView } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
-import { columnWidthsAbove, fitWidths, roundWidths, scaleWidths } from './cm-livepreview'
+import { blockOpen, columnWidthsAbove, fitWidths, livePreview, roundWidths, scaleWidths } from './cm-livepreview'
 
 type Align = 'left' | 'center' | 'right' | 'none'
 
@@ -43,6 +43,9 @@ function tableContext(view: EditorView): TableCtx | null {
   let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(sel.head, 0)
   for (; node; node = node.parent) if (node.name === 'Table') break
   if (!node) return null
+  // A rendered table is edited through its ✎ button: the toolbar belongs to the
+  // source, not to a caret resting at the widget's edge.
+  if (state.field(livePreview, false) && !blockOpen(state, node.from, node.to)) return null
   const from = node.from
   const to = node.to
   const raw = state.doc.sliceString(from, to).split('\n')

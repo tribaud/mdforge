@@ -902,8 +902,9 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
       void webview.postMessage({
         type: 'config',
         config: {
-          fontSize: config.get<number>('fontSize', 15),
+          fontSize: config.get<number>('fontSize', 14),
           pageWidth: config.get<string>('pageWidth', 'comfortable'),
+          tocVisible: config.get<boolean>('toc.visible', false),
           textAlign: config.get<string>('textAlign', 'left'),
           lineNumbers: config.get<boolean>('lineNumbers', true),
           appendSource: config.get<boolean>('paste.appendSource', false),
@@ -1071,6 +1072,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         html?: string
         dump?: string
         refresh?: boolean
+        visible?: boolean
         range?: {
           from: { line: number; character: number }
           to: { line: number; character: number }
@@ -1124,6 +1126,11 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
             break
           case 'openExternal':
             if (message.url) await vscode.env.openExternal(vscode.Uri.parse(message.url))
+            break
+          case 'copyText':
+            // A code block's copy button: the host's clipboard needs no focus
+            // and no permission inside the webview.
+            if (typeof message.text === 'string') await vscode.env.clipboard.writeText(message.text)
             break
           case 'findInFiles':
             // VS Code's own Search view, seeded with the selection: the webview
@@ -1192,6 +1199,21 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
                     ? vscode.ConfigurationTarget.Workspace
                     : vscode.ConfigurationTarget.Global
               await cfg.update('pageWidth', message.value, target)
+            }
+            break
+          case 'setTocVisible':
+            // The panel's toolbar button is a shortcut for `mdforge.toc.visible`,
+            // written at the level where it is already set (see setPageWidth).
+            if (typeof message.visible === 'boolean') {
+              const cfg = vscode.workspace.getConfiguration('mdforge', document.uri)
+              const at = cfg.inspect<boolean>('toc.visible')
+              const target =
+                at?.workspaceFolderValue !== undefined
+                  ? vscode.ConfigurationTarget.WorkspaceFolder
+                  : at?.workspaceValue !== undefined
+                    ? vscode.ConfigurationTarget.Workspace
+                    : vscode.ConfigurationTarget.Global
+              await cfg.update('toc.visible', message.visible, target)
             }
             break
           case 'openSettings':

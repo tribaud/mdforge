@@ -16,7 +16,7 @@ import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } f
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
 import {
   syntaxHighlighting,
-  defaultHighlightStyle,
+  HighlightStyle,
   syntaxTree,
   codeFolding,
   foldKeymap,
@@ -32,6 +32,7 @@ import {
 import { markdown, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { GFM } from '@lezer/markdown'
+import { tags as t } from '@lezer/highlight'
 import {
   livePreview,
   setAssetsBase,
@@ -39,6 +40,7 @@ import {
   redrawMermaid,
   refitMermaid,
   setWikilinkHandler,
+  setCopyHandler,
   setEnableInProgress,
   setTagsRequester,
   setTagIndex,
@@ -56,6 +58,7 @@ import {
   setWorkspaceSearch
 } from './cm-toolbar'
 import { ICONS } from './cm-icons'
+import { createToc } from './cm-toc'
 import { createSlashMenu } from './cm-slash'
 import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
@@ -84,6 +87,7 @@ declare function acquireVsCodeApi(): {
 interface MdForgeConfig {
   fontSize?: number
   pageWidth?: 'comfortable' | 'full'
+  tocVisible?: boolean
   mermaidFitWidth?: boolean
   textAlign?: 'left' | 'justify'
   lineNumbers?: boolean
@@ -129,6 +133,8 @@ let applyingRemote = false
 
 // Wikilink clicks in the rendered text ask the host to open the target note.
 setWikilinkHandler((target) => vscode.postMessage({ type: 'openWikilink', target }))
+// A code block's copy button writes through the host's clipboard.
+setCopyHandler((text) => vscode.postMessage({ type: 'copyText', text }))
 // The frontmatter tag editor completes on the tags already used in the workspace.
 // The host sweeps once on the first request, then answers from its cache; only
 // the editor's ↻ asks for a fresh sweep.
@@ -156,7 +162,7 @@ const editorTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': {
     fontFamily: 'var(--mdforge-font)',
-    lineHeight: '1.7',
+    lineHeight: '1.6',
     overflow: 'auto'
   },
   '.cm-content': {
@@ -166,7 +172,7 @@ const editorTheme = EditorView.theme({
     // it needs ~58px of room even with the line-number gutter off. Kept
     // symmetrical so the column stays centred.
     padding: '24px 64px 40vh',
-    fontSize: 'var(--mdforge-font-size, 15px)',
+    fontSize: 'var(--mdforge-font-size, 14px)',
     caretColor: 'var(--vscode-editorCursor-foreground)'
   },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--vscode-editorCursor-foreground)' },
@@ -174,6 +180,30 @@ const editorTheme = EditorView.theme({
     backgroundColor: 'var(--vscode-editor-selectionBackground)'
   }
 })
+
+/*
+ * Code colours: the palette of VS Code's own Markdown preview (`highlight.css`,
+ * vs / vs2015), as CSS variables so the light and dark halves follow the
+ * editor's theme kind (cm-theme.css). CodeMirror's `defaultHighlightStyle` is
+ * light-only, and it underlined every heading and link of the note.
+ */
+const hl = (name: string): string => `var(--mdforge-hl-${name})`
+const codeHighlight = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier, t.self, t.null, t.bool, t.atom], color: hl('keyword') },
+  { tag: [t.string, t.special(t.string), t.character, t.docString], color: hl('string') },
+  { tag: [t.regexp, t.escape], color: hl('regexp') },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: hl('comment'), fontStyle: 'italic' },
+  { tag: [t.number, t.integer, t.float], color: hl('number') },
+  { tag: [t.typeName, t.className, t.namespace, t.standard(t.variableName), t.standard(t.name)], color: hl('type') },
+  { tag: [t.propertyName, t.attributeName], color: hl('attr') },
+  { tag: [t.tagName, t.angleBracket], color: hl('tag') },
+  { tag: [t.meta, t.processingInstruction, t.annotation], color: hl('meta') },
+  { tag: t.invalid, color: hl('invalid') },
+  { tag: t.heading, fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.strikethrough, textDecoration: 'line-through' }
+])
 
 /** Editability is toggled for presentation mode (read-only preview). */
 const editable = new Compartment()
@@ -497,6 +527,11 @@ function addHostButtons(bar: HTMLElement): void {
   }
   const post = (type: string) => (): void => vscode.postMessage({ type })
 
+  // The table of contents opens on the left, so its button leads the bar.
+  tocButton = mk(ICONS.toc, TOC_TIPS.closed, () => toggleToc())
+  bar.insertBefore(tocButton, bar.firstChild)
+  applyToc(tocVisible)
+
   sep()
   mk(
     ICONS.normalize,
@@ -559,6 +594,31 @@ function togglePageWidth(): void {
   vscode.postMessage({ type: 'setPageWidth', value: next })
   view.focus()
 }
+
+/** Table of contents (`mdforge.toc.visible`). Like the width button, the
+ * toolbar button is a shortcut for the setting: it shows the panel at once, and
+ * the host writes the setting and echoes it to every open note. */
+const TOC_TIPS = { open: 'Masquer le sommaire', closed: 'Afficher le sommaire (table des matières)' }
+let tocVisible = false
+let tocButton: HTMLElement | null = null
+function applyToc(visible: boolean): void {
+  tocVisible = visible
+  document.body.classList.toggle('mdforge-toc-open', visible)
+  if (tocButton) {
+    const tip = visible ? TOC_TIPS.open : TOC_TIPS.closed
+    tocButton.title = tip
+    tocButton.setAttribute('data-tip', tip)
+    tocButton.classList.toggle('cm-tb-btn-active', visible)
+  }
+  tocUpdate(true)
+  // The text column narrows or widens: re-fit diagrams, re-measure lines.
+  refitMermaid(view)
+}
+function toggleToc(): void {
+  applyToc(!tocVisible)
+  vscode.postMessage({ type: 'setTocVisible', visible: tocVisible })
+}
+let tocUpdate: (docChanged: boolean) => void = () => {}
 
 /** Toggle the raw-Markdown source view (live preview off). */
 let sourceMode = false
@@ -631,7 +691,7 @@ try {
         drawSelection(),
         highlightActiveLine(),
         markdown({ extensions: GFM, codeLanguages: languages }),
-        syntaxHighlighting(defaultHighlightStyle),
+        syntaxHighlighting(codeHighlight),
         pasteURLAsLink,
         codeFolding(),
         markdownFold,
@@ -653,6 +713,7 @@ try {
         domEvents,
         editable.of(EditorView.editable.of(true)),
         EditorView.updateListener.of((update) => {
+          tocUpdate(update.docChanged)
           if (update.docChanged || update.selectionSet || update.focusChanged) {
             bubbleUpdate()
             slashUpdate()
@@ -749,10 +810,18 @@ try {
     }
   })
 
+  // Table of contents: a panel on the left of the editor, in a row with it.
+  const toc = createToc(view)
+  tocUpdate = toc.update
+  const main = document.createElement('div')
+  main.className = 'mdforge-main'
+  root.replaceWith(main)
+  main.append(toc.el, root)
+
   // Formatting toolbar: a persistent top bar + a selection bubble.
   const topbar = createTopbar(view)
   addHostButtons(topbar)
-  document.body.insertBefore(topbar, root)
+  document.body.insertBefore(topbar, main)
   const bubble = createBubble(view)
   bubbleUpdate = bubble.update
   slashMenu = createSlashMenu(view)
@@ -964,6 +1033,14 @@ let selfHandledSearchAt = 0
 /** When the pointer was last pressed in here — same listener, other half. */
 let lastLocalPointerAt = 0
 window.addEventListener('mousedown', () => (lastLocalPointerAt = Date.now()), true)
+// Links open on Ctrl/⌘-click: show the hand only while the modifier is held.
+const trackModifier = (event: KeyboardEvent | MouseEvent): void => {
+  document.body.classList.toggle('mdforge-mod-held', event.metaKey || event.ctrlKey)
+}
+window.addEventListener('keydown', trackModifier, true)
+window.addEventListener('keyup', trackModifier, true)
+window.addEventListener('mousemove', trackModifier, true)
+window.addEventListener('blur', () => document.body.classList.remove('mdforge-mod-held'))
 
 /** Where the caret was, described by what was AROUND it rather than by an offset. */
 interface Place {
@@ -1112,6 +1189,7 @@ function applyConfig(config: MdForgeConfig): void {
     document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   }
   if (config.pageWidth === 'comfortable' || config.pageWidth === 'full') applyPageWidth(config.pageWidth)
+  if (typeof config.tocVisible === 'boolean') applyToc(config.tocVisible)
   // Mermaid diagrams scaled up to the whole text column (see cm-theme.css). The
   // ceiling is written on each <svg>, so turning the setting off has to re-fit
   // what is already rendered rather than just flip the class.

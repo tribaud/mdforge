@@ -272,7 +272,7 @@
         },
         "mdforge.fontSize": {
           "type": "number",
-          "default": 15,
+          "default": 14,
           "minimum": 8,
           "maximum": 48,
           "description": "Editor font size (px)."
@@ -285,6 +285,11 @@
           ],
           "default": "comfortable",
           "description": "Content width: 'comfortable' centers a readable column (GitHub-like), 'full' spans the viewport."
+        },
+        "mdforge.toc.visible": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the table of contents in a panel on the left of the editor. A click on a heading scrolls to it."
         },
         "mdforge.mermaid.fitWidth": {
           "type": "boolean",
