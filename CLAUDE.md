@@ -54,6 +54,7 @@ it fully before making changes.
 | `media-src/src/main.ts` | Webview entry: assembles the CodeMirror editor, keymaps, extensions, host message handling, image paste/drop/pick, host buttons, source-view toggle, presentation, footnote jump, link open. |
 | `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
 | `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble (`ENTRIES` for both, `BUBBLE_ENTRIES` for the two search actions a selection alone justifies); `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
+| `media-src/src/cm-toc.ts` | Table of contents: the collapsible left panel (`createToc`), headings from the Lezer tree, click → scroll (caret untouched, folded section unfolded), current heading marked. |
 | `media-src/src/cm-slash.ts` | `/` slash command menu (`createSlashMenu(view).update`). |
 | `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
 | `media-src/src/cm-block-drag.ts` | Left-margin block controls: draggable `⠿` handle (reorders top-level blocks / heading sections, click = select the block) and the `▾`/`▸` fold chevron. |
@@ -159,7 +160,7 @@ it fully before making changes.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
   `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`,
   `quickDiff`, `tags`, `searchMatches`.
-  webview→host: `ready`, `edit`, `setPageWidth`, `openWikilink`, `openExternal`, `insertImage`,
+  webview→host: `ready`, `edit`, `setPageWidth`, `setTocVisible`, `copyText`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
   `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
   `debugPasteHtml`, `error`.
@@ -179,6 +180,20 @@ so it round-trips for free unless noted.
   note raw. MUST be a `StateField` (not a ViewPlugin) to provide
   **block** decorations. Wrapped in a `Compartment` (`preview`) so the source-view
   toggle can switch it off.
+- **Blocks open only through ✎** (`openBlock` field, `openBlockEffect`,
+  `blockOpen`, set by `enterEdit`): a rendered diagram, `$$` formula, table,
+  image or frontmatter card shows its source only after its ✎ button was
+  clicked, and closes again as soon as the selection leaves it. The caret
+  merely reaching one — an arrow key, a click on a formula — used to flip it to
+  raw source. The table toolbar (`cm-table.ts`) follows the same rule. Inline
+  marks (`**`, links, headings) still reveal under the caret.
+- **Table of contents** (`mdforge.toc.visible`, toolbar button at the far
+  left, `cm-toc.ts`): a panel left of the editor (`.mdforge-main` is the flex
+  row holding it and `#app`). Like the width button, the button is a shortcut
+  for the setting — `setTocVisible`, written at the level where it is already
+  set, echoed to every open note. A click scrolls the heading to the top
+  WITHOUT moving the caret (a caret on a heading would reveal its `##`) and
+  unfolds a folded section holding it. Rebuilt from the tree, debounced.
 - **Headings / inline marks**: line class enlarges the heading; the `###`, `**`,
   `` ` `` and `~~` markers are hidden with `Decoration.replace` unless the caret is
   on them.

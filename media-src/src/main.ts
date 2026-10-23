@@ -58,6 +58,7 @@ import {
   setWorkspaceSearch
 } from './cm-toolbar'
 import { ICONS } from './cm-icons'
+import { createToc } from './cm-toc'
 import { createSlashMenu } from './cm-slash'
 import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
@@ -86,6 +87,7 @@ declare function acquireVsCodeApi(): {
 interface MdForgeConfig {
   fontSize?: number
   pageWidth?: 'comfortable' | 'full'
+  tocVisible?: boolean
   mermaidFitWidth?: boolean
   textAlign?: 'left' | 'justify'
   lineNumbers?: boolean
@@ -525,6 +527,11 @@ function addHostButtons(bar: HTMLElement): void {
   }
   const post = (type: string) => (): void => vscode.postMessage({ type })
 
+  // The table of contents opens on the left, so its button leads the bar.
+  tocButton = mk(ICONS.toc, TOC_TIPS.closed, () => toggleToc())
+  bar.insertBefore(tocButton, bar.firstChild)
+  applyToc(tocVisible)
+
   sep()
   mk(
     ICONS.normalize,
@@ -587,6 +594,31 @@ function togglePageWidth(): void {
   vscode.postMessage({ type: 'setPageWidth', value: next })
   view.focus()
 }
+
+/** Table of contents (`mdforge.toc.visible`). Like the width button, the
+ * toolbar button is a shortcut for the setting: it shows the panel at once, and
+ * the host writes the setting and echoes it to every open note. */
+const TOC_TIPS = { open: 'Masquer le sommaire', closed: 'Afficher le sommaire (table des matières)' }
+let tocVisible = false
+let tocButton: HTMLElement | null = null
+function applyToc(visible: boolean): void {
+  tocVisible = visible
+  document.body.classList.toggle('mdforge-toc-open', visible)
+  if (tocButton) {
+    const tip = visible ? TOC_TIPS.open : TOC_TIPS.closed
+    tocButton.title = tip
+    tocButton.setAttribute('data-tip', tip)
+    tocButton.classList.toggle('cm-tb-btn-active', visible)
+  }
+  tocUpdate(true)
+  // The text column narrows or widens: re-fit diagrams, re-measure lines.
+  refitMermaid(view)
+}
+function toggleToc(): void {
+  applyToc(!tocVisible)
+  vscode.postMessage({ type: 'setTocVisible', visible: tocVisible })
+}
+let tocUpdate: (docChanged: boolean) => void = () => {}
 
 /** Toggle the raw-Markdown source view (live preview off). */
 let sourceMode = false
@@ -681,6 +713,7 @@ try {
         domEvents,
         editable.of(EditorView.editable.of(true)),
         EditorView.updateListener.of((update) => {
+          tocUpdate(update.docChanged)
           if (update.docChanged || update.selectionSet || update.focusChanged) {
             bubbleUpdate()
             slashUpdate()
@@ -777,10 +810,18 @@ try {
     }
   })
 
+  // Table of contents: a panel on the left of the editor, in a row with it.
+  const toc = createToc(view)
+  tocUpdate = toc.update
+  const main = document.createElement('div')
+  main.className = 'mdforge-main'
+  root.replaceWith(main)
+  main.append(toc.el, root)
+
   // Formatting toolbar: a persistent top bar + a selection bubble.
   const topbar = createTopbar(view)
   addHostButtons(topbar)
-  document.body.insertBefore(topbar, root)
+  document.body.insertBefore(topbar, main)
   const bubble = createBubble(view)
   bubbleUpdate = bubble.update
   slashMenu = createSlashMenu(view)
@@ -1148,6 +1189,7 @@ function applyConfig(config: MdForgeConfig): void {
     document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   }
   if (config.pageWidth === 'comfortable' || config.pageWidth === 'full') applyPageWidth(config.pageWidth)
+  if (typeof config.tocVisible === 'boolean') applyToc(config.tocVisible)
   // Mermaid diagrams scaled up to the whole text column (see cm-theme.css). The
   // ceiling is written on each <svg>, so turning the setting off has to re-fit
   // what is already rendered rather than just flip the class.
