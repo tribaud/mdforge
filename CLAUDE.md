@@ -830,6 +830,7 @@ installs `1.137`.
 npm install
 npm run build                 # tsc (extension) + esbuild (webview) → media/dist
 npx tsc -p media-src --noEmit # webview type-check (also in CI)
+npm run test:cells            # editing a table cell in the cell (headless Chrome)
 npm run test:quickdiff        # the line diff behind the quick-diff margin
 npm run test:search           # parsing of the search view's result text
 npm run test:writes           # the document write queue, under key repeat
