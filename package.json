@@ -421,7 +421,8 @@
     "vscode:prepublish": "npm run build",
     "package": "vsce package",
     "test:writes": "npm run compile:ext && node scripts/writequeue.test.mjs",
-    "test:sync": "npm run compile:ext && node scripts/sync.test.cjs"
+    "test:sync": "npm run compile:ext && node scripts/sync.test.cjs",
+    "test:images": "npm run compile:ext && node scripts/imageroots.test.mjs"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",

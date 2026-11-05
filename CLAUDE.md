@@ -48,6 +48,7 @@ it fully before making changes.
 | `src/extension.ts` | Custom text editor, webview wiring, sync, CSP, outline, presentation, wikilink resolver, asset ops (localize/move/rename/delete), **diagnostics forwarding**, **blank-line normalization** (command + format-on-save), **quick-fix** runner, diff-editor "open each side" buttons. |
 | `src/quickdiff.ts` | **Quick diff**, host side: resolves the built-in `vscode.git` API, reads the base blob (index → `HEAD`), watches doc/repo/setting, posts the line changes. |
 | `src/writequeue.ts` | `createWriter` — one whole-document write at a time, latest text wins. Imports nothing, so it is testable (`npm run test:writes`). |
+| `src/imageroots.ts` | `imageRootsOutside` — the folders of the images a note fetches OUTSIDE its own folder (`../assets/x.png`), added to the webview's `localResourceRoots`. Imports only `path` (`npm run test:images`). |
 | `src/linediff.ts` | `diffLines` — the patience line diff behind the quick-diff margin. Imports nothing, so it is testable (`npm run test:quickdiff`). |
 | `src/searchreveal.ts` | **Search reveal**, host side: calls the internal `search.action.getSearchResults`, deduces the term, and posts what the note being opened matched. |
 | `src/searchmatches.ts` | `matchesForFile` / `deriveQuery` — parses the search view's result text and deduces the search term from it. Imports nothing, so it is testable (`npm run test:search`). |
@@ -835,6 +836,7 @@ npm run test:quickdiff        # the line diff behind the quick-diff margin
 npm run test:search           # parsing of the search view's result text
 npm run test:writes           # the document write queue, under key repeat
 npm run test:sync             # the host round-trip: a burst in, no echo back
+npm run test:images           # image folders outside the note's folder
 ```
 
 - **Three launch configurations** (`.vscode/launch.json`): the plain one,
@@ -943,6 +945,12 @@ directly.
   `selection` on the custom-editor context would replace the whole mechanism.
   The same loss hits the Problems panel, Go to Definition and `Ctrl+P file:42`,
   which are NOT covered.
+- **Images outside the note's folder** load only from a `localResourceRoot`:
+  the note's folder, the workspace folders, and the folders of the `../` images
+  the note held WHEN IT WAS OPENED (`imageroots.ts`). Changing the roots later
+  reloads the webview, so an out-of-root image added mid-session shows after a
+  reopen. A leading `/` is not resolved (absolute vs workspace-relative is
+  ambiguous).
 - **Perf**: `buildDecorations` re-scans the whole document on every selection
   change. Fine for normal notes; add a viewport limit before very large files.
 - Bundle size: mermaid (many diagram chunks), KaTeX fonts and the

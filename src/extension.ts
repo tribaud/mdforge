@@ -1,6 +1,7 @@
 import * as crypto from 'crypto'
 import * as path from 'path'
 import * as vscode from 'vscode'
+import { imageRootsOutside } from './imageroots'
 import { QuickDiff } from './quickdiff'
 import { createWriter } from './writequeue'
 import type { Writer } from './writequeue'
@@ -852,11 +853,17 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
   ): Promise<void> {
     this.openDocs.add(document.uri.toString())
     const webview = webviewPanel.webview
+    const docDir = path.dirname(document.uri.fsPath)
+    // Le dossier de la note, ceux du workspace, et ceux des images que la note
+    // va chercher plus haut (`../assets/x.png`) : hors de ces racines, la
+    // webview refuse le fichier et l'image reste vide.
     webview.options = {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this.context.extensionUri, 'media'),
-        vscode.Uri.file(path.dirname(document.uri.fsPath))
+        vscode.Uri.file(docDir),
+        ...(vscode.workspace.workspaceFolders ?? []).map((f) => f.uri),
+        ...imageRootsOutside(document.getText(), docDir).map((d) => vscode.Uri.file(d))
       ]
     }
     webview.html = this.getHtml(webview)
