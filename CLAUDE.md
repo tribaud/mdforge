@@ -56,6 +56,8 @@ it fully before making changes.
 | `media-src/src/cm-livepreview.ts` | The **live-preview `StateField`**: builds all decorations (headings, marks, tasks, images, HR, mermaid/math/table widgets, alerts, wikilinks, footnotes, frontmatter card, code-block language picker, compact blank lines) + the **table cell renderer** (Markdown / safe raw HTML) and **single-cell editing**. |
 | `media-src/src/cm-toolbar.ts` | Top toolbar + selection bubble (`ENTRIES` for both, `BUBBLE_ENTRIES` for the two search actions a selection alone justifies); `wrap`/`insertLink`/`insertHr`/`insertTable`/`insertFootnote` (footnote popup with section + editable bookmark); search toggle. |
 | `media-src/src/cm-toc.ts` | Table of contents: the collapsible left panel (`createToc`), headings from the Lezer tree, click → scroll (caret untouched, folded section unfolded), current heading marked. |
+| `media-src/src/cm-listcmds.ts` | The list commands wired to the editor: Tab/Maj+Tab (+ renumbering, one undo step), Enter on an empty item, Backspace after a task box, `setListKind`, and the marker menu (`openListMenu`). |
+| `media-src/src/cm-listindent.ts` | Pure list logic, lines in → edits out: `indentItems` / `outdentItems`, `convertList`, `renumberLists`, `siblingGroup`. |
 | `media-src/src/cm-slash.ts` | `/` slash command menu (`createSlashMenu(view).update`). |
 | `media-src/src/cm-table.ts` | Floating table toolbar (add/del row & col, align, delete) — rewrites the table Markdown text directly. |
 | `media-src/src/cm-block-drag.ts` | Left-margin block controls: draggable `⠿` handle (reorders top-level blocks / heading sections, click = select the block) and the `▾`/`▸` fold chevron. |
@@ -200,6 +202,36 @@ so it round-trips for free unless noted.
   `setTocWidth` ONCE on release (a per-pixel write would echo a config event to
   every note); double-click = default. The panel is `box-sizing: border-box`, so
   the setting is its real width — content-box made the grip jump 17px.
+- **Lists: Tab / Maj+Tab / Enter** (`cm-listindent.ts`, `exitEmptyItem` in
+  `main.ts`). Tab indents to the CONTENT column of the sibling above (2 under
+  `- `, 3 under `1. `: two spaces under `1. ` is not a sub-list, Tab used to
+  look dead there), the item's subtree moves with it, and a numbered item takes
+  the number of its new place (1 at the head of a sub-list, parent + 1 on the
+  way up). An item indented PAST its parent's content column (4+ extra spaces:
+  `- x` then reads as the parent's paragraph — "my dashes are text under a
+  task") is brought back to that column by Maj+Tab, i.e. made a real child. The first item of a list cannot go down: Tab is swallowed rather than
+  inserting a stray indent. Enter on an EMPTY nested item goes up one level, on
+  an empty top item it removes the marker — `insertNewlineContinueMarkup` left a
+  one-space line and a new nested item instead. That Enter sits in the
+  `Prec.highest` keymap: `markdown()` installs its own Enter at `Prec.high`.
+  **Bullets ⇄ numbers ⇄ tasks** (`setListKind`): toolbar buttons, a menu on
+  the rendered marker (click a bullet or a number; also *Renumber 1, 2, 3…*)
+  and `Ctrl/⌘+Maj+7/8/9` (Google Docs / Notion). A caret converts its whole
+  list at that level, a selection exactly its lines; children are shifted
+  to the new content column (`- ` is 2 wide, `1. ` 3, `10. ` 4). Tab /
+  Maj+Tab renumber the lists they touch, composed with the move into ONE
+  transaction (`ChangeSet.compose`), and keep the lazy `1. 1. 1.` style.
+  Nothing renumbers on its own while typing — the user's numbers stay theirs
+  until one of these gestures. Lists are told apart as CommonMark does: a
+  different bullet char or delimiter starts a new list (`siblingGroup`).
+  Backspace right after a task box (`- [ ] |`) removes the BOX only
+  (`removeTaskBox`, same keymap): the task becomes a bullet.
+  `deleteMarkupBackward` replaced the whole `- [ ] ` with spaces up to the
+  task's text — 4 past the content column, so a `- x` typed there read as the
+  task's paragraph, not a bullet.
+  A marker the caret touches comes back raw, but in the widget's box
+  (`cm-li-mark-raw`: indent spaces hidden, `3. ` right-aligned in 2em) — left
+  raw, the item's text jumped right while edited and back on leaving it.
 - **Headings / inline marks**: line class enlarges the heading; the `###`, `**`,
   `` ` `` and `~~` markers are hidden with `Decoration.replace` unless the caret is
   on them.
@@ -843,6 +875,7 @@ npm run test:writes           # the document write queue, under key repeat
 npm run test:sync             # the host round-trip: a burst in, no echo back
 npm run test:images           # image folders outside the note's folder
 npm run test:toc              # resizing the table-of-contents panel
+npm run test:lists            # Tab / Shift+Tab / Enter in lists
 ```
 
 - **Three launch configurations** (`.vscode/launch.json`): the plain one,

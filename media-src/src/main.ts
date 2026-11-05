@@ -58,6 +58,7 @@ import {
   setWorkspaceSearch
 } from './cm-toolbar'
 import { ICONS } from './cm-icons'
+import { exitEmptyItem, indentList, outdentList, removeTaskBox, setListKind } from './cm-listcmds'
 import { createToc, createTocResizer, setTocWidth } from './cm-toc'
 import { createSlashMenu } from './cm-slash'
 import type { SlashMenu } from './cm-slash'
@@ -237,46 +238,6 @@ let bubbleUpdate: () => void = () => {}
 let slashUpdate: () => void = () => {}
 let slashMenu: SlashMenu | null = null
 let tableUpdate: () => void = () => {}
-
-/* ---------- list indent / outdent on Tab ---------- */
-const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s)/
-
-/** Indent every list line the selection touches by two spaces. Returns false
- * when no list line is involved, so Tab falls through to its default. */
-function indentList(view: EditorView): boolean {
-  const { state } = view
-  const changes: Array<{ from: number; insert: string }> = []
-  for (const range of state.selection.ranges) {
-    const first = state.doc.lineAt(range.from).number
-    const last = state.doc.lineAt(range.to).number
-    for (let n = first; n <= last; n++) {
-      const line = state.doc.line(n)
-      if (LIST_LINE.test(line.text)) changes.push({ from: line.from, insert: '  ' })
-    }
-  }
-  if (!changes.length) return false
-  view.dispatch({ changes })
-  return true
-}
-
-/** Outdent every list line the selection touches by up to two spaces. */
-function outdentList(view: EditorView): boolean {
-  const { state } = view
-  const changes: Array<{ from: number; to: number }> = []
-  for (const range of state.selection.ranges) {
-    const first = state.doc.lineAt(range.from).number
-    const last = state.doc.lineAt(range.to).number
-    for (let n = first; n <= last; n++) {
-      const line = state.doc.line(n)
-      if (!LIST_LINE.test(line.text)) continue
-      const spaces = /^ {1,2}/.exec(line.text)
-      if (spaces) changes.push({ from: line.from, to: line.from + spaces[0].length })
-    }
-  }
-  if (!changes.length) return false
-  view.dispatch({ changes })
-  return true
-}
 
 /* ---------- image paste / drop → host save → insert link ---------- */
 let imageSeq = 0
@@ -664,7 +625,11 @@ try {
             { key: 'ArrowUp', run: () => slashMenu?.nav(-1) ?? false },
             { key: 'Enter', run: () => slashMenu?.accept() ?? false },
             { key: 'Tab', run: () => slashMenu?.accept() ?? false },
-            { key: 'Escape', run: () => slashMenu?.dismiss() ?? false }
+            { key: 'Escape', run: () => slashMenu?.dismiss() ?? false },
+            // Here, not in the keymap below: `markdown()` installs its own
+            // Enter (insertNewlineContinueMarkup) at Prec.high, which beats it.
+            { key: 'Enter', run: exitEmptyItem },
+            { key: 'Backspace', run: removeTaskBox }
           ])
         ),
         keymap.of([
@@ -677,6 +642,10 @@ try {
           // removes an empty marker — all before the generic bindings so they win.
           { key: 'Tab', run: indentList },
           { key: 'Shift-Tab', run: outdentList },
+          // Google Docs / Notion: numbered, bulleted, checklist.
+          { key: 'Mod-Shift-7', run: (v) => setListKind(v, 'ordered') },
+          { key: 'Mod-Shift-8', run: (v) => setListKind(v, 'bullet') },
+          { key: 'Mod-Shift-9', run: (v) => setListKind(v, 'task') },
           // Walk what a workspace-search result brought us to (the host can
           // only say WHERE the matches are, never which one was clicked).
           { key: 'F8', run: (v) => nextSearchMatch(v, 1) },

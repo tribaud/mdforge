@@ -753,6 +753,25 @@ body.mdforge-mod-held .cm-md-link {
   text-indent: 0;
   white-space: nowrap;
 }
+/* The raw marker under the caret, in the widget's box: its trailing space
+   (kept by pre-wrap) stands in for part of the widget's right padding. */
+.cm-li-mark.cm-li-mark-raw {
+  padding-right: 0.25em;
+}
+.cm-li-mark-menu {
+  cursor: pointer;
+}
+.cm-li-mark-menu:hover {
+  color: var(--vscode-textLink-foreground);
+}
+/* Doubled class: `.cm-suggest-menu` comes later in this file and would win. */
+.cm-suggest-menu.cm-list-menu {
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background, Canvas));
+  color: var(--vscode-foreground, CanvasText);
+}
+.cm-list-menu .cm-list-menu-current {
+  font-weight: 600;
+}
 /* The glyphs of a bullet are small at text size; the browser's disc is not. */
 .cm-li-bullet {
   font-size: 1.35em;

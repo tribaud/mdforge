@@ -11,6 +11,7 @@
  * (with syntax highlighting), Mermaid diagrams, GFM tables, GitHub alerts,
  * wikilinks, YAML frontmatter, footnotes and KaTeX math ($…$ / $$…$$).
  */
+import { openListMenu } from './cm-listcmds'
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
@@ -2750,9 +2751,20 @@ class ListMarkWidget extends WidgetType {
   eq(other: ListMarkWidget): boolean {
     return other.label === this.label
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const span = document.createElement('span')
     span.className = 'cm-li-mark'
+    // A click on the bullet / number: choose the list's kind, or renumber it.
+    if (this.label) {
+      span.classList.add('cm-li-mark-menu')
+      span.title = 'Type de liste…'
+      span.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        openListMenu(view, view.posAtDOM(span), span)
+      })
+    }
     if (BULLETS.includes(this.label)) {
       const glyph = document.createElement('span')
       glyph.className = 'cm-li-bullet'
@@ -2999,6 +3011,14 @@ function buildDecorations(state: EditorState): DecorationSet {
           if (!editing(state, line.from, end)) {
             const label = bareTask ? '' : ordered ? markText : BULLETS[(Math.max(1, depth) - 1) % BULLETS.length]
             deco.push(Decoration.replace({ widget: new ListMarkWidget(label) }).range(line.from, end))
+          } else if (!bareTask) {
+            // Under the caret the raw marker comes back, but in the SAME box as
+            // the widget: the indentation spaces stay hidden (the hanging indent
+            // already shows the depth) and `3. ` sits right-aligned in 2em. Left
+            // raw, the spaces plus the marker pushed the text right while the
+            // item was being edited, and it jumped back on leaving the line.
+            if (mark.from > line.from) deco.push(Decoration.replace({}).range(line.from, mark.from))
+            deco.push(Decoration.mark({ class: 'cm-li-mark cm-li-mark-raw' }).range(mark.from, end))
           }
         }
         return
