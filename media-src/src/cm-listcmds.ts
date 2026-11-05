@@ -8,14 +8,10 @@
 import type { EditorView } from '@codemirror/view'
 import { ChangeSet, Text } from '@codemirror/state'
 import type { EditorState } from '@codemirror/state'
+import { syntaxTree } from '@codemirror/language'
 import { LIST_ITEM, convertList, kindOf, indentItems, outdentItems, renumberLists, touchedLists } from './cm-listindent'
 import type { LineEdit, ListKind } from './cm-listindent'
 
-/* ---------- list indent / outdent on Tab ---------- */
-/** Applies `indentItems` / `outdentItems` (cm-listindent.ts) to every line the
- * selection touches. False when no list item is involved, so Tab falls through
- * to its default; true (even with nothing to change) once one is, so a Tab on
- * the first item of a list does not insert a stray indent instead. */
 /** Line edits (cm-listindent.ts) → a ChangeSet over `lines`. */
 function lineChanges(lines: string[], edits: LineEdit[]): ChangeSet {
   const starts: number[] = []
@@ -33,19 +29,46 @@ function applyLines(lines: string[], changes: ChangeSet): string[] {
   return changes.apply(Text.of(lines)).toString().split('\n')
 }
 
-/** Line indexes (0-based) the selection touches. */
+/** Inside fenced / indented code or the frontmatter, a `- ` is text, not a
+ * list item: the list commands must leave Enter, Backspace and Tab alone there
+ * (a YAML `  - tag` would otherwise be outdented on Enter). */
+function outsideLists(state: EditorState, pos: number): boolean {
+  const first = state.doc.line(1).text
+  if (/^---\s*$/.test(first)) {
+    for (let n = 2; n <= state.doc.lines; n++) {
+      const l = state.doc.line(n)
+      if (/^(---|\.\.\.)\s*$/.test(l.text)) {
+        if (pos <= l.to) return true
+        break
+      }
+    }
+  }
+  type Node = ReturnType<ReturnType<typeof syntaxTree>['resolveInner']>
+  for (let node: Node | null = syntaxTree(state).resolveInner(pos, 1); node; node = node.parent) {
+    if (node.name === 'FencedCode' || node.name === 'CodeBlock' || node.name === 'HTMLBlock') return true
+  }
+  return false
+}
+
+/** Line indexes (0-based) the selection touches. A selection ending at the
+ * very start of a line does not touch it — dragging to the start of the next
+ * line, or the ⠿ handle, selects whole lines that way. */
 function selectedLines(state: EditorState): number[] {
   const targets = new Set<number>()
   for (const range of state.selection.ranges) {
     const first = state.doc.lineAt(range.from).number
-    const last = state.doc.lineAt(range.to).number
+    const end = state.doc.lineAt(range.to)
+    const last = !range.empty && range.to === end.from && end.number > first ? end.number - 1 : end.number
     for (let n = first; n <= last; n++) targets.add(n - 1)
   }
-  return [...targets].sort((a, b) => a - b)
+  return [...targets].sort((a, b) => a - b).filter((i) => !outsideLists(state, state.doc.line(i + 1).from))
 }
 
-/** Tab / Maj+Tab: the move itself, then a renumbering of the lists it
- * touched, composed into ONE transaction (one undo step). */
+/** Tab / Maj+Tab: `indentItems` / `outdentItems` on every line the selection
+ * touches, then a renumbering of the lists they touched, composed into ONE
+ * transaction (one undo step). False when no list item is involved, so Tab
+ * falls through to its default; true (even with nothing to change) once one
+ * is, so a Tab on the first item of a list does not insert a stray indent. */
 function runListIndent(view: EditorView, fn: typeof indentItems): boolean {
   const { state } = view
   const targets = selectedLines(state)
@@ -73,22 +96,9 @@ export function setListKind(view: EditorView, kind: ListKind, at?: number): bool
   return true
 }
 
-/** Renumérote la liste de la ligne `at` à partir de son premier numéro. */
-export function renumberListAt(view: EditorView, at: number): void {
-  const lines = view.state.doc.toString().split('\n')
-  const edits = renumberLists(lines, [view.state.doc.lineAt(at).number - 1])
-  if (edits.length) view.dispatch({ changes: lineChanges(lines, edits), userEvent: 'input' })
-  view.focus()
-}
-
 export const indentList = (view: EditorView): boolean => runListIndent(view, indentItems)
 export const outdentList = (view: EditorView): boolean => runListIndent(view, outdentItems)
 
-/** Entrée sur un élément de liste VIDE (le marqueur seul, caret au bout) :
- * imbriqué, il remonte d'un niveau ; au premier niveau, la puce disparaît.
- * `insertNewlineContinueMarkup` laissait, sur un élément imbriqué, une ligne
- * d'un espace et une nouvelle puce vide au même niveau : la liste devenait
- * « lâche » et il fallait une Entrée de plus pour en sortir. */
 /** Backspace juste après la case d'une tâche (`- [ ] |`) : retire la case
  * SEULE, la tâche devient une puce. `deleteMarkupBackward` remplaçait tout
  * `- [ ] ` par des espaces jusqu'au texte de la tâche — 4 de trop pour
@@ -100,7 +110,7 @@ export function removeTaskBox(view: EditorView): boolean {
   if (sel.ranges.length !== 1 || !sel.main.empty) return false
   const line = state.doc.lineAt(sel.main.head)
   const m = /^([ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+)\[[ xX~]\][ \t]?/.exec(line.text)
-  if (!m || sel.main.head !== line.from + m[0].length) return false
+  if (!m || sel.main.head !== line.from + m[0].length || outsideLists(state, line.from)) return false
   view.dispatch({
     changes: { from: line.from + m[1].length, to: line.from + m[0].length },
     userEvent: 'delete.backward'
@@ -108,20 +118,24 @@ export function removeTaskBox(view: EditorView): boolean {
   return true
 }
 
+/** Entrée sur un élément de liste VIDE (le marqueur seul, caret au bout) :
+ * imbriqué, il remonte d'un niveau ; au premier niveau, la puce disparaît.
+ * `insertNewlineContinueMarkup` laissait, sur un élément imbriqué, une ligne
+ * d'un espace et une nouvelle puce vide au même niveau : la liste devenait
+ * « lâche » et il fallait une Entrée de plus pour en sortir. */
 export function exitEmptyItem(view: EditorView): boolean {
   const { state } = view
   const sel = state.selection
   if (sel.ranges.length !== 1 || !sel.main.empty) return false
   const line = state.doc.lineAt(sel.main.head)
   const m = LIST_ITEM.exec(line.text)
-  if (!m || sel.main.head !== line.to) return false
+  if (!m || sel.main.head !== line.to || outsideLists(state, line.from)) return false
   // Le marqueur seul (une case à cocher vide compte comme vide aussi).
   if (line.text.slice(m[0].length).replace(/^\[[ xX~]\]\s*$/, '').trim() !== '') return false
   if (m[1].length > 0) return outdentList(view)
   view.dispatch({ changes: { from: line.from, to: line.to }, userEvent: 'delete' })
   return true
 }
-
 
 /* ---------- le menu du marqueur (clic sur une puce ou un numéro) ---------- */
 
@@ -156,6 +170,9 @@ export function openListMenu(view: EditorView, pos: number, anchor: HTMLElement)
       e.preventDefault()
       e.stopPropagation()
       closeListMenu()
+      // The line moved under the menu (an external change): do nothing rather
+      // than convert whatever now sits at the old offset.
+      if (line.from > view.state.doc.length || view.state.doc.lineAt(line.from).text !== line.text) return
       // Already of that kind: nothing to do (here a click is a choice, not a
       // toggle — the toolbar button is the toggle).
       if (key !== current) run()
@@ -169,7 +186,8 @@ export function openListMenu(view: EditorView, pos: number, anchor: HTMLElement)
   document.body.appendChild(menu)
   openMenu = menu
   const away = (e: Event): void => {
-    if (e instanceof KeyboardEvent && e.key !== 'Escape') return
+    // Any key closes it: typing moves the lines, and the entries hold the
+    // position the menu was opened on.
     if (e.target instanceof Node && menu.contains(e.target)) return
     closeListMenu()
     document.removeEventListener('mousedown', away, true)

@@ -745,7 +745,10 @@ try {
     event.stopPropagation()
     const t = event.target as HTMLElement | null
     const field = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-    if (field && !view.contentDOM.contains(t)) return
+    // `t !== contentDOM`, not `!contentDOM.contains(t)`: a widget's own field
+    // (table cell, frontmatter value, language picker) sits INSIDE the
+    // content and must keep its own undo.
+    if (field && t !== view.contentDOM) return
     event.preventDefault()
     if (k === 'y' || event.shiftKey) redo(view)
     else undo(view)

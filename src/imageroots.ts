@@ -13,8 +13,16 @@ import * as path from 'path'
  * réouverture de la note (ou si son dossier est déjà sous un dossier du
  * workspace, ajouté lui aussi par l'appelant).
  *
+ * Borné : au plus `MAX_UP` niveaux au-dessus de la note, et jamais un dossier
+ * à moins de `MIN_DEPTH` niveaux de la racine. Sans borne, une note clonée
+ * contenant `![](../../../../../../x.png)` ouvrait à la webview tout le disque
+ * (`/` comme racine). Les dossiers du workspace, eux, sont ajoutés à part.
+ *
  * Ce module n'importe que `path` : il se teste hors Extension Host.
  */
+
+const MAX_UP = 3
+const MIN_DEPTH = 3
 
 const MD_IMAGE = /!\[[^\]]*\]\(\s*(<[^>]+>|[^)\s]+)/g
 const HTML_IMAGE = /<img\b[^>]*?\ssrc\s*=\s*(?:"([^"]+)"|'([^']+)')/gi
@@ -49,7 +57,11 @@ export function imageRootsOutside(text: string, docDir: string): string[] {
     const file = path.resolve(base, src)
     const rel = path.relative(base, file)
     if (!rel.startsWith('..') && !path.isAbsolute(rel)) continue
-    roots.add(path.dirname(file))
+    const up = rel.split(/[\\/]/).filter((seg) => seg === '..').length
+    const dir = path.dirname(file)
+    const depth = dir.split(/[\\/]/).filter(Boolean).length - (/^[a-z]:/i.test(dir) ? 1 : 0)
+    if (path.isAbsolute(rel) || up > MAX_UP || depth < MIN_DEPTH) continue
+    roots.add(dir)
   }
   return [...roots]
 }

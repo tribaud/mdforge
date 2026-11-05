@@ -265,6 +265,36 @@ await page.evaluate(() => {
 await expect('28. ...and "Puces" converts the list', '- a\n- b\n\nFin\n')
 check(!(await page.evaluate(() => !!document.querySelector('.cm-list-menu'))), '29. ...and closes the menu')
 
+// Inside code or the frontmatter a dash is text: Enter is a plain newline.
+await setDoc('T\n\n```yaml\nkey:\n  - \n```\n\nFin\n')
+await clickText('key', 3)
+await page.keyboard.press('ArrowDown')
+await page.keyboard.press('End')
+await page.keyboard.press('Enter')
+check((await doc()).startsWith('T\n\n```yaml\nkey:\n  - \n'), '30. Enter on "  - " inside fenced code keeps the line (a plain newline)')
+
+await setDoc('---\ntags:\n  - \n---\n\nFin\n')
+await page.evaluate(() => window.__view?.focus?.())
+await clickText('Fin', 1)
+await page.keyboard.press('ArrowUp')
+await page.keyboard.press('ArrowUp')
+await page.keyboard.press('ArrowUp')
+await page.keyboard.press('End')
+const before30 = await doc()
+await page.keyboard.press('Backspace')
+await page.keyboard.press('Backspace')
+check(!(await doc()).includes('\ntags:\n- \n'), '31. the frontmatter is never outdented as a list')
+
+// A selection ending at the start of a line does not take that line.
+await setDoc('T\n\nun\ndeux\ntrois\n\nFin\n')
+await clickText('un', 0)
+await page.keyboard.down('Shift')
+await page.keyboard.press('ArrowDown')
+await page.keyboard.press('ArrowDown')
+await page.keyboard.up('Shift')
+await key('8')
+await expect('32. a selection ending at a line start leaves that line alone', 'T\n\n- un\n- deux\ntrois\n\nFin\n')
+
 if (errors.length) {
   failed++
   console.log('  ✗ page errors', errors)

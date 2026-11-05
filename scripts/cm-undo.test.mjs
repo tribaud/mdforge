@@ -162,6 +162,25 @@ await page.keyboard.press('ControlOrMeta+z')
 await page.waitForTimeout(100)
 check((await vscodeUndos()) === 0, '12. Cmd+Z in the search field stays in the webview')
 
+// In a table cell being edited, Cmd+Z belongs to the cell, not the note.
+await page.keyboard.press('Escape')
+await setDoc('Intro\n\n| a | b |\n| - | - |\n| x | y |\n\nFin\n')
+await clickText('Intro', 5)
+await page.keyboard.type(' ajout')
+await page.waitForTimeout(700)
+const cell = await page.evaluate(() => {
+  const td = [...document.querySelectorAll('.cm-md-table td')].find((c) => c.textContent.replace('✎', '').trim() === 'y')
+  const r = td.getBoundingClientRect()
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+})
+await page.mouse.dblclick(cell.x, cell.y)
+await page.waitForTimeout(300)
+await page.keyboard.type('zz')
+await page.keyboard.press('ControlOrMeta+z')
+await page.waitForTimeout(150)
+check((await doc()).startsWith('Intro ajout'), '13. Cmd+Z in a table cell does not undo the note')
+check((await vscodeUndos()) === 0, '14. ...nor reach VS Code')
+
 if (errors.length) {
   failed++
   console.log('  ✗ page errors', errors)

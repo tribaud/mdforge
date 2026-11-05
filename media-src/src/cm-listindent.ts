@@ -326,6 +326,7 @@ export function convertList(lines: string[], targets: number[], kind: ListKind, 
   if (caretOnly && targets.length === 1 && item(lines[targets[0]])) rows = siblingGroup(lines, targets[0])
   rows = rows.filter((k) => !isBlank(lines[k]))
   if (!rows.length) return []
+  const inRows = new Set(rows)
   const ed = new Edits(lines)
 
   if (rows.every((k) => kindOf(lines[k]) === kind)) {
@@ -346,7 +347,7 @@ export function convertList(lines: string[], targets: number[], kind: ListKind, 
       for (let j = k - 1; j >= 0; j--) {
         if (isBlank(lines[j]) || indentOf(lines[j]) > w) continue
         const it = indentOf(lines[j]) === w ? item(lines[j]) : null
-        if (it?.num !== undefined && !rows.includes(j)) start = it.num + 1
+        if (it?.num !== undefined && !inRows.has(j)) start = it.num + 1
         break
       }
       next.set(w, start)
