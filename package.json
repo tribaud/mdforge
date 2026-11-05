@@ -2,7 +2,7 @@
   "name": "mdforge",
   "displayName": "MDForge",
   "description": "Transform VS Code into a Typora-like WYSIWYG Markdown editor with GitHub-style rendering, Mermaid diagrams and rich task lists.",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "publisher": "tribaud",
   "license": "MIT",
   "icon": "icon.png",
@@ -291,6 +291,13 @@
           "default": false,
           "description": "Show the table of contents in a panel on the left of the editor. A click on a heading scrolls to it."
         },
+        "mdforge.toc.width": {
+          "type": "number",
+          "default": 240,
+          "minimum": 140,
+          "maximum": 600,
+          "description": "Width of the table-of-contents panel, in pixels. Drag the panel's right edge to change it; double-click the edge to put the default back."
+        },
         "mdforge.mermaid.fitWidth": {
           "type": "boolean",
           "default": true,
@@ -421,7 +428,11 @@
     "vscode:prepublish": "npm run build",
     "package": "vsce package",
     "test:writes": "npm run compile:ext && node scripts/writequeue.test.mjs",
-    "test:sync": "npm run compile:ext && node scripts/sync.test.cjs"
+    "test:sync": "npm run compile:ext && node scripts/sync.test.cjs",
+    "test:images": "npm run compile:ext && node scripts/imageroots.test.mjs",
+    "test:toc": "npm run build:webview && node scripts/cm-toc.test.mjs",
+    "test:lists": "npm run build:webview && node scripts/cm-lists.test.mjs",
+    "test:undo": "npm run build:webview && node scripts/cm-undo.test.mjs"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",

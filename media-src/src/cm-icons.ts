@@ -68,6 +68,8 @@ export const ICONS: Record<string, string> = {
   ),
   quote: svg('<line x1="6" y1="4" x2="6" y2="20"/><line x1="11" y1="8" x2="18" y2="8"/><line x1="11" y1="12" x2="18" y2="12"/><line x1="11" y1="16" x2="16" y2="16"/>'),
   bullet: svg('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>'),
+  // Numbered list: the bullet icon's lines, with 1 2 3 drawn as small strokes.
+  ordered: svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 4h1v4"/><path d="M4 10.5a1.2 1.2 0 0 1 2.2.7L4 14h2.4"/><path d="M4 16.5h2l-1 1.5a1 1 0 1 1-1 1.5"/>'),
   // Page width: the window's two edges, with the text pushed OUT to them (go full
   // width) or pulled IN to a centered column (back to the side margins). Framed
   // variants were tried first and read as the code-block icon.

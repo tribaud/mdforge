@@ -4,6 +4,49 @@ All notable changes to MDForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.10.0]
+
+### Added
+
+- **Lists switch between bullets, numbers and tasks.** Click a rendered bullet
+  or number for a small menu (*Bullets*, *Numbers*, *Tasks*, and *Renumber 1,
+  2, 3…* on a numbered list), use the toolbar — which gains a numbered-list
+  button — or `Ctrl/⌘+Maj+7` / `8` / `9`. With the caret alone the whole list
+  at that level changes; with a selection, exactly the selected lines. The
+  numbers are recomputed and the children follow the new marker width.
+- **The table of contents can be resized** by dragging its right edge; a
+  double-click puts the default width back. The width is a setting
+  (`mdforge.toc.width`) and applies to every open note.
+
+### Changed
+
+- **Tab and Maj+Tab in a list follow Markdown's rules.** A child is indented
+  under its parent's text — three spaces under `1. `, where two left it a
+  sibling and Tab seemed to do nothing. The item's own children move with it,
+  a numbered item takes the number of its new place, and the lists it leaves
+  or joins are renumbered (a `1. 1. 1.` list keeps that style). Maj+Tab on a
+  dash indented too far — which Markdown reads as text — makes it a real
+  sub-item again.
+- **Enter on an empty nested item goes up one level**, and on an empty top
+  item it leaves the list. It used to leave a one-space line and a new empty
+  item at the same level.
+- **Backspace right after a task's checkbox removes the checkbox only**: the
+  task becomes a bullet. It used to remove the whole marker and leave the
+  line indented too far, so a dash typed there showed as plain text.
+
+### Fixed
+
+- **Undo no longer jumps around.** `Cmd+Z` was undone twice — by the editor,
+  then by VS Code on the document — and the second one came back as a reload
+  of the whole note: the view scrolled away from what was undone, and the
+  history went incoherent, sometimes seeming to stop. Undo and redo now belong
+  to the editor alone, and a change made outside (a `git checkout`, another
+  editor) replaces only the lines that changed, keeps the caret and the
+  scroll, and is not mixed into the undo history.
+- **Images from a parent folder render** (`![](../assets/x.png)`). The editor
+  only allowed the note's own folder, so the image stayed blank.
+- **A list item no longer shifts while its marker is being edited.**
+
 ## [0.9.0]
 
 ### Added

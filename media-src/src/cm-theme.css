@@ -71,7 +71,11 @@ body {
 /* --- Table of contents: a collapsible panel on the left --- */
 .cm-toc {
   display: none;
-  flex: 0 0 240px;
+  flex: 0 0 var(--mdforge-toc-width, 240px);
+  /* The width set by the grip IS the panel's width, padding and border
+   * included — content-box made the grip jump 17px on its first pixel. */
+  box-sizing: border-box;
+  min-width: 0;
   overflow-y: auto;
   padding: 12px 8px 24px;
   border-right: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3)));
@@ -83,6 +87,44 @@ body.mdforge-toc-open .cm-toc {
 }
 body.mdforge-presentation .cm-toc {
   display: none;
+}
+/* The grip on the panel's right edge: a 7px hit area straddling the border,
+ * taking no room of its own (negative margins), a line only on hover/drag. */
+.cm-toc-resizer {
+  display: none;
+  flex: 0 0 7px;
+  margin: 0 -4px 0 -3px;
+  position: relative;
+  z-index: 5;
+  cursor: col-resize;
+  user-select: none;
+}
+body.mdforge-toc-open .cm-toc-resizer {
+  display: block;
+}
+body.mdforge-presentation .cm-toc-resizer {
+  display: none;
+}
+.cm-toc-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 3px;
+  background: transparent;
+  transition: background 0.1s 0.15s;
+}
+.cm-toc-resizer:hover::after,
+body.mdforge-toc-resizing .cm-toc-resizer::after {
+  background: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder, #0078d4));
+}
+body.mdforge-toc-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.mdforge-toc-resizing * {
+  cursor: col-resize !important;
 }
 .cm-toc-title {
   padding: 0 8px 8px;
@@ -710,6 +752,25 @@ body.mdforge-mod-held .cm-md-link {
   text-align: right;
   text-indent: 0;
   white-space: nowrap;
+}
+/* The raw marker under the caret, in the widget's box: its trailing space
+   (kept by pre-wrap) stands in for part of the widget's right padding. */
+.cm-li-mark.cm-li-mark-raw {
+  padding-right: 0.25em;
+}
+.cm-li-mark-menu {
+  cursor: pointer;
+}
+.cm-li-mark-menu:hover {
+  color: var(--vscode-textLink-foreground);
+}
+/* Doubled class: `.cm-suggest-menu` comes later in this file and would win. */
+.cm-suggest-menu.cm-list-menu {
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background, Canvas));
+  color: var(--vscode-foreground, CanvasText);
+}
+.cm-list-menu .cm-list-menu-current {
+  font-weight: 600;
 }
 /* The glyphs of a bullet are small at text size; the browser's disc is not. */
 .cm-li-bullet {

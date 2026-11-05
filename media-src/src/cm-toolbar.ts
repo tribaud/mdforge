@@ -5,6 +5,7 @@
  * edit on the CodeMirror document (wrap the selection in markers, or toggle a
  * line prefix), so — like the rest of this engine — it never re-serializes.
  */
+import { setListKind } from './cm-listcmds'
 import { EditorView } from '@codemirror/view'
 import type { ChangeSpec, EditorState } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
@@ -501,8 +502,12 @@ const ENTRIES: Entry[] = [
   { label: ICONS.frontmatter, title: 'Propriétés (frontmatter)', run: (v) => insertFrontmatter(v) },
   'sep',
   { label: ICONS.quote, title: 'Quote', run: (v) => toggleLinePrefix(v, '> ', /^>\s?/) },
-  { label: ICONS.bullet, title: 'Bullet list', run: (v) => toggleLinePrefix(v, '- ', /^[-*+]\s+/) },
-  { label: ICONS.task, title: 'Task', run: (v) => toggleLinePrefix(v, '- [ ] ', /^[-*+]\s+(\[[ xX~]\]\s+)?/) },
+  // Lists: the whole list under the caret (or exactly the selected lines)
+  // switches kind, keeping its indentation and renumbering; a second click on
+  // the same kind removes it. See cm-listindent.ts `convertList`.
+  { label: ICONS.bullet, title: 'Liste à puces (Ctrl/⌘+Maj+8)', run: (v) => setListKind(v, 'bullet') },
+  { label: ICONS.ordered, title: 'Liste numérotée (Ctrl/⌘+Maj+7)', run: (v) => setListKind(v, 'ordered') },
+  { label: ICONS.task, title: 'Liste de tâches (Ctrl/⌘+Maj+9)', run: (v) => setListKind(v, 'task') },
   { label: ICONS.link, title: 'Lien (Ctrl/⌘K)', run: (v) => insertLink(v) },
   { label: '†', title: 'Note de bas de page', run: (v) => insertFootnote(v) },
   { label: ICONS.hr, title: 'Ligne horizontale', run: (v) => insertHr(v) },
