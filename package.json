@@ -431,7 +431,8 @@
     "test:sync": "npm run compile:ext && node scripts/sync.test.cjs",
     "test:images": "npm run compile:ext && node scripts/imageroots.test.mjs",
     "test:toc": "npm run build:webview && node scripts/cm-toc.test.mjs",
-    "test:lists": "npm run build:webview && node scripts/cm-lists.test.mjs"
+    "test:lists": "npm run build:webview && node scripts/cm-lists.test.mjs",
+    "test:undo": "npm run build:webview && node scripts/cm-undo.test.mjs"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",

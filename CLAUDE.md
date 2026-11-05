@@ -150,8 +150,23 @@ it fully before making changes.
   is the text, `edit` carries exactly what the user typed — **no re-serialization,
   perfect diffs.** On the first `setContent` the caret is placed past any
   frontmatter (`bodyStart`) so the frontmatter renders as its card, not raw.
-  On every LATER one — an external change: `git checkout`, another editor, a
-  formatter — the caret is **put back where it was** (`rememberPlace` /
+  A later `setContent` replaces **only the span that changed** (`changedSpan`,
+  common prefix/suffix trimmed) and **outside the history**
+  (`Transaction.addToHistory.of(false)`): CodeMirror then maps the caret, the
+  scroll and its undo history through it. A whole-document replace used to land
+  IN the history, so the next Cmd+Z undid that replace instead of the user's
+  edit. The first load is not undoable either: Cmd+Z must never empty the note.
+  **Undo / redo belong to CodeMirror alone.** The webview forwards every keydown
+  to VS Code (`did-keydown`, a listener on the inner WINDOW), which ran its own
+  undo on the TextDocument as well — two undos per Cmd+Z, the second one coming
+  back as a `setContent`: the scroll jumped and the history went incoherent.
+  `Mod-z` / `Mod-Shift-z` / `Mod-y` are bound at `Prec.highest` with
+  `stopPropagation` and ALWAYS handled (with nothing to undo, VS Code would undo
+  instead); a `document` bubble listener stops the ones that never reached the
+  keymap (search field, table cell, frontmatter value: the browser's own undo
+  there, CodeMirror's anywhere else). VS Code's *Edit > Undo* menu still undoes
+  the TextDocument; it arrives as a `setContent`, now harmless.
+  When the caret is INSIDE the changed span, it is **put back where it was** (`rememberPlace` /
   `placeIn`). A whole-document replace gives CodeMirror nothing to map positions
   through, so everything collapses to 0: that is the "why am I at the top of the
   file again" this fixes. The place is therefore remembered by CONTENT — the
@@ -876,6 +891,7 @@ npm run test:sync             # the host round-trip: a burst in, no echo back
 npm run test:images           # image folders outside the note's folder
 npm run test:toc              # resizing the table-of-contents panel
 npm run test:lists            # Tab / Shift+Tab / Enter in lists
+npm run test:undo             # undo stays in CodeMirror; external changes keep the view
 ```
 
 - **Three launch configurations** (`.vscode/launch.json`): the plain one,

@@ -10,10 +10,10 @@
  * It speaks the same host protocol as the Milkdown build (`ready`/`edit` out,
  * `setContent`/`config` in), so src/extension.ts is unchanged.
  */
-import { Compartment, EditorState, Prec } from '@codemirror/state'
+import { Compartment, EditorState, Prec, Transaction } from '@codemirror/state'
 import type { Extension, Text } from '@codemirror/state'
 import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view'
-import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { history, defaultKeymap, historyKeymap, indentWithTab, redo, undo } from '@codemirror/commands'
 import {
   syntaxHighlighting,
   HighlightStyle,
@@ -626,6 +626,14 @@ try {
             { key: 'Enter', run: () => slashMenu?.accept() ?? false },
             { key: 'Tab', run: () => slashMenu?.accept() ?? false },
             { key: 'Escape', run: () => slashMenu?.dismiss() ?? false },
+            // Undo / redo belong to CodeMirror ALONE. The webview forwards every
+            // keydown to VS Code (`did-keydown`), which then ran its own undo on
+            // the TextDocument as well: two undos per Cmd+Z, the second one
+            // coming back as a `setContent`. Always handled (even with nothing
+            // left to undo, or VS Code would undo instead) and never propagated.
+            { key: 'Mod-z', run: (v) => (undo(v), true), preventDefault: true, stopPropagation: true },
+            { key: 'Mod-Shift-z', run: (v) => (redo(v), true), preventDefault: true, stopPropagation: true },
+            { key: 'Mod-y', run: (v) => (redo(v), true), preventDefault: true, stopPropagation: true },
             // Here, not in the keymap below: `markdown()` installs its own
             // Enter (insertNewlineContinueMarkup) at Prec.high, which beats it.
             { key: 'Enter', run: exitEmptyItem },
@@ -720,6 +728,28 @@ try {
     },
     true
   )
+
+  /*
+   * Undo / redo that did NOT reach the editor's keymap: a field (the search
+   * panel, a table cell, a frontmatter value) or no focus at all (after a click
+   * on the toolbar). VS Code's webview listener sits on the WINDOW and would
+   * otherwise undo the TextDocument behind CodeMirror's back. `document` comes
+   * before `window` in the bubbling path, so stopping it here is enough. In a
+   * field the browser's own undo applies (VS Code no longer prevents it);
+   * anywhere else it is CodeMirror's.
+   */
+  document.addEventListener('keydown', (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+    const k = event.key.toLowerCase()
+    if (k !== 'z' && k !== 'y') return
+    event.stopPropagation()
+    const t = event.target as HTMLElement | null
+    const field = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+    if (field && !view.contentDOM.contains(t)) return
+    event.preventDefault()
+    if (k === 'y' || event.shiftKey) redo(view)
+    else undo(view)
+  })
 
   // Ctrl/⌘-click a rendered link → open it externally. Handled on *mousedown*
   // (capture) so it fires before CodeMirror moves the caret — which would turn
@@ -1082,6 +1112,22 @@ function placeIn(doc: Text, place: Place): number {
   return Math.min(line.from + place.column, line.to)
 }
 
+/** The one span that differs between `a` and `b` (common prefix and suffix
+ * trimmed): an external change usually touches a few lines, and replacing only
+ * those lets CodeMirror map the caret, the scroll and its history through it. */
+function changedSpan(a: string, b: string): { from: number; to: number; insert: string } {
+  let start = 0
+  const max = Math.min(a.length, b.length)
+  while (start < max && a.charCodeAt(start) === b.charCodeAt(start)) start++
+  let endA = a.length
+  let endB = b.length
+  while (endA > start && endB > start && a.charCodeAt(endA - 1) === b.charCodeAt(endB - 1)) {
+    endA--
+    endB--
+  }
+  return { from: start, to: endA, insert: b.slice(start, endB) }
+}
+
 function setContent(text: string): void {
   if (text === currentText) return
   applyingRemote = true
@@ -1089,30 +1135,44 @@ function setContent(text: string): void {
   // frontmatter property, a table cell — pointed into the previous content.
   resetInlineEditors()
   const first = currentText === ''
-  // On the first load, drop the caret past any frontmatter so it renders as its
-  // collapsed card (a caret at 0 sits inside the block and reveals the raw YAML).
-  // Afterwards this is a RELOAD, and the caret is put back where it was.
-  const place = first ? undefined : rememberPlace()
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: text },
-    ...(first ? { selection: { anchor: bodyStart(text) } } : {})
-  })
-  if (place) {
-    const anchor = placeIn(view.state.doc, place)
-    view.dispatch({ selection: { anchor } })
-    // And put that line back where it was on screen, rather than centring it:
-    // the eye keeps its place when nothing appears to have scrolled.
-    view.requestMeasure({
-      read: () => view.coordsAtPos(anchor),
-      write: (coords) => {
-        if (!coords) {
-          view.dispatch({ effects: EditorView.scrollIntoView(anchor, { y: 'center' }) })
-          return
-        }
-        const frame = view.scrollDOM.getBoundingClientRect()
-        view.scrollDOM.scrollTop += coords.top - frame.top - place.fromTop
-      }
+  if (first) {
+    // On the first load, drop the caret past any frontmatter so it renders as
+    // its collapsed card (a caret at 0 sits inside the block and reveals the
+    // raw YAML). Not undoable: Cmd+Z must never empty the note.
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text },
+      selection: { anchor: bodyStart(text) },
+      annotations: Transaction.addToHistory.of(false)
     })
+  } else {
+    // A RELOAD (git checkout, another editor, a formatter, VS Code's own
+    // undo from the Edit menu). Only the span that changed is replaced, and
+    // OUTSIDE the history: a whole-document replace used to land in it, and
+    // the next Cmd+Z undid that replace instead of the user's last edit — the
+    // "history stops for no reason". Outside the span the caret and the
+    // scroll are mapped by CodeMirror and do not move.
+    const span = changedSpan(view.state.doc.toString(), text)
+    const head = view.state.selection.main.head
+    const caretInside = head >= span.from && head <= span.to
+    const place = caretInside ? rememberPlace() : undefined
+    view.dispatch({ changes: span, annotations: Transaction.addToHistory.of(false) })
+    if (place) {
+      // The caret was IN the rewritten span: find its line again by content,
+      // at the same height on screen.
+      const anchor = placeIn(view.state.doc, place)
+      view.dispatch({ selection: { anchor } })
+      view.requestMeasure({
+        read: () => view.coordsAtPos(anchor),
+        write: (coords) => {
+          if (!coords) {
+            view.dispatch({ effects: EditorView.scrollIntoView(anchor, { y: 'center' }) })
+            return
+          }
+          const frame = view.scrollDOM.getBoundingClientRect()
+          view.scrollDOM.scrollTop += coords.top - frame.top - place.fromTop
+        }
+      })
+    }
   }
   currentText = text
   applyingRemote = false
