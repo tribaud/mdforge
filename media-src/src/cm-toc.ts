@@ -126,3 +126,75 @@ export function createToc(view: EditorView): { el: HTMLElement; update: (docChan
   render()
   return { el, update }
 }
+
+/* ---------- width: a grip on the panel's right edge ---------- */
+
+export const TOC_WIDTH = { min: 140, max: 600, default: 240 }
+
+export function clampTocWidth(px: number): number {
+  return Math.round(Math.min(TOC_WIDTH.max, Math.max(TOC_WIDTH.min, px)))
+}
+
+/** Applies a width to the panel (a CSS variable, read by `.cm-toc`). */
+export function setTocWidth(px: number): void {
+  document.documentElement.style.setProperty('--mdforge-toc-width', `${clampTocWidth(px)}px`)
+}
+
+/**
+ * The grip between the panel and the editor. A drag only paints (the CSS
+ * variable) and calls `onLive` so the editor can re-measure; the width is
+ * COMMITTED once, on mouseup — it is a setting, and writing it per pixel would
+ * echo a configuration event back to every open note. A double-click puts the
+ * default back. As with the table's column grips, the teardown also runs on a
+ * window `blur` or a mousemove with no button held: a lost mouseup must not
+ * leave `user-select: none` on the body and a live listener behind.
+ */
+export function createTocResizer(
+  toc: HTMLElement,
+  onLive: () => void,
+  onCommit: (px: number) => void
+): HTMLElement {
+  const grip = document.createElement('div')
+  grip.className = 'cm-toc-resizer'
+  grip.setAttribute('role', 'separator')
+  grip.setAttribute('aria-orientation', 'vertical')
+  grip.title = 'Glisser pour redimensionner le sommaire (double-clic : largeur par défaut)'
+
+  grip.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = toc.getBoundingClientRect().width
+    let width = startW
+    let frame = 0
+    document.body.classList.add('mdforge-toc-resizing')
+
+    const move = (ev: MouseEvent): void => {
+      if (ev.buttons === 0) return end()
+      width = clampTocWidth(startW + ev.clientX - startX)
+      setTocWidth(width)
+      if (!frame) frame = window.requestAnimationFrame(() => ((frame = 0), onLive()))
+    }
+    const end = (): void => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', end)
+      window.removeEventListener('blur', end)
+      document.body.classList.remove('mdforge-toc-resizing')
+      if (Math.abs(width - startW) >= 1) {
+        onLive()
+        onCommit(width)
+      }
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', end)
+    window.addEventListener('blur', end)
+  })
+
+  grip.addEventListener('dblclick', (e) => {
+    e.preventDefault()
+    setTocWidth(TOC_WIDTH.default)
+    onLive()
+    onCommit(TOC_WIDTH.default)
+  })
+  return grip
+}

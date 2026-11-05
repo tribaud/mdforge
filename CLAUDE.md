@@ -161,7 +161,7 @@ it fully before making changes.
 - **Messages** host→webview: `setContent`, `config`, `revealHeading`,
   `togglePresentation`, `refreshImages`, `imageInserted`, `diagnostics`,
   `quickDiff`, `tags`, `searchMatches`.
-  webview→host: `ready`, `edit`, `setPageWidth`, `setTocVisible`, `copyText`, `openWikilink`, `openExternal`, `insertImage`,
+  webview→host: `ready`, `edit`, `setPageWidth`, `setTocVisible`, `setTocWidth`, `copyText`, `openWikilink`, `openExternal`, `insertImage`,
   `importImagePath`, `localizeAssets`, `renameNote`, `moveNote`, `deleteNote`,
   `openSettings`, `normalizeBlankLines`, `requestQuickFix`, `requestTags`,
   `debugPasteHtml`, `error`.
@@ -195,6 +195,11 @@ so it round-trips for free unless noted.
   set, echoed to every open note. A click scrolls the heading to the top
   WITHOUT moving the caret (a caret on a heading would reveal its `##`) and
   unfolds a folded section holding it. Rebuilt from the tree, debounced.
+  Its **width** (`mdforge.toc.width`, 140–600px) is dragged from a grip on its
+  right edge (`createTocResizer`): the drag paints a CSS variable and posts
+  `setTocWidth` ONCE on release (a per-pixel write would echo a config event to
+  every note); double-click = default. The panel is `box-sizing: border-box`, so
+  the setting is its real width — content-box made the grip jump 17px.
 - **Headings / inline marks**: line class enlarges the heading; the `###`, `**`,
   `` ` `` and `~~` markers are hidden with `Decoration.replace` unless the caret is
   on them.
@@ -837,6 +842,7 @@ npm run test:search           # parsing of the search view's result text
 npm run test:writes           # the document write queue, under key repeat
 npm run test:sync             # the host round-trip: a burst in, no echo back
 npm run test:images           # image folders outside the note's folder
+npm run test:toc              # resizing the table-of-contents panel
 ```
 
 - **Three launch configurations** (`.vscode/launch.json`): the plain one,

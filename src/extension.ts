@@ -912,6 +912,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
           fontSize: config.get<number>('fontSize', 14),
           pageWidth: config.get<string>('pageWidth', 'comfortable'),
           tocVisible: config.get<boolean>('toc.visible', false),
+          tocWidth: config.get<number>('toc.width', 240),
           textAlign: config.get<string>('textAlign', 'left'),
           lineNumbers: config.get<boolean>('lineNumbers', true),
           appendSource: config.get<boolean>('paste.appendSource', false),
@@ -1080,6 +1081,7 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
         dump?: string
         refresh?: boolean
         visible?: boolean
+        width?: number
         range?: {
           from: { line: number; character: number }
           to: { line: number; character: number }
@@ -1221,6 +1223,22 @@ class MdForgeEditorProvider implements vscode.CustomTextEditorProvider {
                     ? vscode.ConfigurationTarget.Workspace
                     : vscode.ConfigurationTarget.Global
               await cfg.update('toc.visible', message.visible, target)
+            }
+            break
+          case 'setTocWidth':
+            // The grip on the panel's edge writes `mdforge.toc.width` on release,
+            // at the level where it is already set (see setPageWidth).
+            if (typeof message.width === 'number' && Number.isFinite(message.width)) {
+              const cfg = vscode.workspace.getConfiguration('mdforge', document.uri)
+              const at = cfg.inspect<number>('toc.width')
+              const target =
+                at?.workspaceFolderValue !== undefined
+                  ? vscode.ConfigurationTarget.WorkspaceFolder
+                  : at?.workspaceValue !== undefined
+                    ? vscode.ConfigurationTarget.Workspace
+                    : vscode.ConfigurationTarget.Global
+              const width = Math.round(Math.min(600, Math.max(140, message.width)))
+              await cfg.update('toc.width', width, target)
             }
             break
           case 'openSettings':

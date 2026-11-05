@@ -58,7 +58,7 @@ import {
   setWorkspaceSearch
 } from './cm-toolbar'
 import { ICONS } from './cm-icons'
-import { createToc } from './cm-toc'
+import { createToc, createTocResizer, setTocWidth } from './cm-toc'
 import { createSlashMenu } from './cm-slash'
 import type { SlashMenu } from './cm-slash'
 import { createTableToolbar } from './cm-table'
@@ -88,6 +88,7 @@ interface MdForgeConfig {
   fontSize?: number
   pageWidth?: 'comfortable' | 'full'
   tocVisible?: boolean
+  tocWidth?: number
   mermaidFitWidth?: boolean
   textAlign?: 'left' | 'justify'
   lineNumbers?: boolean
@@ -816,7 +817,14 @@ try {
   const main = document.createElement('div')
   main.className = 'mdforge-main'
   root.replaceWith(main)
-  main.append(toc.el, root)
+  // The grip on the panel's edge: live repaint while dragging, the setting
+  // written once on release (the host echoes it to every open note).
+  const tocResizer = createTocResizer(
+    toc.el,
+    () => refitMermaid(view),
+    (px) => vscode.postMessage({ type: 'setTocWidth', width: px })
+  )
+  main.append(toc.el, tocResizer, root)
 
   // Formatting toolbar: a persistent top bar + a selection bubble.
   const topbar = createTopbar(view)
@@ -1189,6 +1197,10 @@ function applyConfig(config: MdForgeConfig): void {
     document.documentElement.style.setProperty('--mdforge-font-size', `${config.fontSize}px`)
   }
   if (config.pageWidth === 'comfortable' || config.pageWidth === 'full') applyPageWidth(config.pageWidth)
+  if (typeof config.tocWidth === 'number') {
+    setTocWidth(config.tocWidth)
+    if (tocVisible) refitMermaid(view)
+  }
   if (typeof config.tocVisible === 'boolean') applyToc(config.tocVisible)
   // Mermaid diagrams scaled up to the whole text column (see cm-theme.css). The
   // ceiling is written on each <svg>, so turning the setting off has to re-fit
